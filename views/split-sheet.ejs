@@ -58,6 +58,7 @@
     <div class="card legal-note">
       <label><input type="checkbox" name="supersedesPrevious" value="yes"> This split supersedes any previous draft for this song.</label>
       <label><input type="checkbox" id="allAgree" name="allPartiesAgree" value="yes" required> All parties reviewed and agree to these splits.</label>
+      <label><input type="checkbox" id="collectByInvite" name="collectSignaturesByInvite" value="yes"> Collect signatures by invite links instead of in-session signing.</label>
       <div id="submitHint" class="small" style="margin-top:8px;color:#ffd48a;">Complete all required fields and signatures to enable submit.</div>
     </div>
     <button type="submit" id="submitBtn" disabled>Submit split sheet</button>
@@ -139,7 +140,7 @@ function add(prefill){
   <div class="row"><div><label>Email</label><input type="email" name="email" required></div><div><label>PRO</label><input name="pro" required></div></div>
   <div class="row"><div><label>IPI #</label><input name="ipi" required></div><div><label>Publisher name</label><input name="publisherName" required></div></div>
   <div class="row"><div><label>Publisher IPI #</label><input name="publisherIpi" required></div><div><label>Writer share %</label><input type="number" step="0.01" name="writerShare" required></div></div>
-  <div class="row"><div><label>Publisher share %</label><input type="number" step="0.01" name="publisherShare" required></div><div><label>Typed signature name</label><input name="typedSignatureName" id="typed${i}" placeholder="First Last" required></div></div>
+  <div class="row"><div><label>Publisher share %</label><input type="number" step="0.01" name="publisherShare" required></div><div><label>Typed signature name</label><input name="typedSignatureName" id="typed${i}" placeholder="First Last"></div></div>
   <div><label>Signature preview (cursive)</label><div class="typed-signature-preview" id="typedPreview${i}">First Last</div></div>
   <h4>Draw signature</h4>
   <div class="sig-wrap"><canvas id="sig${i}" class="sig"></canvas><span class="sig-hint" id="sig${i}-hint">sign</span></div>
@@ -239,15 +240,17 @@ function renderReview(){
 
   const w = Number(document.getElementById('writerTotal').textContent || 0);
   const p = Number(document.getElementById('publisherTotal').textContent || 0);
+  const collectByInvite = !!document.getElementById('collectByInvite') && document.getElementById('collectByInvite').checked;
   const hasDrawn = drawn.every(Boolean) && drawn.length >= 2;
   const hasTyped = typed.every(v=>String(v||'').trim().length>1) && typed.length>=2;
   const checkedRecipients = Array.from(document.querySelectorAll('input[name="recipientEmails"][type="checkbox"]:checked')).length;
   const allAgree = !!document.getElementById('allAgree') && document.getElementById('allAgree').checked;
-  const valid = (Math.round(w*100)/100===100) && (Math.round(p*100)/100===100) && hasDrawn && hasTyped && names.length>=2 && song !== '(missing song title)' && checkedRecipients>=2 && allAgree;
+  const signaturesReady = collectByInvite ? true : (hasDrawn && hasTyped);
+  const valid = (Math.round(w*100)/100===100) && (Math.round(p*100)/100===100) && signaturesReady && names.length>=2 && song !== '(missing song title)' && checkedRecipients>=2 && allAgree;
   document.getElementById('submitBtn').disabled = !valid;
   const hint=document.getElementById('submitHint');
   if(hint){
-    hint.textContent = valid ? 'Ready to submit.' : 'Need valid 100/100 totals, at least 2 contributors signed and typed, at least 2 recipient emails checked, and agreement confirmation checked.';
+    hint.textContent = valid ? 'Ready to submit.' : (collectByInvite ? 'Need valid 100/100 totals, at least 2 contributors, at least 2 recipient emails checked, and agreement confirmation checked.' : 'Need valid 100/100 totals, at least 2 contributors signed and typed, at least 2 recipient emails checked, and agreement confirmation checked.');
     hint.style.color = valid ? '#9be49b' : '#ffd48a';
   }
 }
@@ -269,6 +272,7 @@ document.querySelectorAll('.step-tab').forEach(btn=> btn.addEventListener('click
 document.addEventListener('change', (e)=>{
   if(e.target && e.target.matches('input[name="recipientEmails"][type="checkbox"]')) renderReview();
   if(e.target && e.target.id === 'allAgree') renderReview();
+  if(e.target && e.target.id === 'collectByInvite') renderReview();
   saveDraft();
 });
 

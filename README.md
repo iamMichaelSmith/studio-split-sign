@@ -24,20 +24,23 @@ When a song is finished, open this app, capture splits quickly, collect signatur
 - Sync Collaboration Agreement
 - Work for Hire Agreement
 - Mobile friendly drawn signatures
+- Optional per-signer invite links with secure tokens
 - Split validation: Writer shares must total 100 and Publisher shares must total 100
 - Auto versioning for split sheets by song title
 - Local storage in `data/submissions/*.json`
 - Email notifications to studio + contributors + selected recipients (if SMTP configured)
-- PDF summary export for split sheets
+- Final locked PDF packet generation when all signatures are complete
 - Admin login to review submissions and download JSON/PDF
-- Audit fields: timestamp, request IP, user agent
+- Audit fields: timestamp, request IP, user agent, checksum on final packet
 
 ## Fast Studio Workflow
 1. Open `/split-sheet`
 2. Enter song/session details
 3. Add contributors
 4. Use `Set equal splits for all` then adjust if needed
-5. Capture typed + drawn signatures
+5. Choose signing mode
+   - In-session signing now, or
+   - Invite links for each signer
 6. Confirm recipients
 7. Submit and send copies
 
@@ -60,14 +63,12 @@ Change default admin credentials before real use.
 Do not expose this app publicly without a reverse proxy, TLS, and stronger auth.
 
 ## Recommended Next Upgrades (to make it truly industry ready)
-1. Add signer invite links with per-signer token instead of one shared form
-2. Add signer status timeline: pending, viewed, signed
-3. Add final locked PDF packet with all signatures embedded
-4. Add audit hash for tamper evidence
-5. Add reusable templates for common split patterns and role presets
-6. Add publishing export formats (CSV, PRO-ready fields)
-7. Add cloud storage + backup strategy for legal records
-8. Add optional e-sign vendor integration if you need stronger legal enforceability in some jurisdictions
+1. Add signer status timeline with viewed timestamps
+2. Add reminder emails for unsigned contributors
+3. Add reusable templates for common split patterns and role presets
+4. Add publishing export formats (CSV, PRO-ready fields)
+5. Add cloud storage + backup strategy for legal records
+6. Add optional e-sign vendor integration if you need stronger legal enforceability in some jurisdictions
 
 ## Environment
 See `.env.example` for SMTP and admin settings.
