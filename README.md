@@ -25,12 +25,13 @@ When a song is finished, open this app, capture splits quickly, collect signatur
 - Work for Hire Agreement
 - Mobile friendly drawn signatures
 - Optional per-signer invite links with secure tokens
+- Per-signer status fields (invite sent, viewed, signed)
 - Split validation: Writer shares must total 100 and Publisher shares must total 100
 - Auto versioning for split sheets by song title
 - Local storage in `data/submissions/*.json`
 - Email notifications to studio + contributors + selected recipients (if SMTP configured)
 - Final locked PDF packet generation when all signatures are complete
-- Admin login to review submissions and download JSON/PDF
+- Admin login to review submissions, signer status, send reminder emails, and download JSON/PDF
 - Audit fields: timestamp, request IP, user agent, checksum on final packet
 
 ## Fast Studio Workflow

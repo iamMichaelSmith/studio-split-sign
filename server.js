@@ -161,6 +161,16 @@ async function sendEmail({ subject, html, to }) {
   await t.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: to.join(","), subject, html });
 }
 
+async function sendSplitInvite(doc, contributor) {
+  const notifyInbox = process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com";
+  const link = `${baseUrl}/split-sheet/sign/${doc.id}/${contributor.signerToken}`;
+  await sendEmail({
+    subject: `Action required: Sign split sheet for ${doc.payload.songTitle}`,
+    to: [contributor.email, notifyInbox],
+    html: `<h2>Signature Request</h2><p>Song: ${doc.payload.songTitle}</p><p>Contributor: ${contributor.legalName}</p><p><a href="${link}">Open your secure signing link</a></p><p>Submission ID: ${doc.id}</p>`
+  });
+}
+
 function requireAdmin(req, res, next) { if (req.session && req.session.isAdmin) return next(); res.redirect("/admin/login"); }
 
 app.get("/", (req, res) => res.render("index"));
@@ -222,6 +232,8 @@ app.post("/split-sheet", async (req, res) => {
         ...c,
         signerToken: collectByInvite ? nanoid(22) : null,
         inviteSentAt: collectByInvite ? nowIso() : null,
+        reminderSentAt: null,
+        viewedAt: null,
         signedAt: collectByInvite ? null : nowIso()
       }))
     };
@@ -229,14 +241,8 @@ app.post("/split-sheet", async (req, res) => {
     const saved = saveSubmission("split-sheet", payload, req);
 
     if (collectByInvite) {
-      const notifyInbox = process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com";
       for (const c of payload.contributors) {
-        const link = `${baseUrl}/split-sheet/sign/${saved.id}/${c.signerToken}`;
-        await sendEmail({
-          subject: `Action required: Sign split sheet for ${payload.songTitle}`,
-          to: [c.email, notifyInbox],
-          html: `<h2>Signature Request</h2><p>Song: ${payload.songTitle}</p><p>Contributor: ${c.legalName}</p><p><a href="${link}">Open your secure signing link</a></p><p>Submission ID: ${saved.id}</p>`
-        });
+        await sendSplitInvite(saved, c);
       }
     } else {
       const selectedRecipients = Array.isArray(req.body.recipientEmails) ? req.body.recipientEmails : [req.body.recipientEmails].filter(Boolean);
@@ -273,6 +279,13 @@ app.get("/split-sheet/sign/:id/:token", (req, res) => {
   if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
   const signer = (doc.payload?.contributors || []).find((c) => c.signerToken === req.params.token);
   if (!signer) return res.status(404).send("Invalid sign link");
+
+  if (!signer.viewedAt) {
+    signer.viewedAt = nowIso();
+    doc.updatedAt = nowIso();
+    saveSubmissionRow(doc);
+  }
+
   res.render("split-sign", { doc, signer, error: null, success: null });
 });
 
@@ -373,7 +386,37 @@ app.post("/admin/login", (req, res) => {
   if (req.body.username === (process.env.ADMIN_USER || "Knolly") && req.body.password === (process.env.ADMIN_PASS || "Testsubject5")) { req.session.isAdmin = true; return res.redirect("/admin"); }
   res.status(401).render("admin-login", { error: "Invalid credentials" });
 });
-app.get("/admin", requireAdmin, (req, res) => res.render("admin", { docs: listSubmissions() }));
+app.get("/admin", requireAdmin, (req, res) => {
+  const docs = listSubmissions().map((d) => {
+    if (d.type !== "split-sheet") return d;
+    const contributors = d.payload?.contributors || [];
+    const signedCount = contributors.filter((c) => c.signedAt).length;
+    return {
+      ...d,
+      signerStats: {
+        total: contributors.length,
+        signed: signedCount,
+        pending: Math.max(0, contributors.length - signedCount)
+      }
+    };
+  });
+  res.render("admin", { docs });
+});
+
+app.post("/admin/split/:id/remind", requireAdmin, async (req, res) => {
+  const doc = loadSubmission(req.params.id);
+  if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
+
+  const pending = (doc.payload?.contributors || []).filter((c) => c.signerToken && !c.signedAt);
+  for (const contributor of pending) {
+    contributor.reminderSentAt = nowIso();
+    await sendSplitInvite(doc, contributor);
+  }
+  doc.updatedAt = nowIso();
+  saveSubmissionRow(doc);
+  res.redirect("/admin");
+});
+
 app.get("/admin/doc/:id", requireAdmin, (req, res) => { const p = submissionPath(req.params.id); if (!fs.existsSync(p)) return res.status(404).send("Not found"); res.type("application/json").send(fs.readFileSync(p, "utf-8")); });
 
 app.listen(PORT, HOST, () => console.log(`Split Sheet Open Sign running at ${baseUrl}`));
