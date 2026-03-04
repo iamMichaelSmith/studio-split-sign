@@ -1,36 +1,50 @@
 # Split Sheet Open Sign
 
-Fast local signing app for split sheets and core studio legal forms.
+Fast local and LAN signing app for music paperwork.
 
-Primary goal
-When a song is finished, open this app immediately, capture legal splits and signatures, and send copies to both parties plus studio records.
-
-## What it does
-- Split Sheet workflow with contributor validation
-- Sync Collaboration Agreement form
-- Work for Hire Agreement form
-- Drawn + typed signature capture
-- Split validation for writer and publisher totals
-- Email notifications to contributors and studio inbox when SMTP is configured
-- PDF summary export for split sheets
-- Admin panel to review submitted documents
+Main goal
+When a song is finished, open this app, capture splits quickly, collect signatures, and immediately send copies to all parties.
 
 ## UI Screenshots
 
 ### Home
 ![Home](docs/screenshots/ui-home.jpg)
 
-### Split Sheet workflow
-![Split Sheet workflow](docs/screenshots/ui-split-sheet.jpg)
+### Split Sheet flow
+![Split Sheet flow](docs/screenshots/ui-split-sheet.jpg)
 
-### Admin access
-![Admin access](docs/screenshots/ui-admin-login.jpg)
+### Sync Collaboration Agreement
+![Sync Collaboration Agreement](docs/screenshots/ui-sync-collab.jpg)
 
-## Quick start
+### Work for Hire Agreement
+![Work for Hire Agreement](docs/screenshots/ui-work-for-hire.jpg)
+
+## Current Features
+- Split Sheet
+- Sync Collaboration Agreement
+- Work for Hire Agreement
+- Mobile friendly drawn signatures
+- Split validation: Writer shares must total 100 and Publisher shares must total 100
+- Auto versioning for split sheets by song title
+- Local storage in `data/submissions/*.json`
+- Email notifications to studio + contributors + selected recipients (if SMTP configured)
+- PDF summary export for split sheets
+- Admin login to review submissions and download JSON/PDF
+- Audit fields: timestamp, request IP, user agent
+
+## Fast Studio Workflow
+1. Open `/split-sheet`
+2. Enter song/session details
+3. Add contributors
+4. Use `Set equal splits for all` then adjust if needed
+5. Capture typed + drawn signatures
+6. Confirm recipients
+7. Submit and send copies
+
+## Setup
 1. Copy `.env.example` to `.env`
-2. Set SMTP and admin values
-3. Install dependencies
-4. Start app
+2. Fill SMTP values and admin credentials
+3. Run:
 
 ```powershell
 cd C:/Users/User/Documents/Openclaw/split-sheet-open-sign
@@ -41,26 +55,19 @@ npm run dev
 Local URL: `http://localhost:5050`
 LAN URL: `http://<your-computer-ip>:5050`
 
-## Important env settings
-- `ADMIN_USER` and `ADMIN_PASS` for admin access
-- `SMTP_USER` and `SMTP_PASS` for outbound email
-- `NOTIFY_EMAIL` for studio archive inbox
+## Important Security Note
+Change default admin credentials before real use.
+Do not expose this app publicly without a reverse proxy, TLS, and stronger auth.
 
-## Data and storage
-- Submissions are stored in `data/submissions/*.json`
-- Split sheet PDF export route: `/split-sheet/pdf/:id`
+## Recommended Next Upgrades (to make it truly industry ready)
+1. Add signer invite links with per-signer token instead of one shared form
+2. Add signer status timeline: pending, viewed, signed
+3. Add final locked PDF packet with all signatures embedded
+4. Add audit hash for tamper evidence
+5. Add reusable templates for common split patterns and role presets
+6. Add publishing export formats (CSV, PRO-ready fields)
+7. Add cloud storage + backup strategy for legal records
+8. Add optional e-sign vendor integration if you need stronger legal enforceability in some jurisdictions
 
-## Recommended studio workflow
-1. Open Split Sheet from home screen
-2. Add all contributors and signatures in-session
-3. Confirm writer and publisher totals are each exactly 100
-4. Confirm at least two recipient emails are checked
-5. Submit immediately before artist leaves
-6. Use admin panel to audit and export records
-
-## Product expansion roadmap
-- Add form templates for producer agreement and beat license
-- Add session presets so frequent collaborators auto-fill quickly
-- Add signer confirmation links with immutable final PDF archive
-- Add role based studio permissions and optional cloud backup
-- Add artist portal for agreement history and re-downloads
+## Environment
+See `.env.example` for SMTP and admin settings.
