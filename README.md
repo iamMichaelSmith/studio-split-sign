@@ -71,5 +71,18 @@ Do not expose this app publicly without a reverse proxy, TLS, and stronger auth.
 5. Add cloud storage + backup strategy for legal records
 6. Add optional e-sign vendor integration if you need stronger legal enforceability in some jurisdictions
 
+## Employment Readiness Snapshot
+- Smoke test included: `npm test`
+- CI included: `.github/workflows/ci.yml`
+- Security hardening: login throttling, secure session cookie options, health/readiness checks
+- Ops docs: deployment, runbook, security, architecture, hiring-manager snapshot
+
+## Docs
+- Architecture: `docs/architecture.md`
+- Deployment: `docs/deployment.md`
+- Ops runbook: `docs/ops.md`
+- Security notes: `docs/security.md`
+- Hiring manager snapshot: `HIRING_MANAGER.md`
+
 ## Environment
 See `.env.example` for SMTP and admin settings.

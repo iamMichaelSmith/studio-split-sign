@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "dev": "node server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node tests/smoke.cjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

@@ -24,10 +24,47 @@ app.set("views", path.join(__dirname, "views"));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
-app.use(session({ secret: process.env.SESSION_SECRET || "split-open-sign", resave: false, saveUninitialized: false }));
+app.use(session({
+  secret: process.env.SESSION_SECRET || "split-open-sign",
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: String(process.env.COOKIE_SECURE || "false") === "true",
+    maxAge: 1000 * 60 * 60 * 8
+  }
+}));
 
 function nowIso() { return new Date().toISOString(); }
 function uniq(arr) { return [...new Set(arr.filter(Boolean))]; }
+
+const loginAttempts = new Map();
+function loginKey(req) {
+  return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown");
+}
+function canAttemptLogin(req) {
+  const key = loginKey(req);
+  const row = loginAttempts.get(key) || { count: 0, blockedUntil: 0 };
+  const now = Date.now();
+  if (row.blockedUntil > now) {
+    return { allowed: false, retryAfterSec: Math.ceil((row.blockedUntil - now) / 1000) };
+  }
+  return { allowed: true, retryAfterSec: 0 };
+}
+function recordLoginFailure(req) {
+  const key = loginKey(req);
+  const row = loginAttempts.get(key) || { count: 0, blockedUntil: 0 };
+  row.count += 1;
+  if (row.count >= 5) {
+    row.count = 0;
+    row.blockedUntil = Date.now() + 1000 * 60 * 10;
+  }
+  loginAttempts.set(key, row);
+}
+function clearLoginFailures(req) {
+  loginAttempts.delete(loginKey(req));
+}
 
 function parseContributors(body) {
   const pick = (k) => Array.isArray(body[k]) ? body[k] : [body[k]].filter(Boolean);
@@ -174,6 +211,13 @@ async function sendSplitInvite(doc, contributor) {
 function requireAdmin(req, res, next) { if (req.session && req.session.isAdmin) return next(); res.redirect("/admin/login"); }
 
 app.get("/", (req, res) => res.render("index"));
+app.get("/health", (req, res) => res.json({ ok: true, at: nowIso() }));
+app.get("/ready", (req, res) => res.json({
+  ok: true,
+  at: nowIso(),
+  smtpConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
+  baseUrl
+}));
 app.get("/split-sheet", (req, res) => res.render("split-sheet", { error: null }));
 
 app.post("/split-sheet", async (req, res) => {
@@ -383,7 +427,18 @@ app.get("/split-sheet/pdf/:id", async (req, res) => {
 
 app.get("/admin/login", (req, res) => res.render("admin-login", { error: null }));
 app.post("/admin/login", (req, res) => {
-  if (req.body.username === (process.env.ADMIN_USER || "Knolly") && req.body.password === (process.env.ADMIN_PASS || "Testsubject5")) { req.session.isAdmin = true; return res.redirect("/admin"); }
+  const gate = canAttemptLogin(req);
+  if (!gate.allowed) {
+    return res.status(429).render("admin-login", { error: `Too many attempts. Try again in ${gate.retryAfterSec}s.` });
+  }
+
+  if (req.body.username === (process.env.ADMIN_USER || "Knolly") && req.body.password === (process.env.ADMIN_PASS || "Testsubject5")) {
+    clearLoginFailures(req);
+    req.session.isAdmin = true;
+    return res.redirect("/admin");
+  }
+
+  recordLoginFailure(req);
   res.status(401).render("admin-login", { error: "Invalid credentials" });
 });
 app.get("/admin", requireAdmin, (req, res) => {
