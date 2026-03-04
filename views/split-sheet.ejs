@@ -1,0 +1,291 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Blak Marigold Studio Split Sheet</title><link rel="stylesheet" href="/style.css"></head><body><div class="wrap"><h1>Blak Marigold Studio Split Sheet</h1><p class="small">Fast legal split workflow. Fill once, capture signatures, email both parties instantly.</p><% if (error) { %><div class="card"><b><%= error %></b></div><% } %>
+
+<div class="step-tabs">
+  <button type="button" class="step-tab active" data-step-btn="1">1 Song</button>
+  <button type="button" class="step-tab" data-step-btn="2">2 Contributors</button>
+  <button type="button" class="step-tab" data-step-btn="3">3 Review and Submit</button>
+</div>
+
+<form method="post" action="/split-sheet" id="splitForm" autocomplete="on">
+  <section class="step-panel" data-step="1">
+    <div class="card">
+      <div class="row">
+        <div><label>Song title</label><input name="songTitle" required></div>
+        <div><label>Alternate title (optional)</label><input name="alternateTitle"></div>
+      </div>
+      <div class="row">
+        <div><label>Date</label><input type="date" name="date" required></div>
+        <div><label>Session location</label><input name="sessionLocation" placeholder="Studio A / Remote"></div>
+      </div>
+      <div class="row">
+        <div><label>ISWC (optional)</label><input name="iswc"></div>
+        <div><label>ISRC (optional)</label><input name="isrc"></div>
+      </div>
+      <label>Notes (optional)</label><textarea name="notes" rows="3" placeholder="Any split/session context"></textarea>
+      <button type="button" class="next-step" data-next="2">Continue to Contributors</button>
+    </div>
+  </section>
+
+  <section class="step-panel" data-step="2" style="display:none;">
+    <div class="card">
+      <div class="row">
+        <button type="button" id="add">Add contributor</button>
+        <button type="button" id="setEqual">Set equal splits for all</button>
+      </div>
+      <p class="small">Tip: Use equal split first, then adjust any custom percentages.</p>
+    </div>
+    <div id="contributors"></div>
+    <div class="row">
+      <button type="button" class="next-step" data-next="3">Continue to Review</button>
+      <button type="button" id="clearDraftBtn">Clear saved draft</button>
+    </div>
+  </section>
+
+  <section class="step-panel" data-step="3" style="display:none;">
+    <div class="card" id="reviewCard">
+      <h3>Review before submit</h3>
+      <div id="reviewSummary" class="small">Complete prior steps to preview details.</div>
+    </div>
+    <div class="card">
+      <h3>Email recipients for signed copy</h3>
+      <p class="small">Contributor emails are pre-selected. Add any additional recipients below.</p>
+      <div id="recipientChecklist" class="small"></div>
+      <div class="row">
+        <div><label>Additional recipient #1</label><input type="email" name="recipientEmails" placeholder="email@example.com"></div>
+        <div><label>Additional recipient #2</label><input type="email" name="recipientEmails" placeholder="email@example.com"></div>
+      </div>
+    </div>
+    <div class="card legal-note">
+      <label><input type="checkbox" name="supersedesPrevious" value="yes"> This split supersedes any previous draft for this song.</label>
+      <label><input type="checkbox" id="allAgree" name="allPartiesAgree" value="yes" required> All parties reviewed and agree to these splits.</label>
+      <div id="submitHint" class="small" style="margin-top:8px;color:#ffd48a;">Complete all required fields and signatures to enable submit.</div>
+    </div>
+    <button type="submit" id="submitBtn" disabled>Submit split sheet</button>
+  </section>
+</form>
+
+<div class="sticky-totals" id="stickyTotals">
+  <div><strong>Writer Total:</strong> <span id="writerTotal">0</span>%</div>
+  <div><strong>Publisher Total:</strong> <span id="publisherTotal">0</span>%</div>
+  <div id="totalsStatus" class="small">Both must equal 100%</div>
+</div>
+
+<p><a href="/">Back</a></p></div>
+<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+<script>
+const DRAFT_KEY = 'splitSheetDraft.v1';
+const pads = new Map();
+
+function saveDraft(){
+  const fields = Array.from(document.querySelectorAll('#splitForm input, #splitForm textarea, #splitForm select'));
+  const payload = fields.map((el) => ({
+    type: el.type,
+    value: el.type === 'checkbox' ? el.checked : el.value
+  }));
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+}
+
+function restoreDraft(){
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if(!raw) return;
+    const payload = JSON.parse(raw);
+    const fields = Array.from(document.querySelectorAll('#splitForm input, #splitForm textarea, #splitForm select'));
+    fields.forEach((el, idx) => {
+      const entry = payload[idx];
+      if(!entry) return;
+      if(entry.type === 'checkbox') {
+        el.checked = Boolean(entry.value);
+      } else {
+        el.value = entry.value || '';
+      }
+    });
+  } catch {}
+}
+
+function clearDraft(){
+  localStorage.removeItem(DRAFT_KEY);
+  location.reload();
+}
+
+function wirePad(canvasId,inputId,clearId){
+  const canvas=document.getElementById(canvasId);if(!canvas)return;
+  const hint=document.getElementById(`${canvasId}-hint`);
+  const resize=()=>{const ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext('2d').scale(ratio,ratio);};
+  resize();window.addEventListener('resize',resize);
+  const pad=new SignaturePad(canvas,{backgroundColor:'rgb(255,255,255)'});
+  pads.set(inputId, pad);
+  const input=document.getElementById(inputId);
+
+  if(input.value && input.value.startsWith('data:image/')){
+    try { pad.fromDataURL(input.value); } catch {}
+  }
+
+  const sync=()=>{ const has=!pad.isEmpty(); input.value=has?pad.toDataURL():''; if(hint) hint.style.display=has?'none':'block'; renderReview(); saveDraft(); };
+  canvas.addEventListener('mouseup',sync);
+  canvas.addEventListener('touchend',sync);
+  canvas.addEventListener('pointerup',sync);
+  const btn=document.getElementById(clearId); if(btn) btn.addEventListener('click',()=>{pad.clear();sync();});
+  sync();
+}
+
+let idx=0;const c=document.getElementById('contributors');
+function add(prefill){
+  const i = idx;
+  c.insertAdjacentHTML('beforeend',`<details class="card contributor-card" open>
+  <summary>Contributor #${i+1}</summary>
+  <div class="row"><div><label>Legal name</label><input name="legalName" required></div><div><label>Role</label><input name="role" placeholder="artist / producer / writer" required></div></div>
+  <div class="row"><div><label>Address</label><input name="address" required></div><div><label>Phone</label><input name="phone" required></div></div>
+  <div class="row"><div><label>Email</label><input type="email" name="email" required></div><div><label>PRO</label><input name="pro" required></div></div>
+  <div class="row"><div><label>IPI #</label><input name="ipi" required></div><div><label>Publisher name</label><input name="publisherName" required></div></div>
+  <div class="row"><div><label>Publisher IPI #</label><input name="publisherIpi" required></div><div><label>Writer share %</label><input type="number" step="0.01" name="writerShare" required></div></div>
+  <div class="row"><div><label>Publisher share %</label><input type="number" step="0.01" name="publisherShare" required></div><div><label>Typed signature name</label><input name="typedSignatureName" id="typed${i}" placeholder="First Last" required></div></div>
+  <div><label>Signature preview (cursive)</label><div class="typed-signature-preview" id="typedPreview${i}">First Last</div></div>
+  <h4>Draw signature</h4>
+  <div class="sig-wrap"><canvas id="sig${i}" class="sig"></canvas><span class="sig-hint" id="sig${i}-hint">sign</span></div>
+  <input type="hidden" id="sigData${i}" name="signatureData"><button type="button" id="clear${i}">Clear signature</button>
+  </details>`);
+  wirePad(`sig${i}`,`sigData${i}`,`clear${i}`);
+
+  const card = c.lastElementChild;
+  const typed=document.getElementById(`typed${i}`); const preview=document.getElementById(`typedPreview${i}`);
+  typed.addEventListener('input',()=>{preview.textContent=(typed.value||'First Last'); renderReview(); saveDraft();});
+  card.querySelectorAll('input,select,textarea').forEach(i=> i.addEventListener('input', () => { updateTotals(); saveDraft(); }));
+
+  if(prefill){
+    const names = ['legalName','role','address','phone','email','pro','ipi','publisherName','publisherIpi','writerShare','publisherShare','typedSignatureName','signatureData'];
+    names.forEach((name) => {
+      const node = card.querySelector(`[name="${name}"]`);
+      if(node && prefill[name] !== undefined){ node.value = prefill[name]; }
+    });
+    if(prefill.typedSignatureName){ preview.textContent = prefill.typedSignatureName; }
+    if(prefill.signatureData){
+      const hidden = card.querySelector('[name="signatureData"]');
+      hidden.value = prefill.signatureData;
+      const pad = pads.get(hidden.id);
+      if(pad){ try{ pad.fromDataURL(prefill.signatureData); }catch{} }
+    }
+  }
+
+  idx++;
+  updateTotals();
+}
+
+function getVals(name){ return Array.from(document.querySelectorAll(`[name="${name}"]`)).map(i=>i.value); }
+function num(n){ return Number(n||0); }
+
+function totalsAreValid(){
+  const w = getVals('writerShare').reduce((a,v)=>a+num(v),0);
+  const p = getVals('publisherShare').reduce((a,v)=>a+num(v),0);
+  return (Math.round(w*100)/100 === 100) && (Math.round(p*100)/100 === 100);
+}
+
+function setEqualSplits(){
+  const writer = Array.from(document.querySelectorAll('input[name="writerShare"]'));
+  const publisher = Array.from(document.querySelectorAll('input[name="publisherShare"]'));
+  if(!writer.length) return;
+  const each = Number((100 / writer.length).toFixed(2));
+  writer.forEach((el) => el.value = each);
+  publisher.forEach((el) => el.value = each);
+
+  const wTotal = writer.reduce((sum, el) => sum + Number(el.value || 0), 0);
+  const pTotal = publisher.reduce((sum, el) => sum + Number(el.value || 0), 0);
+  if(writer.length){ writer[writer.length - 1].value = (100 - (wTotal - Number(writer[writer.length - 1].value))).toFixed(2); }
+  if(publisher.length){ publisher[publisher.length - 1].value = (100 - (pTotal - Number(publisher[publisher.length - 1].value))).toFixed(2); }
+  updateTotals();
+  saveDraft();
+}
+
+function updateTotals(){
+  const w = getVals('writerShare').reduce((a,v)=>a+num(v),0);
+  const p = getVals('publisherShare').reduce((a,v)=>a+num(v),0);
+  document.getElementById('writerTotal').textContent = w.toFixed(2).replace(/\.00$/,'');
+  document.getElementById('publisherTotal').textContent = p.toFixed(2).replace(/\.00$/,'');
+  const ok = totalsAreValid();
+  const status = document.getElementById('totalsStatus');
+  status.textContent = ok ? 'Looks good. Totals are valid.' : 'Both must equal exactly 100%.';
+  status.style.color = ok ? '#9be49b' : '#ffd48a';
+  renderReview();
+}
+
+function renderRecipientChecklist(){
+  const list = document.getElementById('recipientChecklist');
+  if(!list) return;
+  const prev = new Map(Array.from(list.querySelectorAll('input[type="checkbox"][name="recipientEmails"]')).map(i => [i.value, i.checked]));
+  const emails = getVals('email').filter(e => String(e||'').includes('@'));
+  if(!emails.length){ list.innerHTML = '<p>No valid contributor emails yet.</p>'; return; }
+  list.innerHTML = emails.map((e, i) => {
+    const isChecked = prev.has(e) ? prev.get(e) : true;
+    return `<label style="display:block;margin:4px 0;"><input type="checkbox" name="recipientEmails" value="${e}" ${isChecked ? 'checked' : ''}> Send copy to contributor #${i+1}: ${e}</label>`;
+  }).join('');
+}
+
+function renderReview(){
+  const names=getVals('legalName');
+  const roles=getVals('role');
+  const writer=getVals('writerShare');
+  const publisher=getVals('publisherShare');
+  const typed=getVals('typedSignatureName');
+  const drawn=Array.from(document.querySelectorAll('[name="signatureData"]')).map(i=>!!i.value);
+  const song = document.querySelector('[name="songTitle"]').value || '(missing song title)';
+
+  let html = `<p><b>Song:</b> ${song}</p><ul>`;
+  for(let i=0;i<names.length;i++){
+    html += `<li><b>${names[i]||'(missing name)'}</b> (${roles[i]||'role missing'}) - Writer ${writer[i]||0}% / Publisher ${publisher[i]||0}% - Typed: ${typed[i]||'missing'} - Drawn: ${drawn[i]?'yes':'no'}</li>`;
+  }
+  html += `</ul>`;
+  document.getElementById('reviewSummary').innerHTML = html;
+  renderRecipientChecklist();
+
+  const w = Number(document.getElementById('writerTotal').textContent || 0);
+  const p = Number(document.getElementById('publisherTotal').textContent || 0);
+  const hasDrawn = drawn.every(Boolean) && drawn.length >= 2;
+  const hasTyped = typed.every(v=>String(v||'').trim().length>1) && typed.length>=2;
+  const checkedRecipients = Array.from(document.querySelectorAll('input[name="recipientEmails"][type="checkbox"]:checked')).length;
+  const allAgree = !!document.getElementById('allAgree') && document.getElementById('allAgree').checked;
+  const valid = (Math.round(w*100)/100===100) && (Math.round(p*100)/100===100) && hasDrawn && hasTyped && names.length>=2 && song !== '(missing song title)' && checkedRecipients>=2 && allAgree;
+  document.getElementById('submitBtn').disabled = !valid;
+  const hint=document.getElementById('submitHint');
+  if(hint){
+    hint.textContent = valid ? 'Ready to submit.' : 'Need valid 100/100 totals, at least 2 contributors signed and typed, at least 2 recipient emails checked, and agreement confirmation checked.';
+    hint.style.color = valid ? '#9be49b' : '#ffd48a';
+  }
+}
+
+function goStep(n){
+  if(String(n)==='3' && !totalsAreValid()){
+    alert('Cannot move to review until Writer total = 100% and Publisher total = 100%.');
+    return;
+  }
+  document.querySelectorAll('.step-panel').forEach(p=> p.style.display = p.dataset.step==String(n) ? '' : 'none');
+  document.querySelectorAll('.step-tab').forEach(b=> b.classList.toggle('active', b.dataset.stepBtn==String(n)));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  updateTotals();
+}
+
+document.querySelectorAll('.next-step').forEach(btn=> btn.addEventListener('click', ()=> goStep(btn.dataset.next)));
+document.querySelectorAll('.step-tab').forEach(btn=> btn.addEventListener('click', ()=> goStep(btn.dataset.stepBtn)));
+
+document.addEventListener('change', (e)=>{
+  if(e.target && e.target.matches('input[name="recipientEmails"][type="checkbox"]')) renderReview();
+  if(e.target && e.target.id === 'allAgree') renderReview();
+  saveDraft();
+});
+
+document.getElementById('add').addEventListener('click', () => add());
+document.getElementById('setEqual').addEventListener('click', setEqualSplits);
+document.getElementById('clearDraftBtn').addEventListener('click', clearDraft);
+
+const todayInput = document.querySelector('[name="date"]');
+if(todayInput && !todayInput.value){ todayInput.value = new Date().toISOString().slice(0,10); }
+
+document.querySelector('[name="songTitle"]').addEventListener('input', () => { renderReview(); saveDraft(); });
+
+document.getElementById('splitForm').addEventListener('submit', () => {
+  localStorage.removeItem(DRAFT_KEY);
+});
+
+add(); add();
+restoreDraft();
+updateTotals();
+</script></body></html>
