@@ -268,6 +268,8 @@ function goStep(n){
   document.querySelectorAll('.step-panel').forEach(p=> p.style.display = p.dataset.step==String(n) ? '' : 'none');
   document.querySelectorAll('.step-tab').forEach(b=> b.classList.toggle('active', b.dataset.stepBtn==String(n)));
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Signature canvases are initialized while step 2 is hidden; trigger resize after panel switch.
+  setTimeout(()=> window.dispatchEvent(new Event('resize')), 50);
   updateTotals();
 }
 
