@@ -256,12 +256,38 @@ async function sendEmail({ subject, html, to, attachments = [] }) {
   }
 }
 
-function completionEmailHtml({ title, id, songLabel, downloadUrl, recipients }) {
+function splitSummaryHtml(contributors = []) {
+  if (!Array.isArray(contributors) || !contributors.length) return "";
+  const rows = contributors.map((c) => {
+    return `<tr>
+      <td style="padding:6px 8px;border:1px solid #ddd;">${c.legalName || ""}</td>
+      <td style="padding:6px 8px;border:1px solid #ddd;">${c.role || ""}</td>
+      <td style="padding:6px 8px;border:1px solid #ddd;text-align:right;">${Number(c.writerShare || 0)}%</td>
+      <td style="padding:6px 8px;border:1px solid #ddd;text-align:right;">${Number(c.publisherShare || 0)}%</td>
+    </tr>`;
+  }).join("");
+
+  return `<h3 style="margin:12px 0 6px;">Split summary</h3>
+    <table style="border-collapse:collapse;width:100%;max-width:720px;font-size:14px;">
+      <thead>
+        <tr>
+          <th style="padding:6px 8px;border:1px solid #ddd;text-align:left;">Contributor</th>
+          <th style="padding:6px 8px;border:1px solid #ddd;text-align:left;">Role</th>
+          <th style="padding:6px 8px;border:1px solid #ddd;text-align:right;">Writer %</th>
+          <th style="padding:6px 8px;border:1px solid #ddd;text-align:right;">Publisher %</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function completionEmailHtml({ title, id, songLabel, downloadUrl, recipients, splitHtml = "" }) {
   return `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111">
     <h2 style="margin:0 0 8px">${title}</h2>
     <p style="margin:0 0 10px">Submission ID: <b>${id}</b></p>
     ${songLabel ? `<p style="margin:0 0 10px">${songLabel}</p>` : ""}
-    <p style="margin:0 0 12px">Your agreement is complete and attached to this email for your records.</p>
+    ${splitHtml || ""}
+    <p style="margin:12px 0 12px">Your agreement is complete and attached to this email for your records.</p>
     <p style="margin:0 0 12px"><a href="${downloadUrl}">Download agreement packet</a></p>
     <p style="margin:0 0 12px"><b>Recipients:</b> ${recipients.join(", ")}</p>
     <hr style="border:none;border-top:1px solid #ddd;margin:14px 0" />
@@ -272,10 +298,11 @@ function completionEmailHtml({ title, id, songLabel, downloadUrl, recipients }) 
 async function sendSplitInvite(doc, contributor) {
   const notifyInbox = process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com";
   const link = `${baseUrl}/split-sheet/sign/${doc.id}/${contributor.signerToken}`;
+  const splitHtml = splitSummaryHtml(doc.payload?.contributors || []);
   await sendEmail({
     subject: `Action required: Sign split sheet for ${doc.payload.songTitle}`,
     to: [contributor.email, notifyInbox],
-    html: `<h2>Signature Request</h2><p>Song: ${doc.payload.songTitle}</p><p>Contributor: ${contributor.legalName}</p><p><a href="${link}">Open your secure signing link</a></p><p>Submission ID: ${doc.id}</p>`
+    html: `<h2>Signature Request</h2><p>Song: <b>${doc.payload.songTitle}</b></p><p>Contributor: ${contributor.legalName}</p>${splitHtml}<p style="margin-top:12px;"><a href="${link}">Open your secure signing link</a></p><p>Submission ID: ${doc.id}</p>`
   });
 }
 
@@ -301,8 +328,8 @@ app.post("/split-sheet", async (req, res) => {
     if (!String(req.body.songTitle || "").trim()) {
       return res.status(400).render("split-sheet", { error: "Song title is required." });
     }
-    if (!contributors.length || contributors.length < 1) {
-      return res.status(400).render("split-sheet", { error: "At least 1 contributor is required for a valid split sheet." });
+    if (!contributors.length || contributors.length < 2) {
+      return res.status(400).render("split-sheet", { error: "At least 2 contributors are required for a valid split sheet." });
     }
 
     const hasMissingBasicFields = contributors.some((c) =>
@@ -385,7 +412,8 @@ app.post("/split-sheet", async (req, res) => {
           id: saved.id,
           songLabel: `Song: ${payload.songTitle} (v${payload.version})`,
           downloadUrl: `${baseUrl}/split-sheet/pdf/${saved.id}`,
-          recipients: rec
+          recipients: rec,
+          splitHtml: splitSummaryHtml(payload.contributors || [])
         }),
         attachments: fs.existsSync(finalPdf) ? [{ filename: path.basename(finalPdf), path: finalPdf }] : []
       });
@@ -459,7 +487,8 @@ app.post("/split-sheet/sign/:id/:token", async (req, res) => {
         id: doc.id,
         songLabel: `Song: ${doc.payload.songTitle} (v${doc.payload.version})`,
         downloadUrl: `${baseUrl}/split-sheet/pdf/${doc.id}`,
-        recipients
+        recipients,
+        splitHtml: splitSummaryHtml(doc.payload?.contributors || [])
       }),
       attachments: fs.existsSync(finalPdf) ? [{ filename: path.basename(finalPdf), path: finalPdf }] : []
     });
