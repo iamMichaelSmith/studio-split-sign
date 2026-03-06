@@ -72,7 +72,7 @@
 </div>
 
 <p><a href="/">Back</a></p></div>
-<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+<script src="/vendor/signature_pad/signature_pad.umd.min.js"></script>
 <script>
 const DRAFT_KEY = 'splitSheetDraft.v1';
 const pads = new Map();
@@ -112,9 +112,18 @@ function clearDraft(){
 function wirePad(canvasId,inputId,clearId){
   const canvas=document.getElementById(canvasId);if(!canvas)return;
   const hint=document.getElementById(`${canvasId}-hint`);
+  const input=document.getElementById(inputId);
+  if (typeof SignaturePad === 'undefined') {
+    if (hint) hint.textContent = 'signature tool failed to load - refresh page';
+    if (input) input.value = '';
+    return;
+  }
   const resize=()=>{const ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext('2d').scale(ratio,ratio);};
   resize();window.addEventListener('resize',resize);
   const pad=new SignaturePad(canvas,{backgroundColor:'rgb(255,255,255)'});
+   pads.set(inputId, pad);
+-  const input=document.getElementById(inputId);
++
   pads.set(inputId, pad);
   const input=document.getElementById(inputId);
 

@@ -24,6 +24,7 @@ app.set("views", path.join(__dirname, "views"));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
+app.use("/vendor/signature_pad", express.static(path.join(__dirname, "node_modules", "signature_pad", "dist")));
 app.use(session({
   secret: process.env.SESSION_SECRET || "split-open-sign",
   resave: false,
@@ -188,14 +189,22 @@ function generateFinalSplitPdf(docJson) {
 }
 
 async function sendEmail({ subject, html, to }) {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return;
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    return { ok: false, skipped: true, reason: "smtp_not_configured" };
+  }
   const t = nodemailer.createTransport({
     host: process.env.SMTP_HOST || "smtp.gmail.com",
     port: Number(process.env.SMTP_PORT || 465),
     secure: String(process.env.SMTP_SECURE || "true") === "true",
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
   });
-  await t.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: to.join(","), subject, html });
+  try {
+    await t.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: to.join(","), subject, html });
+    return { ok: true, skipped: false, reason: "sent" };
+  } catch (e) {
+    console.error("Email send failed:", e.message || e);
+    return { ok: false, skipped: false, reason: `smtp_error:${e.message || "unknown"}` };
+  }
 }
 
 async function sendSplitInvite(doc, contributor) {
@@ -284,10 +293,19 @@ app.post("/split-sheet", async (req, res) => {
 
     const saved = saveSubmission("split-sheet", payload, req);
 
+    let emailResult = { ok: false, skipped: true, reason: "not_attempted" };
+
     if (collectByInvite) {
       for (const c of payload.contributors) {
         await sendSplitInvite(saved, c);
       }
+      const selectedRecipients = Array.isArray(req.body.recipientEmails) ? req.body.recipientEmails : [req.body.recipientEmails].filter(Boolean);
+      const rec = uniq([(process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com"), ...payload.contributors.map((c) => c.email), ...selectedRecipients]);
+      emailResult = await sendEmail({
+        subject: `Split Sheet Created - ${payload.songTitle} (v${payload.version})`,
+        to: rec,
+        html: `<h2>Split Sheet Created</h2><p>ID: ${saved.id}</p><p>Song: ${payload.songTitle}</p><p>Version: ${payload.version}</p><p>Status: Pending signatures</p><p><a href="${baseUrl}/split-sheet/pdf/${saved.id}">Download Current PDF Summary</a></p><p><b>Recipients:</b> ${rec.join(", ")}</p>`
+      });
     } else {
       const selectedRecipients = Array.isArray(req.body.recipientEmails) ? req.body.recipientEmails : [req.body.recipientEmails].filter(Boolean);
       const rec = uniq([(process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com"), ...payload.contributors.map((c) => c.email), ...selectedRecipients]);
@@ -296,7 +314,7 @@ app.post("/split-sheet", async (req, res) => {
       saved.updatedAt = nowIso();
       saveSubmissionRow(saved);
 
-      await sendEmail({
+      emailResult = await sendEmail({
         subject: `New Split Sheet Signed - ${payload.songTitle} (v${payload.version})`,
         to: rec,
         html: `<h2>Split Sheet Signed</h2><p>ID: ${saved.id}</p><p>Song: ${payload.songTitle}</p><p>Version: ${payload.version}</p><p><a href="${baseUrl}/split-sheet/pdf/${saved.id}">Download Final PDF Packet</a></p><p><b>Recipients:</b> ${rec.join(", ")}</p>`
@@ -310,7 +328,8 @@ app.post("/split-sheet", async (req, res) => {
       songTitle: payload.songTitle,
       version: payload.version,
       status: saved.status,
-      collectSignaturesByInvite: collectByInvite
+      collectSignaturesByInvite: collectByInvite,
+      emailResult
     });
   } catch (e) {
     console.error(e);

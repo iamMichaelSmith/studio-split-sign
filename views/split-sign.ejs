@@ -16,17 +16,21 @@
 </form>
 
 <p><a href="/">Back to home</a></p></div>
-<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+<script src="/vendor/signature_pad/signature_pad.umd.min.js"></script>
 <script>
 const canvas=document.getElementById('sig');
 const input=document.getElementById('signatureData');
 const hint=document.getElementById('sig-hint');
-const resize=()=>{const ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext('2d').scale(ratio,ratio);};
-resize();window.addEventListener('resize',resize);
-const pad=new SignaturePad(canvas,{backgroundColor:'rgb(255,255,255)'});
-if(input.value && input.value.startsWith('data:image/')){ try{ pad.fromDataURL(input.value);}catch{} }
-const sync=()=>{const has=!pad.isEmpty(); input.value=has?pad.toDataURL():''; hint.style.display=has?'none':'block';};
-canvas.addEventListener('mouseup',sync);canvas.addEventListener('touchend',sync);canvas.addEventListener('pointerup',sync);
-document.getElementById('clearSig').addEventListener('click',()=>{pad.clear();sync();});
-sync();
+if (typeof SignaturePad === 'undefined') {
+  hint.textContent = 'signature tool failed to load - refresh page';
+} else {
+  const resize=()=>{const ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext('2d').scale(ratio,ratio);};
+  resize();window.addEventListener('resize',resize);
+  const pad=new SignaturePad(canvas,{backgroundColor:'rgb(255,255,255)'});
+  if(input.value && input.value.startsWith('data:image/')){ try{ pad.fromDataURL(input.value);}catch{} }
+  const sync=()=>{const has=!pad.isEmpty(); input.value=has?pad.toDataURL():''; hint.style.display=has?'none':'block';};
+  canvas.addEventListener('mouseup',sync);canvas.addEventListener('touchend',sync);canvas.addEventListener('pointerup',sync);
+  document.getElementById('clearSig').addEventListener('click',()=>{pad.clear();sync();});
+  sync();
+}
 </script></body></html>
