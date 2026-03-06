@@ -121,11 +121,7 @@ function wirePad(canvasId,inputId,clearId){
   const resize=()=>{const ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext('2d').scale(ratio,ratio);};
   resize();window.addEventListener('resize',resize);
   const pad=new SignaturePad(canvas,{backgroundColor:'rgb(255,255,255)'});
-   pads.set(inputId, pad);
--  const input=document.getElementById(inputId);
-+
   pads.set(inputId, pad);
-  const input=document.getElementById(inputId);
 
   if(input.value && input.value.startsWith('data:image/')){
     try { pad.fromDataURL(input.value); } catch {}

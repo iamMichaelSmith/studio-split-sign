@@ -82,6 +82,7 @@ Do not expose this app publicly without a reverse proxy, TLS, and stronger auth.
 - Deployment: `docs/deployment.md`
 - Ops runbook: `docs/ops.md`
 - Security notes: `docs/security.md`
+- Split-sheet walkthrough screenshots: `docs/split-sheet-walkthrough.md`
 - Hiring manager snapshot: `HIRING_MANAGER.md`
 
 ## Environment
