@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Signature Submitted</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <h1>Signature Submitted</h1>
+    <div class="card">
+      <p><b>Song:</b> <%= doc.payload.songTitle %></p>
+      <p><b>Contributor:</b> <%= signer.legalName %> (<%= signer.role %>)</p>
+      <p><b>Status:</b> <%= everyoneSigned ? 'Completed' : 'Pending remaining signer(s)' %></p>
+      <p><%= message %></p>
+      <% if (everyoneSigned) { %>
+        <p><a href="/split-sheet/pdf/<%= doc.id %>">Download final packet</a></p>
+      <% } %>
+    </div>
+    <p><a href="/">Back to home</a></p>
+  </div>
+</body>
+</html>

@@ -498,7 +498,14 @@ app.post("/split-sheet/sign/:id/:token", async (req, res) => {
   saveSubmissionRow(doc);
 
   const signer = contributors[signerIndex];
-  res.render("split-sign", { doc, signer, error: null, success: everyoneSigned ? "Signed. Final packet has been generated and emailed." : "Signed successfully. Waiting on other signer(s)." });
+  res.render("split-sign-success", {
+    doc,
+    signer,
+    everyoneSigned,
+    message: everyoneSigned
+      ? "Submitted. Final packet has been generated and emailed to all recipients. Please check your email."
+      : "Submitted. Your signature is saved. We are waiting on the remaining signer(s)."
+  });
 });
 
 app.get("/sync-collab", (req, res) => res.render("sync-collab"));
