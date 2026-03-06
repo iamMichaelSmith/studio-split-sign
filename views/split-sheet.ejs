@@ -247,15 +247,15 @@ function renderReview(){
   const p = Number(document.getElementById('publisherTotal').textContent || 0);
   const collectByInvite = !!document.getElementById('collectByInvite') && document.getElementById('collectByInvite').checked;
   const hasDrawn = drawn.every(Boolean) && drawn.length >= 2;
-  const hasTyped = typed.every(v=>String(v||'').trim().length>1) && typed.length>=2;
+  const hasTyped = typed.every(v=>String(v||'').trim().length>1) && typed.length>=1;
   const checkedRecipients = Array.from(document.querySelectorAll('input[name="recipientEmails"][type="checkbox"]:checked')).length;
   const allAgree = !!document.getElementById('allAgree') && document.getElementById('allAgree').checked;
   const signaturesReady = collectByInvite ? true : (hasDrawn && hasTyped);
-  const valid = (Math.round(w*100)/100===100) && (Math.round(p*100)/100===100) && signaturesReady && names.length>=2 && song !== '(missing song title)' && checkedRecipients>=2 && allAgree;
+  const valid = (Math.round(w*100)/100===100) && (Math.round(p*100)/100===100) && signaturesReady && names.length>=1 && song !== '(missing song title)' && checkedRecipients>=1 && allAgree;
   document.getElementById('submitBtn').disabled = !valid;
   const hint=document.getElementById('submitHint');
   if(hint){
-    hint.textContent = valid ? 'Ready to submit.' : (collectByInvite ? 'Need valid 100/100 totals, at least 2 contributors, at least 2 recipient emails checked, and agreement confirmation checked.' : 'Need valid 100/100 totals, at least 2 contributors signed and typed, at least 2 recipient emails checked, and agreement confirmation checked.');
+    hint.textContent = valid ? 'Ready to submit.' : (collectByInvite ? 'Need valid 100/100 totals, at least 1 contributor, at least 1 recipient email checked, and agreement confirmation checked.' : 'Need valid 100/100 totals, at least 1 contributor signed and typed, at least 1 recipient email checked, and agreement confirmation checked.');
     hint.style.color = valid ? '#9be49b' : '#ffd48a';
   }
 }
@@ -296,7 +296,7 @@ document.getElementById('splitForm').addEventListener('submit', () => {
   localStorage.removeItem(DRAFT_KEY);
 });
 
-add(); add();
+add();
 restoreDraft();
 updateTotals();
 </script></body></html>

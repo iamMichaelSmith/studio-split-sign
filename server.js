@@ -301,8 +301,8 @@ app.post("/split-sheet", async (req, res) => {
     if (!String(req.body.songTitle || "").trim()) {
       return res.status(400).render("split-sheet", { error: "Song title is required." });
     }
-    if (!contributors.length || contributors.length < 2) {
-      return res.status(400).render("split-sheet", { error: "At least 2 contributors are required for a valid split sheet." });
+    if (!contributors.length || contributors.length < 1) {
+      return res.status(400).render("split-sheet", { error: "At least 1 contributor is required for a valid split sheet." });
     }
 
     const hasMissingBasicFields = contributors.some((c) =>
