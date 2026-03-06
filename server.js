@@ -196,7 +196,10 @@ async function sendEmail({ subject, html, to }) {
     host: process.env.SMTP_HOST || "smtp.gmail.com",
     port: Number(process.env.SMTP_PORT || 465),
     secure: String(process.env.SMTP_SECURE || "true") === "true",
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    tls: {
+      rejectUnauthorized: String(process.env.SMTP_TLS_REJECT_UNAUTHORIZED || "true") === "true"
+    }
   });
   try {
     await t.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: to.join(","), subject, html });

@@ -11,8 +11,8 @@
     <div class="card">
       <p>Submission saved successfully.</p>
       <p><b>ID:</b> <%= id %></p>
-      <% if (songTitle) { %>
-        <p><b>Song:</b> <%= songTitle %> <% if (version) { %>(v<%= version %>)<% } %></p>
+      <% if (typeof songTitle !== 'undefined' && songTitle) { %>
+        <p><b>Song:</b> <%= songTitle %> <% if (typeof version !== 'undefined' && version) { %>(v<%= version %>)<% } %></p>
       <% } %>
 
       <% if (emailResult && emailResult.ok) { %>
