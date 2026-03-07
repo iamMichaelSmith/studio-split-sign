@@ -83,6 +83,7 @@ Do not expose this app publicly without a reverse proxy, TLS, and stronger auth.
 - Ops runbook: `docs/ops.md`
 - Security notes: `docs/security.md`
 - Split-sheet walkthrough screenshots: `docs/split-sheet-walkthrough.md`
+- Invite-signature end-to-end walkthrough: `docs/e2e-invite-flow.md`
 - Hiring manager snapshot: `HIRING_MANAGER.md`
 
 ## Environment
