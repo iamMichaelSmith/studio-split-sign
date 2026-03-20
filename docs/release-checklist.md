@@ -1,9 +1,25 @@
 # Release Checklist
 
+## Code and app checks
 - [ ] `npm test` passes
 - [ ] `node --check server.js` passes
-- [ ] Admin credentials changed from defaults
-- [ ] `SESSION_SECRET` and `PUBLIC_BASE_URL` configured
+- [ ] core pages load successfully
+- [ ] invite-sign flow works end to end
+- [ ] admin timeline and reminder flow work
+
+## Configuration checks
+- [ ] admin credentials changed from defaults
+- [ ] strong `SESSION_SECRET` configured
+- [ ] `PUBLIC_BASE_URL` configured correctly
 - [ ] SMTP send test completed
-- [ ] Backup path for `data/submissions` and `data/pdfs` confirmed
-- [ ] README and docs links verified
+
+## Operational checks
+- [ ] backup path for `data/submissions` and `data/pdfs` confirmed
+- [ ] `/health` and `/ready` verified in deployment environment
+- [ ] restore path for legal records understood by operator
+
+## Documentation checks
+- [ ] README is current
+- [ ] docs links verified
+- [ ] QA checklist reflects current workflow
+- [ ] hiring-manager snapshot reflects actual feature set

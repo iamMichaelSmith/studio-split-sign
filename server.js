@@ -188,6 +188,24 @@ function checksumFor(row) {
   return crypto.createHash("sha256").update(JSON.stringify({ id: row.id, payload: row.payload, createdAt: row.createdAt })).digest("hex");
 }
 
+function splitSignerTimeline(docJson) {
+  const contributors = docJson?.payload?.contributors || [];
+  return contributors.map((c, index) => ({
+    index: index + 1,
+    legalName: c.legalName || "",
+    role: c.role || "",
+    email: c.email || "",
+    writerShare: Number(c.writerShare || 0),
+    publisherShare: Number(c.publisherShare || 0),
+    inviteSentAt: c.inviteSentAt || null,
+    viewedAt: c.viewedAt || null,
+    reminderSentAt: c.reminderSentAt || null,
+    signedAt: c.signedAt || null,
+    typedSignatureName: c.typedSignatureName || "",
+    status: c.signedAt ? "Signed" : (c.viewedAt ? "Viewed" : (c.inviteSentAt ? "Invited" : "Pending"))
+  }));
+}
+
 function generateFinalSplitPdf(docJson) {
   const outPath = splitPdfPath(docJson.id);
   const payload = docJson.payload || {};
@@ -447,7 +465,7 @@ app.get("/split-sheet/sign/:id/:token", (req, res) => {
     saveSubmissionRow(doc);
   }
 
-  res.render("split-sign", { doc, signer, error: null, success: null });
+  res.render("split-sign", { doc, signer, timeline: splitSignerTimeline(doc), error: null, success: null });
 });
 
 app.post("/split-sheet/sign/:id/:token", async (req, res) => {
@@ -461,7 +479,7 @@ app.post("/split-sheet/sign/:id/:token", async (req, res) => {
   const signatureData = String(req.body.signatureData || "").trim();
   if (!typedSignatureName || !signatureData.startsWith("data:image/")) {
     const signer = contributors[signerIndex];
-    return res.status(400).render("split-sign", { doc, signer, error: "Typed name and drawn signature are required.", success: null });
+    return res.status(400).render("split-sign", { doc, signer, timeline: splitSignerTimeline(doc), error: "Typed name and drawn signature are required.", success: null });
   }
 
   contributors[signerIndex].typedSignatureName = typedSignatureName;
@@ -603,20 +621,48 @@ app.get("/admin", requireAdmin, (req, res) => {
   res.render("admin", { docs });
 });
 
+app.get("/admin/split/:id", requireAdmin, (req, res) => {
+  const doc = loadSubmission(req.params.id);
+  if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
+
+  const timeline = splitSignerTimeline(doc).map((row, index) => {
+    const contributor = doc.payload?.contributors?.[index] || {};
+    return {
+      ...row,
+      signerLink: contributor.signerToken ? `${baseUrl}/split-sheet/sign/${doc.id}/${contributor.signerToken}` : null
+    };
+  });
+  const signerStats = {
+    total: timeline.length,
+    signed: timeline.filter((row) => row.signedAt).length,
+    viewed: timeline.filter((row) => row.viewedAt).length,
+    pending: timeline.filter((row) => !row.signedAt).length
+  };
+
+  res.render("admin-split-detail", { doc, timeline, signerStats, banner: req.query.banner || "" });
+});
+
 app.post("/admin/split/:id/remind", requireAdmin, async (req, res) => {
   const doc = loadSubmission(req.params.id);
   if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
 
   const pending = (doc.payload?.contributors || []).filter((c) => c.signerToken && !c.signedAt);
+  let sent = 0;
   for (const contributor of pending) {
     contributor.reminderSentAt = nowIso();
     await sendSplitInvite(doc, contributor);
+    sent += 1;
   }
   doc.updatedAt = nowIso();
+  doc.lastReminderRun = { at: nowIso(), sent };
   saveSubmissionRow(doc);
-  res.redirect("/admin");
+  res.redirect(`/admin/split/${doc.id}?banner=${encodeURIComponent(`Reminder email run complete. Sent ${sent} reminder(s).`)}`);
 });
 
 app.get("/admin/doc/:id", requireAdmin, (req, res) => { const p = submissionPath(req.params.id); if (!fs.existsSync(p)) return res.status(404).send("Not found"); res.type("application/json").send(fs.readFileSync(p, "utf-8")); });
 
-app.listen(PORT, HOST, () => console.log(`Split Sheet Open Sign running at ${baseUrl}`));
+if (require.main === module) {
+  app.listen(PORT, HOST, () => console.log(`Split Sheet Open Sign running at ${baseUrl}`));
+}
+
+module.exports = app;

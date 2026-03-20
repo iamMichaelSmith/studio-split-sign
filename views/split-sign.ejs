@@ -1,4 +1,6 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Sign Split Sheet</title><link rel="stylesheet" href="/style.css"></head><body><div class="wrap"><h1>Split Sheet Signature</h1><div class="card"><p><b>Song:</b> <%= doc.payload.songTitle %></p><p><b>Contributor:</b> <%= signer.legalName %> (<%= signer.role %>)</p><p><b>Writer:</b> <%= signer.writerShare %>% | <b>Publisher:</b> <%= signer.publisherShare %>%</p></div>
+<!doctype html><html><head><meta charset="utf-8"><title>Sign Split Sheet</title><link rel="stylesheet" href="/style.css"></head><body><div class="wrap"><h1>Split Sheet Signature</h1><div class="card"><p><b>Song:</b> <%= doc.payload.songTitle %></p><p><b>Contributor:</b> <%= signer.legalName %> (<%= signer.role %>)</p><p><b>Writer:</b> <%= signer.writerShare %>% | <b>Publisher:</b> <%= signer.publisherShare %>%</p><p class="small">Submission ID: <%= doc.id %></p></div>
+
+<div class="card"><h3>Signing progress</h3><% timeline.forEach(function(row){ const pillClass = row.status === 'Signed' ? 'status-signed' : (row.status === 'Viewed' ? 'status-viewed' : (row.status === 'Invited' ? 'status-invited' : 'status-pending')); %><div class="timeline-item"><div class="timeline-top"><div><div><b><%= row.legalName %></b></div><div class="small"><%= row.role %> · Writer <%= row.writerShare %>% · Publisher <%= row.publisherShare %>%</div></div><div><span class="pill <%= pillClass %>"><%= row.status %></span></div></div><div class="small timeline-meta">Invite sent: <%= row.inviteSentAt || '—' %> | Viewed: <%= row.viewedAt || '—' %> | Signed: <%= row.signedAt || '—' %></div></div><% }) %></div>
 
 <% if (error) { %><div class="card"><b><%= error %></b></div><% } %>
 <% if (success) { %><div class="card"><b><%= success %></b></div><% } %>
@@ -10,7 +12,7 @@
   <h4>Draw signature</h4>
   <div class="sig-wrap"><canvas id="sig" class="sig"></canvas><span class="sig-hint" id="sig-hint">sign</span></div>
   <input type="hidden" id="signatureData" name="signatureData" value="<%= signer.signatureData || '' %>">
-  <button type="button" id="clearSig">Clear signature</button>
+  <div class="inline-actions"><button type="button" id="clearSig">Clear signature</button></div>
 
   <button type="submit">Sign now</button>
 </form>

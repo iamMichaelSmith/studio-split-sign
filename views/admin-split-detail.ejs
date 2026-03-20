@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Split Sheet Detail</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <h1>Split Sheet Timeline</h1>
+
+    <% if (banner) { %>
+      <div class="banner"><%= banner %></div>
+    <% } %>
+
+    <div class="card">
+      <p><b>Song:</b> <%= doc.payload.songTitle %> <% if (doc.payload.version) { %>(v<%= doc.payload.version %>)<% } %></p>
+      <p><b>Submission ID:</b> <%= doc.id %></p>
+      <p><b>Status:</b> <span class="pill <%= doc.status === 'completed' ? 'status-signed' : 'status-viewed' %>"><%= doc.status %></span></p>
+      <p><b>Created:</b> <%= doc.createdAt %></p>
+      <p><b>Updated:</b> <%= doc.updatedAt || doc.createdAt %></p>
+      <% if (doc.lastReminderRun) { %>
+        <p class="small">Last reminder run: <%= doc.lastReminderRun.at %> · sent <%= doc.lastReminderRun.sent %></p>
+      <% } %>
+
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-label">Total signers</div><div class="stat-value"><%= signerStats.total %></div></div>
+        <div class="stat-card"><div class="stat-label">Signed</div><div class="stat-value"><%= signerStats.signed %></div></div>
+        <div class="stat-card"><div class="stat-label">Viewed</div><div class="stat-value"><%= signerStats.viewed %></div></div>
+        <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value"><%= signerStats.pending %></div></div>
+      </div>
+
+      <div class="inline-actions">
+        <a href="/split-sheet/pdf/<%= doc.id %>" target="_blank">Download PDF</a>
+        <a href="/admin/doc/<%= doc.id %>" target="_blank">View JSON</a>
+        <% if (signerStats.pending > 0) { %>
+          <form method="post" action="/admin/split/<%= doc.id %>/remind" style="display:inline;">
+            <button type="submit">Send reminder to pending signers</button>
+          </form>
+        <% } %>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Signer progress</h3>
+      <% timeline.forEach(function(row){ const pillClass = row.status === 'Signed' ? 'status-signed' : (row.status === 'Viewed' ? 'status-viewed' : (row.status === 'Invited' ? 'status-invited' : 'status-pending')); %>
+        <div class="timeline-item">
+          <div class="timeline-top">
+            <div>
+              <div><b><%= row.index %>. <%= row.legalName %></b></div>
+              <div class="small timeline-meta"><%= row.role %> · <%= row.email %></div>
+              <div class="small">Writer <%= row.writerShare %>% · Publisher <%= row.publisherShare %>%</div>
+            </div>
+            <div><span class="pill <%= pillClass %>"><%= row.status %></span></div>
+          </div>
+          <hr class="muted-rule" />
+          <div class="small">Invite sent: <b><%= row.inviteSentAt || '—' %></b></div>
+          <div class="small">Viewed: <b><%= row.viewedAt || '—' %></b></div>
+          <div class="small">Reminder sent: <b><%= row.reminderSentAt || '—' %></b></div>
+          <div class="small">Signed: <b><%= row.signedAt || '—' %></b></div>
+          <% if (row.typedSignatureName) { %>
+            <div class="small">Typed signature: <b><%= row.typedSignatureName %></b></div>
+          <% } %>
+          <% if (row.signerLink) { %>
+            <div class="copy-field">
+              <input type="text" readonly value="<%= row.signerLink %>" id="link-<%= row.index %>">
+              <button type="button" onclick="copySignerLink('link-<%= row.index %>', this)">Copy signer link</button>
+            </div>
+          <% } %>
+        </div>
+      <% }) %>
+    </div>
+
+    <p><a href="/admin">Back to admin</a></p>
+  </div>
+
+  <script>
+    async function copySignerLink(id, btn) {
+      const input = document.getElementById(id);
+      if (!input) return;
+      input.select();
+      input.setSelectionRange(0, 99999);
+      try {
+        await navigator.clipboard.writeText(input.value);
+      } catch (e) {
+        document.execCommand('copy');
+      }
+      const old = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(() => { btn.textContent = old; }, 1200);
+    }
+  </script>
+</body>
+</html>
