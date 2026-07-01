@@ -6,6 +6,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 const PDFDocument = require("pdfkit");
+const { SESv2Client, SendEmailCommand, ListEmailIdentitiesCommand } = require("@aws-sdk/client-sesv2");
 const { nanoid } = require("nanoid");
 
 const app = express();
@@ -15,6 +16,7 @@ const baseUrl = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
 const dataDir = path.join(__dirname, "data");
 const submissionsDir = path.join(dataDir, "submissions");
 const pdfDir = path.join(dataDir, "pdfs");
+const pdfLogoMarkPath = path.join(__dirname, "public", "pdf-logo-mark.png");
 
 fs.mkdirSync(submissionsDir, { recursive: true });
 fs.mkdirSync(pdfDir, { recursive: true });
@@ -39,6 +41,7 @@ app.use(session({
 
 function nowIso() { return new Date().toISOString(); }
 function uniq(arr) { return [...new Set(arr.filter(Boolean))]; }
+let sesIdentityCache = null;
 
 const loginAttempts = new Map();
 function loginKey(req) {
@@ -206,44 +209,461 @@ function splitSignerTimeline(docJson) {
   }));
 }
 
-function generateFinalSplitPdf(docJson) {
-  const outPath = splitPdfPath(docJson.id);
-  const payload = docJson.payload || {};
-  const contributors = payload.contributors || [];
+function safeText(value) {
+  return String(value || "").trim() || "N/A";
+}
 
-  const pdf = new PDFDocument({ margin: 40 });
-  const stream = fs.createWriteStream(outPath);
-  pdf.pipe(stream);
+function formatPercent(value) {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? `${amount}%` : "0%";
+}
 
-  pdf.fontSize(18).text("Blak Marigold Studio Split Sheet - Final Packet", { underline: true });
-  pdf.moveDown();
-  pdf.fontSize(11).text(`Submission ID: ${docJson.id}`);
-  pdf.text(`Status: ${docJson.status}`);
-  pdf.text(`Song Title: ${payload.songTitle || ""}`);
-  pdf.text(`Alt Title: ${payload.alternateTitle || ""}`);
-  pdf.text(`Date: ${payload.date || ""}`);
-  pdf.text(`Version: ${payload.version || 1}`);
-  pdf.text(`Session Location: ${payload.sessionLocation || ""}`);
-  pdf.text(`Created: ${docJson.createdAt}`);
-  pdf.text(`Updated: ${docJson.updatedAt || docJson.createdAt}`);
-  pdf.moveDown();
+function formatIsoLabel(value) {
+  if (!value) return "Pending";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
 
-  contributors.forEach((c, i) => {
-    pdf.fontSize(12).text(`Contributor #${i + 1}: ${c.legalName}`);
-    pdf.fontSize(10).text(`Role: ${c.role}`);
-    pdf.text(`Email: ${c.email} | Phone: ${c.phone}`);
-    pdf.text(`Writer Share: ${c.writerShare}% | Publisher Share: ${c.publisherShare}%`);
-    pdf.text(`Typed Signature: ${c.typedSignatureName || ""}`);
-    pdf.text(`Signed At: ${c.signedAt || "Pending"}`);
-    pdf.moveDown(0.7);
+function splitTotals(contributors = []) {
+  return contributors.reduce((totals, contributor) => {
+    totals.writer += Number(contributor.writerShare || 0);
+    totals.publisher += Number(contributor.publisherShare || 0);
+    return totals;
+  }, { writer: 0, publisher: 0 });
+}
+
+function signatureImageBuffer(signatureData) {
+  const match = String(signatureData || "").match(/^data:image\/\w+;base64,(.+)$/);
+  if (!match) return null;
+  try {
+    return Buffer.from(match[1], "base64");
+  } catch {
+    return null;
+  }
+}
+
+function ensurePdfSpace(pdf, neededHeight = 80) {
+  const bottom = pdf.page.height - pdf.page.margins.bottom;
+  if (pdf.y + neededHeight > bottom) {
+    pdf.addPage();
+  }
+}
+
+function drawPdfHeader(pdf, title, subtitle) {
+  const left = pdf.page.margins.left;
+  const width = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
+  const top = pdf.y;
+  const textLeft = left + 82;
+
+  pdf.save();
+  pdf.roundedRect(left, top, width, 62, 10).fill("#111111");
+  if (fs.existsSync(pdfLogoMarkPath)) {
+    pdf.image(pdfLogoMarkPath, left + 14, top + 8, { fit: [54, 54], align: "center", valign: "center" });
+  } else {
+    pdf.roundedRect(left + 14, top + 11, 54, 38, 8).fill("#d4af37");
+  }
+  pdf.fillColor("#d4af37").fontSize(9).text("BLAK MARIGOLD STUDIO", textLeft, top + 14, {
+    width: width - (textLeft - left) - 18,
+    characterSpacing: 1.2
+  });
+  pdf.fillColor("#ffffff").fontSize(15.5).text(title, textLeft, top + 24, {
+    width: width - (textLeft - left) - 18
+  });
+  if (subtitle) {
+    pdf.fillColor("#d8d8d8").fontSize(8).text(subtitle, textLeft, top + 40, {
+      width: width - (textLeft - left) - 18
+    });
+  }
+  pdf.restore();
+  pdf.moveDown(3.8);
+}
+
+function drawSectionHeading(pdf, title) {
+  ensurePdfSpace(pdf, 22);
+  const headingTop = pdf.y + 2;
+  const headingLeft = pdf.page.margins.left + 18;
+  const headingWidth = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right - 36;
+  pdf.fillColor("#b8860b").fontSize(9).text(title.toUpperCase(), headingLeft, headingTop, {
+    width: headingWidth,
+    align: "left"
+  });
+  pdf.y = headingTop + 16;
+  pdf.fillColor("#111111");
+}
+
+function drawKeyValueGrid(pdf, rows = []) {
+  const usableWidth = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
+  const colGap = 16;
+  const colWidth = (usableWidth - colGap) / 2;
+  const startX = pdf.page.margins.left;
+  const rightX = startX + colWidth + colGap;
+  const rowHeight = 24;
+
+  for (let index = 0; index < rows.length; index += 2) {
+    ensurePdfSpace(pdf, rowHeight + 10);
+    const pair = rows.slice(index, index + 2);
+    const rowTop = pdf.y;
+
+    pair.forEach((item, offset) => {
+      const x = offset === 0 ? startX : rightX;
+      pdf.save();
+      pdf.roundedRect(x, rowTop, colWidth, rowHeight, 6).fillAndStroke("#f7f2e7", "#d7c49b");
+      pdf.fillColor("#6b5b3a").fontSize(6.5).text(item.label, x + 9, rowTop + 4, { width: colWidth - 18 });
+      pdf.fillColor("#111111").fontSize(8.5).text(item.value, x + 9, rowTop + 12, { width: colWidth - 18 });
+      pdf.restore();
+    });
+
+    pdf.y = rowTop + rowHeight + 4;
+  }
+}
+
+function drawContributorCard(pdf, contributor, index, options = {}) {
+  const signed = Boolean(contributor.signedAt);
+  const statusLabel = signed ? "Signed" : (options.pendingSummary ? "Awaiting signature" : "Pending");
+  const signatureBuffer = signatureImageBuffer(contributor.signatureData);
+  const cardHeight = signatureBuffer ? 104 : 92;
+  ensurePdfSpace(pdf, cardHeight);
+
+  const left = pdf.page.margins.left;
+  const width = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
+  const top = pdf.y;
+
+  pdf.save();
+  pdf.lineWidth(1);
+  pdf.roundedRect(left, top, width, cardHeight, 10).fillAndStroke("#ffffff", "#c8b68b");
+  pdf.roundedRect(left + 12, top + 9, 80, 18, 9).fill("#f3ead4");
+  pdf.fillColor("#6b5b3a").fontSize(6.4).text(`PARTY ${index + 1}`, left + 12, top + 15, { width: 80, align: "center" });
+  pdf.fillColor("#111111").fontSize(9.4).text(`${safeText(contributor.legalName)}`, left + 102, top + 11, { width: width - 210 });
+  pdf.fillColor(signed ? "#1f5f35" : "#8a6d1d").fontSize(7.8).text(statusLabel, left + width - 120, top + 14, { width: 100, align: "right" });
+
+  const detailsTop = top + 23;
+  const columnGap = 16;
+  const columnWidth = (width - 32 - columnGap) / 2;
+  const leftCol = left + 16;
+  const rightCol = leftCol + columnWidth + columnGap;
+
+  const leftDetails = [
+    `Role: ${safeText(contributor.role)}`,
+    `Email / Phone: ${safeText(contributor.email)} / ${safeText(contributor.phone)}`,
+    `Address: ${safeText(contributor.address)}`
+  ];
+  const rightDetails = [
+    `Shares: W ${formatPercent(contributor.writerShare)} / P ${formatPercent(contributor.publisherShare)}`,
+    `PRO / IPI: ${safeText(contributor.pro)} / ${safeText(contributor.ipi)}`,
+    `Pub / IPI: ${safeText(contributor.publisherName)} / ${safeText(contributor.publisherIpi)}`
+  ];
+
+  pdf.fontSize(7.2).fillColor("#222222");
+  leftDetails.forEach((line, lineIndex) => pdf.text(line, leftCol, detailsTop + (lineIndex * 7.5), { width: columnWidth }));
+  rightDetails.forEach((line, lineIndex) => pdf.text(line, rightCol, detailsTop + (lineIndex * 7.5), { width: columnWidth }));
+
+  pdf.moveTo(left + 14, top + 48).lineTo(left + width - 14, top + 48).strokeColor("#e2d8bd").stroke();
+  pdf.fillColor("#6b5b3a").fontSize(6.4).text("EXECUTED BY", left + 14, top + 53, { width: 150 });
+  pdf.moveTo(left + 14, top + 74).lineTo(left + 205, top + 74).strokeColor("#6f6f6f").lineWidth(0.8).stroke();
+  pdf.fillColor("#111111").fontSize(7.8).text(safeText(contributor.typedSignatureName || contributor.legalName), left + 14, top + 61, { width: 190, align: "center" });
+  pdf.fontSize(6.2).fillColor("#666666").text("Typed name / electronic signature", left + 14, top + 76, { width: 190, align: "center" });
+  pdf.fontSize(6.6).fillColor("#444444").text(`Date signed: ${formatIsoLabel(contributor.signedAt)}`, left + 14, top + 85, { width: 210 });
+
+  if (signatureBuffer) {
+    try {
+      pdf.roundedRect(left + width - 138, top + 55, 108, 26, 6).fill("#fbf7ee").strokeColor("#d9ccb1").stroke();
+      pdf.image(signatureBuffer, left + width - 134, top + 58, {
+        fit: [100, 16],
+        align: "right",
+        valign: "center"
+      });
+    } catch {
+      pdf.fontSize(6).fillColor("#666666").text("Signature image on file could not be rendered.", left + width - 138, top + 65, {
+        width: 108,
+        align: "right"
+      });
+    }
+  } else {
+    pdf.fontSize(6).fillColor("#666666").text("No drawn signature on file yet.", left + width - 138, top + 65, {
+      width: 108,
+      align: "right"
+    });
+  }
+
+  pdf.restore();
+  pdf.y = top + cardHeight + 5;
+}
+
+function drawContributorGrid(pdf, contributors, options = {}) {
+  if (contributors.length !== 2) {
+    contributors.forEach((contributor, index) => drawContributorCard(pdf, contributor, index, options));
+    return;
+  }
+
+  const left = pdf.page.margins.left;
+  const gap = 12;
+  const totalWidth = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
+  const cardWidth = (totalWidth - gap) / 2;
+  const top = pdf.y;
+  const cardHeight = 138;
+  ensurePdfSpace(pdf, cardHeight + 4);
+
+  contributors.forEach((contributor, index) => {
+    const signed = Boolean(contributor.signedAt);
+    const statusLabel = signed ? "Signed" : (options.pendingSummary ? "Awaiting signature" : "Pending");
+    const signatureBuffer = signatureImageBuffer(contributor.signatureData);
+    const x = left + (index * (cardWidth + gap));
+
+    pdf.save();
+    pdf.lineWidth(1);
+    pdf.roundedRect(x, top, cardWidth, cardHeight, 10).fillAndStroke("#ffffff", "#c8b68b");
+    pdf.roundedRect(x + 10, top + 9, 72, 16, 8).fill("#f3ead4");
+    pdf.fillColor("#6b5b3a").fontSize(6.2).text(`PARTY ${index + 1}`, x + 10, top + 14, { width: 72, align: "center" });
+    pdf.fillColor("#111111").fontSize(9.2).text(safeText(contributor.legalName), x + 12, top + 31, { width: cardWidth - 24 });
+    pdf.fillColor(signed ? "#1f5f35" : "#8a6d1d").fontSize(7.2).text(statusLabel, x + cardWidth - 78, top + 14, { width: 66, align: "right" });
+
+    const lines = [
+      `Role: ${safeText(contributor.role)}`,
+      `Email: ${safeText(contributor.email)}`,
+      `Phone: ${safeText(contributor.phone)}`,
+      `PRO / IPI: ${safeText(contributor.pro)} / ${safeText(contributor.ipi)}`,
+      `Pub / IPI: ${safeText(contributor.publisherName)} / ${safeText(contributor.publisherIpi)}`,
+      `Shares: W ${formatPercent(contributor.writerShare)} / P ${formatPercent(contributor.publisherShare)}`
+    ];
+    pdf.fillColor("#222222").fontSize(7).text(lines.join("\n"), x + 12, top + 45, {
+      width: cardWidth - 24,
+      lineGap: 1.5
+    });
+
+    pdf.moveTo(x + 12, top + 94).lineTo(x + cardWidth - 12, top + 94).strokeColor("#e2d8bd").stroke();
+    pdf.fillColor("#6b5b3a").fontSize(6.2).text("EXECUTED BY", x + 12, top + 99, { width: 110 });
+    pdf.moveTo(x + 12, top + 121).lineTo(x + cardWidth - 12, top + 121).strokeColor("#6f6f6f").lineWidth(0.8).stroke();
+    pdf.fillColor("#111111").fontSize(7.4).text(safeText(contributor.typedSignatureName || contributor.legalName), x + 12, top + 108, {
+      width: cardWidth - 24,
+      align: "center"
+    });
+    pdf.fontSize(6).fillColor("#666666").text("Typed name / electronic signature", x + 12, top + 123, {
+      width: cardWidth - 24,
+      align: "center"
+    });
+    pdf.fontSize(6.2).fillColor("#444444").text(`Date signed: ${formatIsoLabel(contributor.signedAt)}`, x + 12, top + 130, {
+      width: cardWidth - 24
+    });
+
+    if (signatureBuffer) {
+      try {
+        pdf.roundedRect(x + cardWidth - 94, top + 98, 82, 18, 5).fill("#fbf7ee").strokeColor("#d9ccb1").stroke();
+        pdf.image(signatureBuffer, x + cardWidth - 90, top + 100, {
+          fit: [74, 12],
+          align: "right",
+          valign: "center"
+        });
+      } catch {}
+    }
+
+    pdf.restore();
   });
 
+  pdf.y = top + cardHeight + 5;
+}
+
+function drawDetailRow(pdf, label, value, x, y, width) {
+  pdf.fillColor("#7a6740").fontSize(7).text(label, x, y, { width });
+  pdf.fillColor("#111111").fontSize(9).text(safeText(value), x, y + 10, { width });
+}
+
+function drawContributorDetailSection(pdf, contributor, index) {
+  ensurePdfSpace(pdf, 470);
+  const left = pdf.page.margins.left;
+  const width = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
+  const top = pdf.y;
+  const signatureBuffer = signatureImageBuffer(contributor.signatureData);
+
+  pdf.save();
+  pdf.roundedRect(left, top, width, 470, 10).fillAndStroke("#ffffff", "#c8b68b");
+  pdf.roundedRect(left + 16, top + 16, 110, 22, 10).fill("#f3ead4");
+  pdf.fillColor("#6b5b3a").fontSize(8).text(`CONTRIBUTOR ${index + 1}`, left + 16, top + 23, { width: 110, align: "center" });
+  pdf.fillColor("#111111").fontSize(14).text(safeText(contributor.legalName), left + 140, top + 19, { width: width - 156 });
+
+  const colGap = 18;
+  const colWidth = (width - 48 - colGap) / 2;
+  const col1 = left + 16;
+  const col2 = col1 + colWidth + colGap;
+  let y = top + 52;
+
+  drawDetailRow(pdf, "Role", contributor.role, col1, y, colWidth);
+  drawDetailRow(pdf, "Email", contributor.email, col2, y, colWidth);
+  y += 28;
+  drawDetailRow(pdf, "Phone", contributor.phone, col1, y, colWidth);
+  drawDetailRow(pdf, "Address", contributor.address, col2, y, colWidth);
+  y += 34;
+  drawDetailRow(pdf, "PRO", contributor.pro, col1, y, colWidth);
+  drawDetailRow(pdf, "IPI / CAE", contributor.ipi, col2, y, colWidth);
+  y += 28;
+  drawDetailRow(pdf, "Publisher Name", contributor.publisherName, col1, y, colWidth);
+  drawDetailRow(pdf, "Publisher IPI / CAE", contributor.publisherIpi, col2, y, colWidth);
+  y += 34;
+  drawDetailRow(pdf, "Writer Share", formatPercent(contributor.writerShare), col1, y, colWidth);
+  drawDetailRow(pdf, "Publisher Share", formatPercent(contributor.publisherShare), col2, y, colWidth);
+
+  const signatureTop = y + 42;
+  pdf.moveTo(left + 16, signatureTop).lineTo(left + width - 16, signatureTop).strokeColor("#e2d8bd").lineWidth(1).stroke();
+  pdf.fillColor("#b8860b").fontSize(10).text("SIGNATURE AND EXECUTION", left + 16, signatureTop + 12, { width: 220 });
+
+  pdf.roundedRect(left + 16, signatureTop + 46, width - 32, 100, 8).fillAndStroke("#fbf7ee", "#d9ccb1");
+  pdf.fillColor("#7a6740").fontSize(8).text("Drawn signature on file", left + 30, signatureTop + 58, { width: 180 });
+
+  if (signatureBuffer) {
+    try {
+      pdf.image(signatureBuffer, left + 30, signatureTop + 76, {
+        fit: [width - 92, 42],
+        align: "center",
+        valign: "center"
+      });
+    } catch {
+      pdf.fontSize(8).fillColor("#666666").text("Signature image could not be rendered from saved data.", left + 30, signatureTop + 88, {
+        width: width - 92,
+        align: "center"
+      });
+    }
+  } else {
+    pdf.fontSize(8).fillColor("#666666").text("No drawn signature was saved for this contributor.", left + 30, signatureTop + 88, {
+      width: width - 92,
+      align: "center"
+    });
+  }
+
+  pdf.moveTo(left + 16, signatureTop + 184).lineTo(left + 290, signatureTop + 184).strokeColor("#6f6f6f").lineWidth(0.8).stroke();
+  pdf.fillColor("#111111").fontSize(10).text(safeText(contributor.typedSignatureName || contributor.legalName), left + 16, signatureTop + 163, {
+    width: 274,
+    align: "center"
+  });
+  pdf.fontSize(7).fillColor("#666666").text("Typed name / electronic signature", left + 16, signatureTop + 187, {
+    width: 274,
+    align: "center"
+  });
+  drawDetailRow(pdf, "Signed At", formatIsoLabel(contributor.signedAt), left + 330, signatureTop + 155, 180);
+  drawDetailRow(pdf, "Email Confirmation", contributor.email, left + 330, signatureTop + 195, 180);
+
+  pdf.restore();
+  pdf.y = top + 486;
+}
+
+function renderSplitSheetPdf(pdf, docJson, options = {}) {
+  const payload = docJson.payload || {};
+  const contributors = payload.contributors || [];
+  const totals = splitTotals(contributors);
   const auditChecksum = checksumFor(docJson);
-  pdf.moveDown();
-  pdf.fontSize(10).text("Audit Block", { underline: true });
-  pdf.text(`Origin IP: ${docJson.ip || ""}`);
-  pdf.text(`User Agent: ${docJson.userAgent || ""}`);
-  pdf.text(`Checksum (SHA-256): ${auditChecksum}`);
+  const packetLabel = options.pendingSummary ? "Signature Packet Summary" : "Final Executed Split Sheet";
+
+  drawPdfHeader(
+    pdf,
+    "Songwriter Split Sheet",
+    `${packetLabel} for ${safeText(payload.songTitle)}`
+  );
+
+  const summaryLeft = pdf.page.margins.left;
+  const summaryTop = pdf.y + 6;
+  const summaryWidth = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
+  const summaryBottom = pdf.page.height - pdf.page.margins.bottom - 24;
+  pdf.save();
+  pdf.roundedRect(summaryLeft, summaryTop, summaryWidth, summaryBottom - summaryTop, 12).strokeColor("#d9ccb1").lineWidth(1).stroke();
+  pdf.restore();
+  pdf.y = summaryTop + 14;
+
+  drawSectionHeading(pdf, "Song Information");
+  const songInfoRows = [
+    { label: "Song title", value: safeText(payload.songTitle) },
+    { label: "Alternate title", value: safeText(payload.alternateTitle) },
+    { label: "Session date", value: safeText(payload.date) },
+    { label: "Session location", value: safeText(payload.sessionLocation) },
+    { label: "ISWC", value: safeText(payload.iswc) },
+    { label: "ISRC", value: safeText(payload.isrc) },
+    { label: "Submission ID", value: safeText(docJson.id) },
+    { label: "Version / status", value: `${safeText(payload.version || 1)} / ${safeText(docJson.status)}` }
+  ];
+  drawKeyValueGrid(pdf, songInfoRows);
+
+  if (String(payload.notes || "").trim()) {
+    drawSectionHeading(pdf, "Session Notes");
+    ensurePdfSpace(pdf, 50);
+    pdf.roundedRect(pdf.page.margins.left, pdf.y, pdf.page.width - pdf.page.margins.left - pdf.page.margins.right, 42, 8)
+      .fillAndStroke("#fffdf8", "#d7c49b");
+    pdf.fillColor("#111111").fontSize(9).text(safeText(payload.notes), pdf.page.margins.left + 12, pdf.y + 10, {
+      width: pdf.page.width - pdf.page.margins.left - pdf.page.margins.right - 24
+    });
+    pdf.y += 52;
+  }
+
+  drawSectionHeading(pdf, "Ownership Summary");
+  drawKeyValueGrid(pdf, [
+    { label: "Total writer share", value: formatPercent(totals.writer) },
+    { label: "Total publisher share", value: formatPercent(totals.publisher) },
+    { label: "Contributors", value: String(contributors.length) },
+    { label: "Signature state", value: options.pendingSummary ? "Still collecting signatures" : "All signatures completed" }
+  ]);
+
+  contributors.forEach((contributor, index) => {
+    pdf.addPage();
+    drawPdfHeader(
+      pdf,
+      "Contributor Signature Packet",
+      `${safeText(payload.songTitle)} | contributor ${index + 1} of ${contributors.length}`
+    );
+    drawSectionHeading(pdf, "Contributor Details");
+    drawContributorDetailSection(pdf, contributor, index);
+  });
+
+  pdf.addPage();
+  drawPdfHeader(
+    pdf,
+    "Agreement Language",
+    `${safeText(payload.songTitle)} | legal summary`
+  );
+  drawSectionHeading(pdf, "Agreement Language");
+  ensurePdfSpace(pdf, 240);
+  const legalLeft = pdf.page.margins.left;
+  const legalWidth = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
+  const legalTop = pdf.y;
+  pdf.roundedRect(legalLeft, legalTop, legalWidth, 190, 10).fillAndStroke("#fffdf8", "#d7c49b");
+  pdf.fillColor("#111111").fontSize(10).text(
+    "This split sheet is intended to memorialize the parties' current agreement regarding ownership of the musical composition identified in this packet.",
+    legalLeft + 18,
+    legalTop + 18,
+    { width: legalWidth - 36, lineGap: 3 }
+  );
+  [
+    "Each contributor confirms that the writer share and publisher share percentages shown in this packet are accurate to the best of that contributor's knowledge as of the execution date.",
+    "Each contributor agrees that the typed name and captured signature image associated with that contributor are intended to serve as that contributor's electronic signature and authentication of this record.",
+    "The parties acknowledge that this document may be relied upon as a written record of authorship, ownership, and publishing information for administrative, royalty, and clearance purposes.",
+    "Any later change to ownership, publishing, administration, or contributor information should be documented in a revised split sheet signed by all affected parties."
+  ].forEach((line, index) => {
+    pdf.fillColor("#222222").fontSize(9.5).text(
+      `${index + 1}. ${line}`,
+      legalLeft + 18,
+      legalTop + 52 + (index * 28),
+      { width: legalWidth - 36, lineGap: 3 }
+    );
+  });
+  pdf.y = legalTop + 206;
+
+  pdf.fontSize(7).fillColor("#666666").text(
+    "Blak Marigold Studio | blakmarigold.com | splitsheet delivery record",
+    pdf.page.margins.left,
+    pdf.page.height - pdf.page.margins.bottom - 8,
+    { width: pdf.page.width - pdf.page.margins.left - pdf.page.margins.right, align: "center" }
+  );
+
+  return { auditChecksum };
+}
+
+function generateFinalSplitPdf(docJson) {
+  const outPath = splitPdfPath(docJson.id);
+  const pdf = new PDFDocument({ margin: 24 });
+  const stream = fs.createWriteStream(outPath);
+  pdf.pipe(stream);
+  const { auditChecksum } = renderSplitSheetPdf(pdf, docJson, { pendingSummary: false });
   pdf.end();
 
   return new Promise((resolve, reject) => {
@@ -253,24 +673,70 @@ function generateFinalSplitPdf(docJson) {
 }
 
 async function sendEmail({ subject, html, to, attachments = [] }) {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  const recipientList = Array.isArray(to) ? to.filter(Boolean) : [];
+  if (!recipientList.length) {
+    return { ok: false, skipped: true, reason: "no_recipients" };
+  }
+
+  const hasSmtp = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
+  const hasSes = Boolean((process.env.SES_REGION || process.env.AWS_REGION || process.env.AWS_PROFILE || process.env.FROM_EMAIL) && process.env.FROM_EMAIL);
+
+  if (!hasSmtp && !hasSes) {
     return { ok: false, skipped: true, reason: "smtp_not_configured" };
   }
-  const t = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: Number(process.env.SMTP_PORT || 465),
-    secure: String(process.env.SMTP_SECURE || "true") === "true",
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    tls: {
-      rejectUnauthorized: String(process.env.SMTP_TLS_REJECT_UNAUTHORIZED || "true") === "true"
+
+  if (hasSmtp) {
+    const t = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || "smtp.gmail.com",
+      port: Number(process.env.SMTP_PORT || 465),
+      secure: String(process.env.SMTP_SECURE || "true") === "true",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      tls: {
+        rejectUnauthorized: String(process.env.SMTP_TLS_REJECT_UNAUTHORIZED || "true") === "true"
+      }
+    });
+    try {
+      await t.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: recipientList.join(","), subject, html, attachments });
+      return { ok: true, skipped: false, reason: "sent" };
+    } catch (e) {
+      console.error("Email send failed:", e.message || e);
+      return { ok: false, skipped: false, reason: `smtp_error:${e.message || "unknown"}` };
     }
+  }
+
+  const sesRegion = process.env.SES_REGION || process.env.AWS_REGION || "us-east-1";
+  const sesClient = new SESv2Client({ region: sesRegion });
+  let normalizedRecipients = recipientList;
+  try {
+    if (!sesIdentityCache) {
+      const identityResp = await sesClient.send(new ListEmailIdentitiesCommand({}));
+      sesIdentityCache = (identityResp.EmailIdentities || [])
+        .filter((row) => row.IdentityType === "EMAIL_ADDRESS" && row.VerificationStatus === "SUCCESS")
+        .reduce((map, row) => {
+          map[String(row.IdentityName || "").toLowerCase()] = row.IdentityName;
+          return map;
+        }, {});
+    }
+    normalizedRecipients = recipientList.map((address) => sesIdentityCache[String(address).toLowerCase()] || address);
+  } catch (e) {
+    console.error("SES identity lookup failed:", e.message || e);
+  }
+  const sesTransport = nodemailer.createTransport({
+    SES: { sesClient, SendEmailCommand }
   });
   try {
-    await t.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: to.join(","), subject, html, attachments });
+    await sesTransport.sendMail({
+      from: process.env.FROM_EMAIL,
+      to: uniq(normalizedRecipients).join(","),
+      replyTo: process.env.REPLY_TO_EMAIL || process.env.NOTIFY_EMAIL || process.env.FROM_EMAIL,
+      subject,
+      html,
+      attachments
+    });
     return { ok: true, skipped: false, reason: "sent" };
   } catch (e) {
-    console.error("Email send failed:", e.message || e);
-    return { ok: false, skipped: false, reason: `smtp_error:${e.message || "unknown"}` };
+    console.error("SES send failed:", e.message || e);
+    return { ok: false, skipped: false, reason: `ses_error:${e.message || "unknown"}` };
   }
 }
 
@@ -332,6 +798,7 @@ app.get("/ready", (req, res) => res.json({
   ok: true,
   at: nowIso(),
   smtpConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
+  sesConfigured: Boolean((process.env.SES_REGION || process.env.AWS_REGION || process.env.AWS_PROFILE || process.env.FROM_EMAIL) && process.env.FROM_EMAIL),
   baseUrl
 }));
 app.get("/split-sheet", (req, res) => res.render("split-sheet", { error: null }));
@@ -569,22 +1036,12 @@ app.get("/split-sheet/pdf/:id", async (req, res) => {
   }
 
   // fallback summary packet if final not generated yet
-  const payload = docJson.payload || {};
-  const contributors = payload.contributors || [];
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="split-sheet-${docJson.id}-summary.pdf"`);
 
-  const pdf = new PDFDocument({ margin: 40 });
+  const pdf = new PDFDocument({ margin: 24 });
   pdf.pipe(res);
-  pdf.fontSize(18).text("Blak Marigold Studio Split Sheet - Summary", { underline: true });
-  pdf.moveDown();
-  pdf.fontSize(11).text(`Submission ID: ${docJson.id}`);
-  pdf.text(`Song Title: ${payload.songTitle || ""}`);
-  pdf.text(`Status: ${docJson.status}`);
-  contributors.forEach((c, i) => {
-    pdf.moveDown(0.5);
-    pdf.text(`${i + 1}. ${c.legalName} - ${c.writerShare}% / ${c.publisherShare}% - Signed: ${c.signedAt ? "Yes" : "No"}`);
-  });
+  renderSplitSheetPdf(pdf, docJson, { pendingSummary: true });
   pdf.end();
 });
 

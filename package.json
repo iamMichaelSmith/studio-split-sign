@@ -5,11 +5,12 @@
   "description": "Local signing app for split sheets and studio agreements",
   "main": "server.js",
   "scripts": {
-    "dev": "node server.js",
-    "start": "node server.js",
+    "dev": "node --use-system-ca server.js",
+    "start": "node --use-system-ca server.js",
     "test": "node tests/smoke.cjs"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1077.0",
     "dotenv": "^16.4.5",
     "ejs": "^3.1.10",
     "express": "^4.19.2",
