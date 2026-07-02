@@ -3,3 +3,6 @@ node_modules/
 data/submissions/
 data/pdfs/
 *.log
+.local/
+vst/build/
+vst/.cmake/

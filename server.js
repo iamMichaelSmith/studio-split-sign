@@ -8,14 +8,27 @@ const nodemailer = require("nodemailer");
 const PDFDocument = require("pdfkit");
 const { SESv2Client, SendEmailCommand, ListEmailIdentitiesCommand } = require("@aws-sdk/client-sesv2");
 const { nanoid } = require("nanoid");
+const { createAuthService, ApiAuthError } = require("./services/auth-service");
+const { createDatabaseService } = require("./services/database-service");
+const { createSubmissionService } = require("./services/submission-service");
+const {
+  SplitSheetValidationError,
+  buildSplitSheetDraftPayload,
+  buildSplitSheetPayload,
+  detailSplitSheet,
+  splitTotals,
+  summarizeSplitSheet
+} = require("./services/split-sheet-service");
 
 const app = express();
 const PORT = process.env.PORT || 5050;
 const HOST = process.env.HOST || "0.0.0.0";
 const baseUrl = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
-const dataDir = path.join(__dirname, "data");
+const dbProvider = process.env.DB_PROVIDER || "sqlite";
+const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, "data");
 const submissionsDir = path.join(dataDir, "submissions");
 const pdfDir = path.join(dataDir, "pdfs");
+const authDbPath = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(dataDir, "app.db");
 const pdfLogoMarkPath = path.join(__dirname, "public", "pdf-logo-mark.png");
 
 fs.mkdirSync(submissionsDir, { recursive: true });
@@ -42,6 +55,29 @@ app.use(session({
 function nowIso() { return new Date().toISOString(); }
 function uniq(arr) { return [...new Set(arr.filter(Boolean))]; }
 let sesIdentityCache = null;
+const allowPublicRegistration = String(process.env.ALLOW_PUBLIC_REGISTRATION || "false").toLowerCase() === "true";
+const databaseService = createDatabaseService({
+  provider: dbProvider,
+  dbPath: authDbPath,
+  databaseUrl: process.env.DATABASE_URL
+});
+const submissionStore = createSubmissionService({
+  db: databaseService.client,
+  legacySubmissionsDir: submissionsDir,
+  provider: databaseService.provider
+});
+const authService = createAuthService({
+  db: databaseService.client,
+  tokenSecret: process.env.API_TOKEN_SECRET || process.env.SESSION_SECRET || "split-open-sign-api-secret",
+  accessTokenTtlMinutes: Number(process.env.API_ACCESS_TOKEN_TTL_MINUTES || 15),
+  refreshTokenTtlDays: Number(process.env.API_REFRESH_TOKEN_TTL_DAYS || 30),
+  provider: databaseService.provider,
+  bootstrapOwner: {
+    email: process.env.OWNER_EMAIL || "",
+    password: process.env.OWNER_PASSWORD || "",
+    displayName: process.env.OWNER_DISPLAY_NAME || "Owner"
+  }
+});
 
 const loginAttempts = new Map();
 function loginKey(req) {
@@ -70,121 +106,43 @@ function clearLoginFailures(req) {
   loginAttempts.delete(loginKey(req));
 }
 
-function parseContributors(body) {
-  const pick = (k) => Array.isArray(body[k]) ? body[k] : [body[k]].filter(Boolean);
-  const names = pick("legalName"), roles = pick("role"), addresses = pick("address"), phones = pick("phone"), emails = pick("email"), pros = pick("pro"), ipis = pick("ipi"), pubs = pick("publisherName"), pubIpis = pick("publisherIpi"), w = pick("writerShare"), p = pick("publisherShare"), sig = pick("signatureData");
-  const typed = pick("typedSignatureName");
-  return names.map((n, i) => ({
-    legalName: n,
-    role: roles[i] || "",
-    address: addresses[i] || "",
-    phone: phones[i] || "",
-    email: emails[i] || "",
-    pro: pros[i] || "",
-    ipi: ipis[i] || "",
-    publisherName: pubs[i] || "",
-    publisherIpi: pubIpis[i] || "",
-    writerShare: Number(w[i] || 0),
-    publisherShare: Number(p[i] || 0),
-    typedSignatureName: typed[i] || "",
-    signatureData: sig[i] || ""
-  })).filter((c) => c.legalName);
+function requestIp(req) {
+  return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "");
 }
 
-function submissionPath(id) {
-  return path.join(submissionsDir, `${id}.json`);
+async function loadSubmission(id) {
+  return submissionStore.getSubmission(id);
 }
 
-function loadSubmission(id) {
-  const p = submissionPath(id);
-  if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, "utf-8"));
+async function saveSubmissionRow(row) {
+  return submissionStore.saveSubmission(row);
 }
 
-function saveSubmissionRow(row) {
-  fs.writeFileSync(submissionPath(row.id), JSON.stringify(row, null, 2));
-}
-
-function saveSubmission(type, payload, req) {
-  const id = nanoid(10);
-  const row = {
-    id,
+async function saveSubmission(type, payload, req) {
+  return submissionStore.createSubmission({
+    id: nanoid(10),
     type,
     status: payload.collectSignaturesByInvite ? "pending-signatures" : "completed",
     createdAt: nowIso(),
     updatedAt: nowIso(),
-    ip: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
+    ip: requestIp(req),
     userAgent: req.headers["user-agent"],
+    ownerUserId: req.apiUser?.id || null,
+    ownerEmail: req.apiUser?.email || null,
     payload
-  };
-  saveSubmissionRow(row);
-  return row;
+  });
 }
 
-function listSubmissions() {
-  return fs.readdirSync(submissionsDir)
-    .filter((f) => f.endsWith(".json"))
-    .map((f) => JSON.parse(fs.readFileSync(path.join(submissionsDir, f), "utf-8")))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+async function listSubmissions() {
+  return submissionStore.listSubmissions();
 }
 
-function nextSplitVersion(songTitle) {
-  const normalized = String(songTitle || "").trim().toLowerCase();
-  if (!normalized) return 1;
-  const all = listSubmissions().filter((d) => d.type === "split-sheet");
-  const matches = all.filter((d) => String(d.payload?.songTitle || "").trim().toLowerCase() === normalized);
-  const maxV = matches.reduce((m, d) => Math.max(m, Number(d.payload?.version || 1)), 0);
-  return maxV + 1;
+async function nextSplitVersion(songTitle) {
+  return submissionStore.nextSplitVersion(songTitle);
 }
 
 function splitPdfPath(id) {
   return path.join(pdfDir, `split-sheet-${id}-final.pdf`);
-}
-
-function agreementPdfPath(type, id) {
-  return path.join(pdfDir, `${type}-${id}.pdf`);
-}
-
-function generateAgreementPdf(docJson, titleText) {
-  const outPath = agreementPdfPath(docJson.type, docJson.id);
-  const pdf = new PDFDocument({ margin: 40 });
-  const stream = fs.createWriteStream(outPath);
-  pdf.pipe(stream);
-
-  const p = docJson.payload || {};
-  pdf.fontSize(18).text(titleText, { underline: true });
-  pdf.moveDown();
-  pdf.fontSize(11).text(`Submission ID: ${docJson.id}`);
-  pdf.text(`Created: ${docJson.createdAt || ""}`);
-  pdf.text(`Status: ${docJson.status || ""}`);
-  pdf.moveDown();
-
-  if (docJson.type === "sync-collab") {
-    pdf.text(`Company Rep: ${p.companyRepName || ""}`);
-    pdf.text(`Signed Date: ${p.signedDate || ""}`);
-    pdf.moveDown();
-    (p.collaborators || []).forEach((c, i) => {
-      pdf.text(`${i + 1}. ${c.legalName || ""} (${c.role || ""})`);
-      pdf.text(`Email: ${c.email || ""} | Phone: ${c.phone || ""}`);
-      pdf.text(`PRO/IPI: ${c.pro || ""} / ${c.ipi || ""}`);
-      pdf.moveDown(0.4);
-    });
-  } else if (docJson.type === "work-for-hire") {
-    pdf.text(`Project Title: ${p.projectTitle || ""}`);
-    pdf.text(`Contractor: ${p.contractorName || ""}`);
-    pdf.text(`Contractor Email: ${p.contractorEmail || ""}`);
-    pdf.text(`Fee: ${p.fee || ""}`);
-    pdf.text(`Signed Date: ${p.signedDate || ""}`);
-  }
-
-  pdf.moveDown();
-  pdf.fontSize(10).text("Generated by Blak Marigold Studio agreement workflow.");
-  pdf.end();
-
-  return new Promise((resolve, reject) => {
-    stream.on("finish", () => resolve({ outPath }));
-    stream.on("error", reject);
-  });
 }
 
 function checksumFor(row) {
@@ -228,14 +186,6 @@ function formatIsoLabel(value) {
     hour: "numeric",
     minute: "2-digit"
   });
-}
-
-function splitTotals(contributors = []) {
-  return contributors.reduce((totals, contributor) => {
-    totals.writer += Number(contributor.writerShare || 0);
-    totals.publisher += Number(contributor.publisherShare || 0);
-    return totals;
-  }, { writer: 0, publisher: 0 });
 }
 
 function signatureImageBuffer(signatureData) {
@@ -791,118 +741,357 @@ async function sendSplitInvite(doc, contributor) {
 }
 
 function requireAdmin(req, res, next) { if (req.session && req.session.isAdmin) return next(); res.redirect("/admin/login"); }
+function apiError(res, status, message, details = undefined) {
+  const body = { ok: false, error: message };
+  if (details) body.details = details;
+  return res.status(status).json(body);
+}
+
+function bearerTokenFrom(req) {
+  const authHeader = String(req.headers.authorization || "").trim();
+  if (!authHeader.toLowerCase().startsWith("bearer ")) return "";
+  return authHeader.slice(7).trim();
+}
+
+async function requireApiAuth(req, res, next) {
+  try {
+    const session = await authService.getSessionByAccessToken(bearerTokenFrom(req));
+    req.apiUser = session.user;
+    req.apiSession = session;
+    return next();
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return apiError(res, error.statusCode, error.message);
+    }
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while authenticating request.");
+  }
+}
+
+function canAccessSplitSheet(doc, user) {
+  if (!doc) return false;
+  if (doc.ownerUserId && user?.id) return doc.ownerUserId === user.id;
+  if (doc.ownerEmail && user?.email) return String(doc.ownerEmail).toLowerCase() === String(user.email).toLowerCase();
+  if (doc.ownerUsername && user?.email) return String(doc.ownerUsername).toLowerCase() === String(user.email).toLowerCase();
+  return false;
+}
+
+async function createSplitSheetSubmission(input, req) {
+  let draft = null;
+  if (input.draftId) {
+    draft = await loadSubmission(String(input.draftId).trim());
+    if (!draft || draft.type !== "split-sheet") {
+      throw new SplitSheetValidationError("Draft split sheet not found.", { field: "draftId" });
+    }
+    if (!canAccessSplitSheet(draft, req.apiUser)) {
+      throw new ApiAuthError("You do not have access to this draft.", 403);
+    }
+  }
+
+  const { payload, collectByInvite, recipientEmails } = await buildSplitSheetPayload(input, {
+    nextVersion: nextSplitVersion,
+    createSignerToken: () => nanoid(22),
+    nowIso
+  });
+  const saved = draft
+    ? await saveSubmissionRow({
+      ...draft,
+      status: collectByInvite ? "pending-signatures" : "completed",
+      updatedAt: nowIso(),
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"],
+      payload
+    })
+    : await saveSubmission("split-sheet", payload, req);
+  const recipients = uniq([
+    process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com",
+    ...payload.contributors.map((contributor) => contributor.email),
+    ...recipientEmails
+  ]);
+
+  let emailResult = { ok: false, skipped: true, reason: "not_attempted" };
+
+  if (collectByInvite) {
+    for (const contributor of payload.contributors) {
+      await sendSplitInvite(saved, contributor);
+    }
+    emailResult = await sendEmail({
+      subject: `Split Sheet Created - ${payload.songTitle} (v${payload.version})`,
+      to: recipients,
+      html: `<h2>Split Sheet Created</h2><p>ID: ${saved.id}</p><p>Song: ${payload.songTitle}</p><p>Version: ${payload.version}</p><p>Status: Pending signatures</p><p><a href="${baseUrl}/split-sheet/pdf/${saved.id}">Download Current PDF Summary</a></p><p><b>Recipients:</b> ${recipients.join(", ")}</p>`
+    });
+  } else {
+    const { auditChecksum } = await generateFinalSplitPdf(saved);
+    saved.payload.auditChecksum = auditChecksum;
+    saved.updatedAt = nowIso();
+    await saveSubmissionRow(saved);
+
+    const finalPdf = splitPdfPath(saved.id);
+    emailResult = await sendEmail({
+      subject: `Split Sheet Complete - ${payload.songTitle} (v${payload.version})`,
+      to: recipients,
+      html: completionEmailHtml({
+        title: "Split Sheet Completed",
+        id: saved.id,
+        songLabel: `Song: ${payload.songTitle} (v${payload.version})`,
+        downloadUrl: `${baseUrl}/split-sheet/pdf/${saved.id}`,
+        recipients,
+        splitHtml: splitSummaryHtml(payload.contributors || [])
+      }),
+      attachments: fs.existsSync(finalPdf) ? [{ filename: path.basename(finalPdf), path: finalPdf }] : []
+    });
+  }
+
+  return { saved, payload, collectByInvite, emailResult };
+}
+
+async function createDraftSplitSheet(input, req) {
+  const payload = await buildSplitSheetDraftPayload(input, {
+    nextVersion: nextSplitVersion
+  });
+  return submissionStore.createSubmission({
+    id: nanoid(10),
+    type: "split-sheet",
+    status: "draft",
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    ip: requestIp(req),
+    userAgent: req.headers["user-agent"],
+    ownerUserId: req.apiUser.id,
+    ownerEmail: req.apiUser.email,
+    payload
+  });
+}
+
+async function updateDraftSplitSheet(doc, input, req) {
+  const payload = await buildSplitSheetDraftPayload(input, {
+    nextVersion: nextSplitVersion,
+    existingPayload: doc.payload || {}
+  });
+  return saveSubmissionRow({
+    ...doc,
+    status: "draft",
+    updatedAt: nowIso(),
+    ip: requestIp(req),
+    userAgent: req.headers["user-agent"],
+    payload
+  });
+}
 
 app.get("/", (req, res) => res.render("index"));
 app.get("/health", (req, res) => res.json({ ok: true, at: nowIso() }));
 app.get("/ready", (req, res) => res.json({
   ok: true,
   at: nowIso(),
+  dbProvider: databaseService.provider,
   smtpConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
   sesConfigured: Boolean((process.env.SES_REGION || process.env.AWS_REGION || process.env.AWS_PROFILE || process.env.FROM_EMAIL) && process.env.FROM_EMAIL),
   baseUrl
 }));
+app.get("/api/health", (req, res) => res.json({ ok: true, at: nowIso(), api: "v1" }));
+app.get("/api/ready", (req, res) => res.json({
+  ok: true,
+  at: nowIso(),
+  api: "v1",
+  dbProvider: databaseService.provider,
+  allowPublicRegistration,
+  smtpConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
+  sesConfigured: Boolean((process.env.SES_REGION || process.env.AWS_REGION || process.env.AWS_PROFILE || process.env.FROM_EMAIL) && process.env.FROM_EMAIL),
+  baseUrl
+}));
+app.post("/api/auth/register", async (req, res) => {
+  if (!allowPublicRegistration && await authService.userCount() > 0) {
+    return apiError(res, 403, "Public registration is disabled.");
+  }
+  try {
+    const result = await authService.registerUser({
+      email: req.body.email,
+      password: req.body.password,
+      displayName: req.body.displayName,
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"]
+    });
+    clearLoginFailures(req);
+    return res.status(201).json({ ok: true, ...result });
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return apiError(res, error.statusCode, error.message);
+    }
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while creating account.");
+  }
+});
+app.post("/api/auth/login", async (req, res) => {
+  const gate = canAttemptLogin(req);
+  if (!gate.allowed) {
+    return apiError(res, 429, `Too many attempts. Try again in ${gate.retryAfterSec}s.`);
+  }
+  try {
+    const result = await authService.createSession({
+      email: req.body.email,
+      password: req.body.password,
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"]
+    });
+    clearLoginFailures(req);
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      if (error.statusCode === 401) {
+        recordLoginFailure(req);
+      }
+      return apiError(res, error.statusCode, error.message);
+    }
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while creating API session.");
+  }
+});
+app.post("/api/auth/refresh", async (req, res) => {
+  try {
+    const result = await authService.refreshSession({
+      refreshToken: req.body.refreshToken,
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"]
+    });
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return apiError(res, error.statusCode, error.message);
+    }
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while refreshing API session.");
+  }
+});
+app.post("/api/auth/logout", async (req, res) => {
+  const revoked = await authService.revokeSessionByRefreshToken(req.body.refreshToken);
+  return res.json({ ok: true, revoked });
+});
+app.get("/api/me", requireApiAuth, (req, res) => res.json({
+  ok: true,
+  user: req.apiUser
+}));
+app.get("/api/split-sheets", requireApiAuth, async (req, res) => {
+  const statusFilter = String(req.query.status || "").trim().toLowerCase();
+  let docs = await submissionStore.listSubmissions({
+    ownerUserId: req.apiUser.id,
+    ownerEmail: req.apiUser.email,
+    type: "split-sheet"
+  });
+  if (statusFilter) {
+    docs = docs.filter((doc) => String(doc.status || "").toLowerCase() === statusFilter);
+  }
+  return res.json({
+    ok: true,
+    splitSheets: docs.map((doc) => summarizeSplitSheet(doc, baseUrl))
+  });
+});
+app.get("/api/split-sheets/:id", requireApiAuth, async (req, res) => {
+  const doc = await loadSubmission(req.params.id);
+  if (!doc || doc.type !== "split-sheet") {
+    return apiError(res, 404, "Split sheet not found.");
+  }
+  if (!canAccessSplitSheet(doc, req.apiUser)) {
+    return apiError(res, 403, "You do not have access to this split sheet.");
+  }
+  return res.json({
+    ok: true,
+    splitSheet: detailSplitSheet(doc, baseUrl)
+  });
+});
+app.post("/api/split-sheets/drafts", requireApiAuth, async (req, res) => {
+  try {
+    const draft = await createDraftSplitSheet(req.body, req);
+    return res.status(201).json({
+      ok: true,
+      splitSheet: detailSplitSheet(draft, baseUrl)
+    });
+  } catch (error) {
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while saving draft.");
+  }
+});
+app.put("/api/split-sheets/:id/draft", requireApiAuth, async (req, res) => {
+  try {
+    const doc = await loadSubmission(req.params.id);
+    if (!doc || doc.type !== "split-sheet") {
+      return apiError(res, 404, "Split sheet not found.");
+    }
+    if (!canAccessSplitSheet(doc, req.apiUser)) {
+      return apiError(res, 403, "You do not have access to this split sheet.");
+    }
+    if (doc.status !== "draft") {
+      return apiError(res, 409, "Only draft split sheets can be updated with this endpoint.");
+    }
+    const updated = await updateDraftSplitSheet(doc, req.body, req);
+    return res.json({
+      ok: true,
+      splitSheet: detailSplitSheet(updated, baseUrl)
+    });
+  } catch (error) {
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while updating draft.");
+  }
+});
+app.post("/api/split-sheets/validate", requireApiAuth, async (req, res) => {
+  try {
+    const prepared = await buildSplitSheetPayload(req.body, {
+      nextVersion: nextSplitVersion,
+      createSignerToken: () => nanoid(22),
+      nowIso
+    });
+    return res.json({
+      ok: true,
+      songTitle: prepared.payload.songTitle,
+      version: prepared.payload.version,
+      collectSignaturesByInvite: prepared.collectByInvite,
+      totals: prepared.totals,
+      contributorCount: prepared.contributors.length
+    });
+  } catch (error) {
+    if (error instanceof SplitSheetValidationError) {
+      return apiError(res, error.statusCode, error.message, error.details);
+    }
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while validating split sheet.");
+  }
+});
+app.post("/api/split-sheets", requireApiAuth, async (req, res) => {
+  try {
+    const result = await createSplitSheetSubmission(req.body, req);
+    return res.status(201).json({
+      ok: true,
+      splitSheet: summarizeSplitSheet(result.saved, baseUrl),
+      emailResult: result.emailResult
+    });
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return apiError(res, error.statusCode, error.message);
+    }
+    if (error instanceof SplitSheetValidationError) {
+      return apiError(res, error.statusCode, error.message, error.details);
+    }
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while saving split sheet.");
+  }
+});
+app.get("/api/split-sheets/:id/status", requireApiAuth, async (req, res) => {
+  const doc = await loadSubmission(req.params.id);
+  if (!doc || doc.type !== "split-sheet") {
+    return apiError(res, 404, "Split sheet not found.");
+  }
+  if (!canAccessSplitSheet(doc, req.apiUser)) {
+    return apiError(res, 403, "You do not have access to this split sheet.");
+  }
+  return res.json({
+    ok: true,
+    splitSheet: summarizeSplitSheet(doc, baseUrl)
+  });
+});
 app.get("/split-sheet", (req, res) => res.render("split-sheet", { error: null }));
 
 app.post("/split-sheet", async (req, res) => {
   try {
-    const contributors = parseContributors(req.body);
-    const writerTotal = contributors.reduce((a, c) => a + c.writerShare, 0);
-    const publisherTotal = contributors.reduce((a, c) => a + c.publisherShare, 0);
-    const collectByInvite = String(req.body.collectSignaturesByInvite || "").toLowerCase() === "yes";
-
-    if (!String(req.body.songTitle || "").trim()) {
-      return res.status(400).render("split-sheet", { error: "Song title is required." });
-    }
-    if (!contributors.length || contributors.length < 2) {
-      return res.status(400).render("split-sheet", { error: "At least 2 contributors are required for a valid split sheet." });
-    }
-
-    const hasMissingBasicFields = contributors.some((c) =>
-      !String(c.legalName || "").trim() ||
-      !String(c.role || "").trim() ||
-      !String(c.email || "").trim()
-    );
-    if (hasMissingBasicFields) {
-      return res.status(400).render("split-sheet", { error: "Each contributor must include legal name, role, and email." });
-    }
-
-    if (!collectByInvite) {
-      const hasMissingLegalFields = contributors.some((c) =>
-        !String(c.typedSignatureName || "").trim() ||
-        !String(c.signatureData || "").startsWith("data:image/")
-      );
-      if (hasMissingLegalFields) {
-        return res.status(400).render("split-sheet", { error: "Each contributor must include typed signature name and drawn signature unless invite flow is enabled." });
-      }
-    }
-
-    if (Math.round(writerTotal * 100) / 100 !== 100 || Math.round(publisherTotal * 100) / 100 !== 100) {
-      return res.status(400).render("split-sheet", { error: `Shares invalid. Writer total=${writerTotal}, Publisher total=${publisherTotal}. Both must equal 100.` });
-    }
-    if (String(req.body.allPartiesAgree || "").toLowerCase() !== "yes") {
-      return res.status(400).render("split-sheet", { error: "All parties agreement confirmation is required." });
-    }
-
-    const payload = {
-      songTitle: req.body.songTitle,
-      alternateTitle: req.body.alternateTitle || "",
-      iswc: req.body.iswc || "",
-      isrc: req.body.isrc || "",
-      date: req.body.date,
-      sessionLocation: req.body.sessionLocation || "",
-      notes: req.body.notes || "",
-      supersedesPrevious: String(req.body.supersedesPrevious || "").toLowerCase() === "yes",
-      allPartiesAgree: true,
-      collectSignaturesByInvite: collectByInvite,
-      version: nextSplitVersion(req.body.songTitle),
-      contributors: contributors.map((c) => ({
-        ...c,
-        signerToken: collectByInvite ? nanoid(22) : null,
-        inviteSentAt: collectByInvite ? nowIso() : null,
-        reminderSentAt: null,
-        viewedAt: null,
-        signedAt: collectByInvite ? null : nowIso()
-      }))
-    };
-
-    const saved = saveSubmission("split-sheet", payload, req);
-
-    let emailResult = { ok: false, skipped: true, reason: "not_attempted" };
-
-    if (collectByInvite) {
-      for (const c of payload.contributors) {
-        await sendSplitInvite(saved, c);
-      }
-      const selectedRecipients = Array.isArray(req.body.recipientEmails) ? req.body.recipientEmails : [req.body.recipientEmails].filter(Boolean);
-      const rec = uniq([(process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com"), ...payload.contributors.map((c) => c.email), ...selectedRecipients]);
-      emailResult = await sendEmail({
-        subject: `Split Sheet Created - ${payload.songTitle} (v${payload.version})`,
-        to: rec,
-        html: `<h2>Split Sheet Created</h2><p>ID: ${saved.id}</p><p>Song: ${payload.songTitle}</p><p>Version: ${payload.version}</p><p>Status: Pending signatures</p><p><a href="${baseUrl}/split-sheet/pdf/${saved.id}">Download Current PDF Summary</a></p><p><b>Recipients:</b> ${rec.join(", ")}</p>`
-      });
-    } else {
-      const selectedRecipients = Array.isArray(req.body.recipientEmails) ? req.body.recipientEmails : [req.body.recipientEmails].filter(Boolean);
-      const rec = uniq([(process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com"), ...payload.contributors.map((c) => c.email), ...selectedRecipients]);
-      const { auditChecksum } = await generateFinalSplitPdf(saved);
-      saved.payload.auditChecksum = auditChecksum;
-      saved.updatedAt = nowIso();
-      saveSubmissionRow(saved);
-
-      const finalPdf = splitPdfPath(saved.id);
-      emailResult = await sendEmail({
-        subject: `Split Sheet Complete - ${payload.songTitle} (v${payload.version})`,
-        to: rec,
-        html: completionEmailHtml({
-          title: "Split Sheet Completed",
-          id: saved.id,
-          songLabel: `Song: ${payload.songTitle} (v${payload.version})`,
-          downloadUrl: `${baseUrl}/split-sheet/pdf/${saved.id}`,
-          recipients: rec,
-          splitHtml: splitSummaryHtml(payload.contributors || [])
-        }),
-        attachments: fs.existsSync(finalPdf) ? [{ filename: path.basename(finalPdf), path: finalPdf }] : []
-      });
-    }
+    const { saved, payload, collectByInvite, emailResult } = await createSplitSheetSubmission(req.body, req);
 
     res.render("success", {
       title: collectByInvite ? "Split Sheet created. Signature invites sent." : "Split Sheet submitted",
@@ -914,14 +1103,17 @@ app.post("/split-sheet", async (req, res) => {
       collectSignaturesByInvite: collectByInvite,
       emailResult
     });
-  } catch (e) {
-    console.error(e);
+  } catch (error) {
+    if (error instanceof SplitSheetValidationError) {
+      return res.status(error.statusCode).render("split-sheet", { error: error.message });
+    }
+    console.error(error);
     res.status(500).render("split-sheet", { error: "Unexpected server error while saving split sheet." });
   }
 });
 
-app.get("/split-sheet/sign/:id/:token", (req, res) => {
-  const doc = loadSubmission(req.params.id);
+app.get("/split-sheet/sign/:id/:token", async (req, res) => {
+  const doc = await loadSubmission(req.params.id);
   if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
   const signer = (doc.payload?.contributors || []).find((c) => c.signerToken === req.params.token);
   if (!signer) return res.status(404).send("Invalid sign link");
@@ -929,14 +1121,14 @@ app.get("/split-sheet/sign/:id/:token", (req, res) => {
   if (!signer.viewedAt) {
     signer.viewedAt = nowIso();
     doc.updatedAt = nowIso();
-    saveSubmissionRow(doc);
+    await saveSubmissionRow(doc);
   }
 
   res.render("split-sign", { doc, signer, timeline: splitSignerTimeline(doc), error: null, success: null });
 });
 
 app.post("/split-sheet/sign/:id/:token", async (req, res) => {
-  const doc = loadSubmission(req.params.id);
+  const doc = await loadSubmission(req.params.id);
   if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
   const contributors = doc.payload?.contributors || [];
   const signerIndex = contributors.findIndex((c) => c.signerToken === req.params.token);
@@ -980,7 +1172,7 @@ app.post("/split-sheet/sign/:id/:token", async (req, res) => {
   }
 
   doc.updatedAt = nowIso();
-  saveSubmissionRow(doc);
+  await saveSubmissionRow(doc);
 
   const signer = contributors[signerIndex];
   res.render("split-sign-success", {
@@ -993,41 +1185,9 @@ app.post("/split-sheet/sign/:id/:token", async (req, res) => {
   });
 });
 
-app.get("/sync-collab", (req, res) => res.render("sync-collab"));
-app.post("/sync-collab", async (req, res) => {
-  const collaborators = parseContributors(req.body);
-  const payload = { agreementName: "Sync Collaboration Agreement", companyRepName: req.body.companyRepName, companyRepSignature: req.body.companyRepSignature, collaborators, signedDate: req.body.signedDate };
-  const saved = saveSubmission("sync-collab", payload, req);
-  const rec = uniq([(process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com"), ...collaborators.map((c) => c.email)]);
-  const { outPath } = await generateAgreementPdf(saved, "Sync Collaboration Agreement");
-  const emailResult = await sendEmail({
-    subject: "Sync Collaboration Agreement Complete",
-    to: rec,
-    html: completionEmailHtml({
-      title: "Sync Collaboration Agreement Completed",
-      id: saved.id,
-      songLabel: "Agreement packet attached",
-      downloadUrl: `${baseUrl}/admin`,
-      recipients: rec
-    }),
-    attachments: fs.existsSync(outPath) ? [{ filename: path.basename(outPath), path: outPath }] : []
-  });
-  res.render("success", { title: "Sync Collaboration Agreement submitted", id: saved.id, type: "sync-collab", emailResult });
-});
-
-app.get("/work-for-hire", (req, res) => res.render("work-for-hire"));
-app.post("/work-for-hire", async (req, res) => {
-  const payload = { projectTitle: req.body.projectTitle, contractorName: req.body.contractorName, contractorEmail: req.body.contractorEmail, contractorPhone: req.body.contractorPhone, fee: req.body.fee, signedDate: req.body.signedDate, companyRepName: req.body.companyRepName, companyRepSignature: req.body.companyRepSignature, contractorSignature: req.body.contractorSignature };
-  const saved = saveSubmission("work-for-hire", payload, req);
-  const rec = uniq([(process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com"), payload.contractorEmail]);
-  await sendEmail({ subject: `Work for Hire Signed - ${payload.projectTitle || ""}`, to: rec, html: `<h2>Work for Hire Signed</h2><p>ID: ${saved.id}</p>` });
-  res.render("success", { title: "Work for Hire submitted", id: saved.id, type: "work-for-hire" });
-});
-
 app.get("/split-sheet/pdf/:id", async (req, res) => {
-  const p = submissionPath(req.params.id);
-  if (!fs.existsSync(p)) return res.status(404).send("Not found");
-  const docJson = JSON.parse(fs.readFileSync(p, "utf-8"));
+  const docJson = await loadSubmission(req.params.id);
+  if (!docJson) return res.status(404).send("Not found");
   if (docJson.type !== "split-sheet") return res.status(400).send("Not a split sheet");
 
   const finalPdf = splitPdfPath(docJson.id);
@@ -1061,8 +1221,8 @@ app.post("/admin/login", (req, res) => {
   recordLoginFailure(req);
   res.status(401).render("admin-login", { error: "Invalid credentials" });
 });
-app.get("/admin", requireAdmin, (req, res) => {
-  const docs = listSubmissions().map((d) => {
+app.get("/admin", requireAdmin, async (req, res) => {
+  const docs = (await listSubmissions()).map((d) => {
     if (d.type !== "split-sheet") return d;
     const contributors = d.payload?.contributors || [];
     const signedCount = contributors.filter((c) => c.signedAt).length;
@@ -1078,8 +1238,8 @@ app.get("/admin", requireAdmin, (req, res) => {
   res.render("admin", { docs });
 });
 
-app.get("/admin/split/:id", requireAdmin, (req, res) => {
-  const doc = loadSubmission(req.params.id);
+app.get("/admin/split/:id", requireAdmin, async (req, res) => {
+  const doc = await loadSubmission(req.params.id);
   if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
 
   const timeline = splitSignerTimeline(doc).map((row, index) => {
@@ -1100,7 +1260,7 @@ app.get("/admin/split/:id", requireAdmin, (req, res) => {
 });
 
 app.post("/admin/split/:id/remind", requireAdmin, async (req, res) => {
-  const doc = loadSubmission(req.params.id);
+  const doc = await loadSubmission(req.params.id);
   if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
 
   const pending = (doc.payload?.contributors || []).filter((c) => c.signerToken && !c.signedAt);
@@ -1112,11 +1272,15 @@ app.post("/admin/split/:id/remind", requireAdmin, async (req, res) => {
   }
   doc.updatedAt = nowIso();
   doc.lastReminderRun = { at: nowIso(), sent };
-  saveSubmissionRow(doc);
+  await saveSubmissionRow(doc);
   res.redirect(`/admin/split/${doc.id}?banner=${encodeURIComponent(`Reminder email run complete. Sent ${sent} reminder(s).`)}`);
 });
 
-app.get("/admin/doc/:id", requireAdmin, (req, res) => { const p = submissionPath(req.params.id); if (!fs.existsSync(p)) return res.status(404).send("Not found"); res.type("application/json").send(fs.readFileSync(p, "utf-8")); });
+app.get("/admin/doc/:id", requireAdmin, async (req, res) => {
+  const doc = await loadSubmission(req.params.id);
+  if (!doc) return res.status(404).send("Not found");
+  res.type("application/json").send(submissionStore.serializeSubmission(doc));
+});
 
 if (require.main === module) {
   app.listen(PORT, HOST, () => console.log(`Split Sheet Open Sign running at ${baseUrl}`));

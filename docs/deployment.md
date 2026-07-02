@@ -1,18 +1,58 @@
 # Deployment
 
 ## Recommended deployment posture
-This application is best deployed first as:
-- local-only on a studio machine, or
-- private LAN / VPN accessible tool
+Build and validate locally first, then move to cloud hosting once the API and persistence contracts are stable.
 
-If exposed beyond a trusted network, place it behind a reverse proxy with HTTPS and stronger operational controls.
+Current best use:
+- local-only studio use
+- private LAN / VPN access
+- controlled staging environments
+
+For a public launch, deploy behind HTTPS with stronger operational controls and a managed database/storage plan.
+
+## Current persistence model
+- user accounts, auth sessions, and split-sheet records currently live in `data/app.db` when `DB_PROVIDER=sqlite`
+- generated PDFs live in `data/pdfs/`
+- `data/submissions/` is retained only for legacy JSON import and backward compatibility
+
+## Database provider configuration
+Supported configuration:
+- `DB_PROVIDER=sqlite` -> local/dev path, validated in this repo
+- `DB_PROVIDER=postgres` -> adapter implemented, intended for managed cloud databases
+
+Provider envs:
+- `DB_PROVIDER`
+- `DB_PATH`
+- `DATABASE_URL`
+
+Current local defaults:
+- `DB_PROVIDER=sqlite`
+- `DB_PATH=./data/app.db`
+
+Future AWS-oriented configuration:
+- `DB_PROVIDER=postgres`
+- `DATABASE_URL=<managed postgres connection string>`
 
 ## Minimum environment for go-live
 Set these before any real usage:
-- `ADMIN_USER`
-- `ADMIN_PASS`
 - `SESSION_SECRET`
+- `API_TOKEN_SECRET`
 - `PUBLIC_BASE_URL`
+- `DB_PROVIDER`
+
+For SQLite local/dev:
+- `DB_PATH`
+
+For PostgreSQL/cloud:
+- `DATABASE_URL`
+
+For initial owner bootstrap, set:
+- `OWNER_EMAIL`
+- `OWNER_PASSWORD`
+- `OWNER_DISPLAY_NAME`
+
+Optional registration control:
+- `ALLOW_PUBLIC_REGISTRATION`
 
 For automatic email delivery, also configure:
 - `SMTP_HOST`
@@ -30,8 +70,30 @@ npm test
 npm run dev
 ```
 
+## Local PostgreSQL validation
+This repo includes a Windows helper for the PostgreSQL path used by `tests/smoke-postgres.cjs`.
+
+```powershell
+cd C:/Users/User/Documents/Openclaw/split-sheet-open-sign
+npm run db:postgres:setup
+$env:DB_PROVIDER='postgres'
+$env:DATABASE_URL='postgres://splitsheet:splitsheet@127.0.0.1:54329/splitsheet_dev?sslmode=disable'
+npm run test:postgres
+```
+
+If PostgreSQL 16 is not installed yet:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-local-postgres.ps1 -InstallIfMissing
+```
+
+Current machine note:
+- Docker Desktop is installed but not starting as of `July 1, 2026`
+- Studio One 6 and Studio One 7 are installed
+- `CMake` and Visual Studio Build Tools are not installed yet
+
 ## Container startup
-This repo now includes a `Dockerfile` and `docker-compose.yml`.
+This repo includes a `Dockerfile` and `docker-compose.yml`.
 
 ### First-time container run
 ```powershell
@@ -44,126 +106,53 @@ docker compose up -d
 ```powershell
 Invoke-WebRequest http://localhost:5050/health
 Invoke-WebRequest http://localhost:5050/ready
+Invoke-WebRequest http://localhost:5050/api/ready
 docker compose ps
-```
-
-### Persistent data paths
-The compose file keeps records outside the container by binding:
-- `./data/submissions` → `/app/data/submissions`
-- `./data/pdfs` → `/app/data/pdfs`
-
-That means a container rebuild or replacement does not wipe split sheet records or PDFs.
-
-## Health and readiness checks
-- `GET /health` → process liveness
-- `GET /ready` → lightweight readiness signal including SMTP configured state
-
-Recommended quick verification after startup:
-```powershell
-Invoke-WebRequest http://localhost:5050/health
-Invoke-WebRequest http://localhost:5050/ready
 ```
 
 ## Reverse proxy guidance
 For internet-facing or semi-public use:
 - terminate TLS at proxy layer
-- forward to app on private port
+- forward to app on a private port
 - preserve `x-forwarded-for` and host headers
-- restrict access with VPN or IP allowlist where possible
+- add rate limiting at the proxy or edge layer
+- restrict admin access where possible
 
 ## Backup expectations
 Back up these paths daily:
-- `data/submissions/`
+- `data/app.db` when using SQLite
 - `data/pdfs/`
 
-If this becomes an important operational system, also back up:
-- `.env` via secret-management-safe method
-- deployment config
-- release artifacts and screenshots for incident review
+Also back up:
+- `.env` via a secret-management-safe method
+- deployment configuration
 
 ## Recommended rollout process
-1. Run test suite locally
-2. Verify health/readiness endpoints
-3. Test one invite-sign flow end to end
-4. Confirm SMTP send behavior
-5. Confirm backup destination exists
-6. Move users onto the app
+1. Run the test suite locally
+2. Verify `/health`, `/ready`, and `/api/ready`
+3. Register a test account
+4. Create and update a draft split sheet
+5. Finalize one invite-sign flow end to end
+6. Confirm SMTP send behavior
+7. Confirm backups exist for the active database and `data/pdfs/`
 
-## Proxmox container replacement
-Use this when replacing an older split-sheet container on a Proxmox host.
+## Public-cloud recommendation
+For a serious public launch:
+- keep local development on SQLite
+- move cloud runtime to containers
+- point the app at managed PostgreSQL
+- move PDF artifacts to object storage
 
-### 1. Back up the old container first
-- export the existing `.env`
-- back up any split-sheet JSON or PDF data directories
-- note the current published port and reverse-proxy target
-
-### 2. Pull the updated repo onto the Proxmox host
-```bash
-cd /opt
-git clone https://github.com/iamMichaelSmith/studio-split-sign.git split-sheet-app
-cd split-sheet-app
-```
-
-If the repo already exists:
-```bash
-cd /opt/split-sheet-app
-git pull origin main
-```
-
-### 3. Create the runtime env file
-```bash
-cp .env.example .env
-```
-
-Set at minimum:
-- `ADMIN_USER`
-- `ADMIN_PASS`
-- `SESSION_SECRET`
-- `PUBLIC_BASE_URL`
-- `SES_REGION`
-- `FROM_EMAIL=no-reply@blakmarigold.com`
-- `REPLY_TO_EMAIL=Blakmarigold@gmail.com`
-- `NOTIFY_EMAIL=Blakmarigold@gmail.com`
-
-### 4. Build and start the new container
-```bash
-docker compose build
-docker compose up -d
-```
-
-### 5. Verify before cutover
-```bash
-curl http://127.0.0.1:5050/health
-curl http://127.0.0.1:5050/ready
-docker compose ps
-docker compose logs --tail=100
-```
-
-Expected:
-- `/health` returns `ok`
-- `/ready` returns `sesConfigured: true`
-- container shows `healthy`
-
-### 6. Cut over traffic
-- point your reverse proxy to the new container port
-- or stop the old split-sheet container if the new one is using the same external port
-
-Example:
-```bash
-docker stop old-split-sheet-container
-docker rm old-split-sheet-container
-```
-
-### 7. Final live check
-- submit one real test split sheet
-- confirm the PDF generates
-- confirm emails send from `no-reply@blakmarigold.com`
-- confirm both `data/submissions` and `data/pdfs` are being written on disk
+Recommended target architecture:
+- app container on AWS ECS Express Mode or ECS/Fargate
+- PostgreSQL on Amazon RDS
+- PDF or object artifacts on Amazon S3
+- email via Amazon SES
 
 ## Production-hardening next steps
-If moving beyond internal testing, prioritize:
-- stronger auth
-- structured log capture
-- database-backed storage
-- artifact/object storage strategy
-- proxy-level rate limiting and access control
+Before full public exposure, prioritize:
+- validate the PostgreSQL path against a real database
+- rate limiting
+- password reset and recovery
+- stronger logging and monitoring
+- object storage strategy for PDFs

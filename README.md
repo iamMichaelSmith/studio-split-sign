@@ -23,8 +23,6 @@ It demonstrates:
 
 ## Core feature set
 - Split Sheet workflow
-- Sync Collaboration Agreement workflow
-- Work for Hire Agreement workflow
 - Mobile-friendly drawn signatures
 - Optional signer invite flow with one tokenized link per signer
 - Signer state tracking: invited, viewed, reminder sent, signed
@@ -42,12 +40,6 @@ It demonstrates:
 
 ### Split Sheet flow
 ![Split Sheet flow](docs/screenshots/ui-split-sheet.jpg)
-
-### Sync Collaboration Agreement
-![Sync Collaboration Agreement](docs/screenshots/ui-sync-collab.jpg)
-
-### Work for Hire Agreement
-![Work for Hire Agreement](docs/screenshots/ui-work-for-hire.jpg)
 
 ## Main user flows
 ### 1. Split sheet, signed in-session
@@ -88,6 +80,46 @@ npm run dev
 
 Local URL: `http://localhost:5050`  
 LAN URL: `http://<your-computer-ip>:5050`
+
+## Local database options
+SQLite is the default and already validated in this repo:
+
+```powershell
+npm test
+npm run dev
+```
+
+For a local PostgreSQL run:
+
+```powershell
+npm run db:postgres:setup
+$env:DB_PROVIDER='postgres'
+$env:DATABASE_URL='postgres://splitsheet:splitsheet@127.0.0.1:54329/splitsheet_dev?sslmode=disable'
+npm run test:postgres
+```
+
+If PostgreSQL is not installed yet:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-local-postgres.ps1 -InstallIfMissing
+```
+
+## VST shell
+The first plugin shell lives in `vst/`.
+
+Build command:
+
+```powershell
+npm run vst:build
+```
+
+System requirements:
+- `CMake`
+- Visual Studio 2022 Build Tools with C++
+- JUCE dependencies fetched by CMake at configure time
+
+Studio One 7 is installed on this machine, and the target `VST3` location is:
+- `C:\Program Files\Common Files\VST3\SplitSheet Studio.vst3`
 
 ## 5-minute QA pass
 For a fast confidence check:
@@ -132,6 +164,7 @@ This project is strong as a portfolio/recruiter-facing repo because it includes:
 - Project summary: `README.md`
 - Hiring-manager summary: `HIRING_MANAGER.md`
 - Architecture: `docs/architecture.md`
+- API foundation: `docs/api.md`
 - Deployment: `docs/deployment.md`
 - Ops runbook: `docs/ops.md`
 - Security notes: `docs/security.md`

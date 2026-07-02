@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: split-sheet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: splitsheet_dev
+      POSTGRES_USER: splitsheet
+      POSTGRES_PASSWORD: splitsheet
+    ports:
+      - "54329:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U splitsheet -d splitsheet_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
