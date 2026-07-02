@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/assets/github-header.svg" alt="Split Sheet Open Sign header" width="100%">
-</p>
-
 # Split Sheet Open Sign
 
 `Split Sheet Open Sign` is a music studio workflow system built to capture split sheets, collect signatures, generate final PDFs, preserve records, and expose the same workflow through both a web app and a plugin-ready JSON API.
