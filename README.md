@@ -4,9 +4,9 @@
 
 # Split Sheet Open Sign
 
-`Split Sheet Open Sign` is a music studio workflow platform built to capture split sheets, collect signatures, generate final PDFs, preserve records, and expose the same core workflow through both a web app and a plugin-ready JSON API.
+`Split Sheet Open Sign` is a music studio workflow system built to capture split sheets, collect signatures, generate final PDFs, preserve records, and expose the same workflow through both a web app and a plugin-ready JSON API.
 
-This repository is intentionally presented as an employer-facing systems project. It is meant to show how a niche business problem can be translated into a production-minded product, service layer, documentation set, and plugin integration path.
+This repository is structured so an engineer, employer, or hiring manager can understand the product problem, the system design, and the implementation path without reverse-engineering the codebase first.
 
 ## Why this project exists
 Studios often finish a session with verbal agreement on splits but no clean operational path to capture signatures, distribute copies, and preserve a trustworthy record. That creates avoidable risk at exactly the moment when everyone wants to leave the room and move on.
