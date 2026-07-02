@@ -1,0 +1,49 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="640" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#F2C94C"/>
+      <stop offset="1" stop-color="#D4A72C"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#182230"/>
+      <stop offset="1" stop-color="#121A25"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="640" rx="24" fill="url(#bg)"/>
+  <circle cx="1110" cy="122" r="220" fill="#1F2937" fill-opacity="0.35"/>
+  <circle cx="1190" cy="62" r="92" fill="#263445" fill-opacity="0.4"/>
+  <rect x="48" y="48" width="1184" height="544" rx="28" fill="url(#panel)" stroke="#F2C94C" stroke-opacity="0.7" stroke-width="2"/>
+  <rect x="48" y="48" width="330" height="12" rx="6" fill="url(#gold)"/>
+  <text x="72" y="132" fill="white" font-size="56" font-family="Segoe UI, Arial, sans-serif" font-weight="700">Split Sheet Open Sign</text>
+  <text x="72" y="180" fill="#B7C3D4" font-size="24" font-family="Segoe UI, Arial, sans-serif">A production-minded music studio workflow platform with a web app, JSON API, and JUCE-based VST client.</text>
+  <text x="72" y="224" fill="#D6DCE5" font-size="22" font-family="Segoe UI, Arial, sans-serif">Built to solve the end-of-session paperwork bottleneck: capture splits, collect signatures, generate final records, and ship copies fast.</text>
+  <rect x="72" y="272" width="176" height="42" rx="21" fill="#153B2D" stroke="#2F855A"/>
+  <text x="100" y="299" fill="#D5F5E3" font-size="20" font-family="Segoe UI, Arial, sans-serif" font-weight="600">Web Workflow</text>
+  <rect x="264" y="272" width="132" height="42" rx="21" fill="#2F2610" stroke="#D4A72C"/>
+  <text x="292" y="299" fill="#F9E7A5" font-size="20" font-family="Segoe UI, Arial, sans-serif" font-weight="600">JSON API</text>
+  <rect x="412" y="272" width="150" height="42" rx="21" fill="#1D2A3A" stroke="#6AA1FF"/>
+  <text x="441" y="299" fill="#DCE9FF" font-size="20" font-family="Segoe UI, Arial, sans-serif" font-weight="600">VST Plugin</text>
+  <rect x="72" y="356" width="312" height="162" rx="24" fill="#0F1622" stroke="#334155" filter="url(#shadow)"/>
+  <text x="98" y="402" fill="white" font-size="28" font-family="Segoe UI, Arial, sans-serif" font-weight="700">Problem</text>
+  <text x="98" y="442" fill="#C9D3E2" font-size="22" font-family="Segoe UI, Arial, sans-serif">Studios often leave a session with a</text>
+  <text x="98" y="472" fill="#C9D3E2" font-size="22" font-family="Segoe UI, Arial, sans-serif">verbal split agreement but no reliable,</text>
+  <text x="98" y="502" fill="#C9D3E2" font-size="22" font-family="Segoe UI, Arial, sans-serif">traceable way to finalize paperwork.</text>
+  <rect x="432" y="356" width="330" height="162" rx="24" fill="#0F1622" stroke="#334155" filter="url(#shadow)"/>
+  <text x="458" y="402" fill="white" font-size="28" font-family="Segoe UI, Arial, sans-serif" font-weight="700">What This Repo Shows</text>
+  <text x="458" y="440" fill="#C9D3E2" font-size="22" font-family="Segoe UI, Arial, sans-serif">• Product thinking around a niche workflow</text>
+  <text x="458" y="472" fill="#C9D3E2" font-size="22" font-family="Segoe UI, Arial, sans-serif">• Practical backend and persistence design</text>
+  <text x="458" y="504" fill="#C9D3E2" font-size="22" font-family="Segoe UI, Arial, sans-serif">• Portfolio-grade docs, testing, and delivery</text>
+  <rect x="810" y="356" width="374" height="162" rx="24" fill="#0F1622" stroke="#334155" filter="url(#shadow)"/>
+  <text x="836" y="402" fill="white" font-size="28" font-family="Segoe UI, Arial, sans-serif" font-weight="700">Core System Path</text>
+  <text x="836" y="442" fill="#F9E7A5" font-size="21" font-family="Segoe UI, Arial, sans-serif" font-weight="600">Client → API → Services → Storage</text>
+  <text x="836" y="476" fill="#C9D3E2" font-size="21" font-family="Segoe UI, Arial, sans-serif">Split sheet data → validation → PDF/email</text>
+  <text x="836" y="508" fill="#C9D3E2" font-size="21" font-family="Segoe UI, Arial, sans-serif">invite links or in-session signatures</text>
+  <text x="72" y="560" fill="#8FA4BC" font-size="18" font-family="Segoe UI, Arial, sans-serif">Designed for studio operations today and positioned as an employer-facing systems project on GitHub.</text>
+</svg>

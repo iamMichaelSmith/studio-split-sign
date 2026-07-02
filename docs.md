@@ -1,24 +1,29 @@
-# Split Sheet Open Sign Operational Notes
+# Split Sheet Open Sign Documentation Index
 
-## Fast session mode checklist
-- Open app before playback bounce is done
-- Pre-fill song title and date first
-- Add contributors while track exports
-- Use Set equal splits then adjust
-- Capture typed + drawn signatures from each party
-- Confirm recipient emails checked for both parties
-- Submit and download PDF to session folder
+This repository is deliberately documented for both builders and reviewers. If you are an employer or hiring manager, start with the first two links.
 
-## Legal reliability checklist
-- Never submit if writer or publisher totals are not 100
-- Require at least 2 contributors for co-write sessions
-- Ensure all contributors have typed and drawn signatures
-- Keep admin credentials unique per studio deployment
-- Keep SMTP app passwords out of git
+## Start here
+- `README.md` — project overview, why it exists, setup, and architecture summary
+- `HIRING_MANAGER.md` — fast evaluation guide for recruiters and interviewers
 
-## Suggested next forms to add
-- Producer agreement
-- Beat license agreement
-- Mechanical royalty acknowledgement
-- Publishing admin opt in
-- Session musician work for hire one pager
+## Product and architecture
+- `docs/architecture.md` — system design and component relationships
+- `docs/api.md` — JSON API foundation for browser and plugin clients
+- `docs/repo-tour.md` — repository tour for technical reviewers
+
+## Deployment and operations
+- `docs/deployment.md` — local, container, and public-cloud deployment posture
+- `docs/ops.md` — operational notes and day-two guidance
+- `docs/security.md` — current security posture and hardening path
+- `docs/release-checklist.md` — pre-release checklist
+
+## QA and workflow walkthroughs
+- `docs/qa-checklist.md` — fast confidence checks
+- `docs/split-sheet-walkthrough.md` — main browser workflow
+- `docs/e2e-invite-flow.md` — invite-link signing walkthrough
+
+## Why the documentation is detailed
+This project is meant to be more than source code. The goal is to make the repo understandable to:
+- studio operators evaluating whether the product solves a real problem
+- engineers evaluating implementation choices
+- employers and hiring managers evaluating product thinking, systems design, and execution quality

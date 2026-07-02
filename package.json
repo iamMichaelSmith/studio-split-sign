@@ -2,7 +2,7 @@
   "name": "split-sheet-open-sign",
   "version": "0.1.0",
   "private": true,
-  "description": "Local signing app for split sheets and studio agreements",
+  "description": "Music studio split-sheet platform with a web app, JSON API, and JUCE VST client",
   "main": "server.js",
   "scripts": {
     "dev": "node --use-system-ca server.js",
