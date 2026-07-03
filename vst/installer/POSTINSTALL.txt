@@ -1,0 +1,22 @@
+SplitSheet Studio was installed in two places:
+
+1. Standalone app
+   - Program Files\Blak Marigold Studio\SplitSheet Studio
+
+2. VST3 plugin
+   - Program Files\Common Files\VST3\SplitSheet Studio.vst3
+
+To use it in Studio One:
+
+1. Open Studio One
+2. Go to Options > Locations > VST Plug-ins
+3. Make sure the default VST3 path is enabled
+4. Click Reset Blacklist if needed
+5. Click Scan at startup or rescan plugins now
+6. Search for "SplitSheet Studio" in the browser
+
+Important:
+- The plugin needs the Split Sheet API server running
+- Default local API target is http://127.0.0.1:5050
+- Sign in with a valid Split Sheet account from inside the plugin
+

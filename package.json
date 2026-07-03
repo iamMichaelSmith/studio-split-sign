@@ -10,7 +10,8 @@
     "test": "node tests/smoke.cjs",
     "test:postgres": "node tests/smoke-postgres.cjs",
     "db:postgres:setup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\setup-local-postgres.ps1",
-    "vst:build": "powershell -ExecutionPolicy Bypass -File .\\vst\\build-and-install.ps1"
+    "vst:build": "powershell -ExecutionPolicy Bypass -File .\\vst\\build-and-install.ps1",
+    "vst:package": "powershell -ExecutionPolicy Bypass -File .\\vst\\package-installer.ps1"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1077.0",
