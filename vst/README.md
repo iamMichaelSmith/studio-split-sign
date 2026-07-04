@@ -10,6 +10,7 @@ This is the first JUCE-based `VST3` / standalone shell for the SplitSheet Studio
 - status display for the current session
 - multi-step split-sheet submission UI
 - installer packaging path for Windows VST3 + standalone delivery
+- default hosted API target: `https://app.splitsheetstudio.com`
 
 ## Current limitations
 - draft list/create/update history is not connected yet

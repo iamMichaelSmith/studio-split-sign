@@ -1,158 +1,146 @@
 # Deployment
 
-## Recommended deployment posture
-Build and validate locally first, then move to cloud hosting once the API and persistence contracts are stable.
+## Current deployment shape
+The project now has both:
+- a local-first development path
+- a live AWS-hosted runtime path
 
-Current best use:
-- local-only studio use
-- private LAN / VPN access
-- controlled staging environments
+### Live public surfaces
+- `https://splitsheetstudio.com`
+- `https://www.splitsheetstudio.com`
+- `https://app.splitsheetstudio.com`
+- `https://staging.splitsheetstudio.com`
 
-For a public launch, deploy behind HTTPS with stronger operational controls and a managed database/storage plan.
+## Local development posture
 
-## Current persistence model
-- user accounts, auth sessions, and split-sheet records currently live in `data/app.db` when `DB_PROVIDER=sqlite`
-- generated PDFs live in `data/pdfs/`
-- `data/submissions/` is retained only for legacy JSON import and backward compatibility
-
-## Database provider configuration
-Supported configuration:
-- `DB_PROVIDER=sqlite` -> local/dev path, validated in this repo
-- `DB_PROVIDER=postgres` -> adapter implemented, intended for managed cloud databases
-
-Provider envs:
-- `DB_PROVIDER`
-- `DB_PATH`
-- `DATABASE_URL`
-
-Current local defaults:
+### Default local stack
 - `DB_PROVIDER=sqlite`
-- `DB_PATH=./data/app.db`
+- local filesystem storage for PDFs
+- local dev URL at `http://localhost:5050`
 
-Future AWS-oriented configuration:
-- `DB_PROVIDER=postgres`
-- `DATABASE_URL=<managed postgres connection string>`
-
-## Minimum environment for go-live
-Set these before any real usage:
-- `SESSION_SECRET`
-- `API_TOKEN_SECRET`
-- `PUBLIC_BASE_URL`
-- `DB_PROVIDER`
-
-For SQLite local/dev:
-- `DB_PATH`
-
-For PostgreSQL/cloud:
-- `DATABASE_URL`
-
-For initial owner bootstrap, set:
-- `OWNER_EMAIL`
-- `OWNER_PASSWORD`
-- `OWNER_DISPLAY_NAME`
-
-Optional registration control:
-- `ALLOW_PUBLIC_REGISTRATION`
-
-For automatic email delivery, also configure:
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_SECURE`
-- `SMTP_USER`
-- `SMTP_PASS`
-- `FROM_EMAIL`
-
-## Local startup
+### Local startup
 ```powershell
-cd C:/Users/User/Documents/Openclaw/split-sheet-open-sign
+cd C:\Users\BlakM\OneDrive\Documents\Split Sheet App\repo
 npm install
-npm test
 npm run dev
 ```
 
-## Local PostgreSQL validation
-This repo includes a Windows helper for the PostgreSQL path used by `tests/smoke-postgres.cjs`.
+## Hosted AWS posture
 
-```powershell
-cd C:/Users/User/Documents/Openclaw/split-sheet-open-sign
-npm run db:postgres:setup
-$env:DB_PROVIDER='postgres'
-$env:DATABASE_URL='postgres://splitsheet:splitsheet@127.0.0.1:54329/splitsheet_dev?sslmode=disable'
-npm run test:postgres
+### AWS services in use
+- `Route 53`
+- `ACM`
+- `Application Load Balancer`
+- `ECS Fargate`
+- `ECR`
+- `RDS PostgreSQL`
+- `ElastiCache Redis`
+- `S3`
+- `SES`
+- `Secrets Manager`
+- `CloudWatch Logs`
+
+### Hosted runtime settings
+- `DB_PROVIDER=postgres`
+- `SESSION_STORE=redis`
+- `PDF_STORAGE=s3`
+- `COOKIE_SECURE=true`
+- `TRUST_PROXY=true`
+- `PUBLIC_BASE_URL=https://app.splitsheetstudio.com`
+
+## Persistence model
+
+### Local
+- SQLite for users and submissions
+- local `data/pdfs/` for generated packets
+
+### Hosted
+- PostgreSQL for users, auth sessions, and submissions
+- Redis for shared sessions
+- S3 for final PDF retention and retrieval
+
+## Email delivery
+
+### Runtime service
+- `Amazon SES`
+
+### Current email plan
+- branded sender domain: `splitsheetstudio.com`
+- app sender: `no-reply@splitsheetstudio.com`
+- reply-to inbox: `blakmarigold@gmail.com`
+- notify inbox: `blakmarigold@gmail.com`
+
+### SES DNS work
+The hosted zone now includes:
+- SES DKIM CNAME records
+- custom MAIL FROM domain records for `mail.splitsheetstudio.com`
+
+Verification may still be propagating depending on when this document is read.
+
+## Environment values
+Typical hosted values:
+
+```env
+NODE_ENV=production
+HOST=0.0.0.0
+PORT=5050
+PUBLIC_BASE_URL=https://app.splitsheetstudio.com
+
+DB_PROVIDER=postgres
+DATABASE_URL=postgres://...
+
+SESSION_STORE=redis
+REDIS_URL=redis://...
+REDIS_PREFIX=splitsheet:sess:
+
+PDF_STORAGE=s3
+S3_BUCKET=splitsheetstudio-staging-pdfs-309014076408-us-east-1
+S3_REGION=us-east-1
+S3_PREFIX=final-pdfs
+
+COOKIE_SECURE=true
+TRUST_PROXY=true
+ALLOW_PUBLIC_REGISTRATION=true
+
+FROM_EMAIL=no-reply@splitsheetstudio.com
+REPLY_TO_EMAIL=blakmarigold@gmail.com
+NOTIFY_EMAIL=blakmarigold@gmail.com
 ```
 
-If PostgreSQL 16 is not installed yet:
+## Deployment scripts
+Key scripts live in `deploy/aws/`:
+- `bootstrap-networking.ps1`
+- `bootstrap-staging.ps1`
+- `bootstrap-ecs.ps1`
+- `bootstrap-secrets.ps1`
+- `provision-datastores.ps1`
+- `sync-runtime-secrets.ps1`
+- `render-task-definition.ps1`
+- `deploy-ecs-service.ps1`
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-local-postgres.ps1 -InstallIfMissing
-```
+## Deployment flow
+1. provision AWS networking and shared resources
+2. create secrets
+3. provision RDS and Redis
+4. sync runtime endpoints into Secrets Manager
+5. build and push Docker image to ECR
+6. render ECS task definition
+7. deploy ECS service
+8. attach DNS and HTTPS through Route 53 + ACM + ALB
 
-Current machine note:
-- Docker Desktop is installed but not starting as of `July 1, 2026`
-- Studio One 6 and Studio One 7 are installed
-- `CMake` and Visual Studio Build Tools are not installed yet
+## Operational checks
+Hosted checks:
+- `https://app.splitsheetstudio.com/health`
+- `https://app.splitsheetstudio.com/ready`
+- `https://app.splitsheetstudio.com/api/ready`
 
-## Container startup
-This repo includes a `Dockerfile` and `docker-compose.yml`.
+Public-entry checks:
+- `https://splitsheetstudio.com`
+- `https://www.splitsheetstudio.com`
 
-### First-time container run
-```powershell
-cd C:/path/to/repo
-docker compose build
-docker compose up -d
-```
-
-### Container health checks
-```powershell
-Invoke-WebRequest http://localhost:5050/health
-Invoke-WebRequest http://localhost:5050/ready
-Invoke-WebRequest http://localhost:5050/api/ready
-docker compose ps
-```
-
-## Reverse proxy guidance
-For internet-facing or semi-public use:
-- terminate TLS at proxy layer
-- forward to app on a private port
-- preserve `x-forwarded-for` and host headers
-- add rate limiting at the proxy or edge layer
-- restrict admin access where possible
-
-## Backup expectations
-Back up these paths daily:
-- `data/app.db` when using SQLite
-- `data/pdfs/`
-
-Also back up:
-- `.env` via a secret-management-safe method
-- deployment configuration
-
-## Recommended rollout process
-1. Run the test suite locally
-2. Verify `/health`, `/ready`, and `/api/ready`
-3. Register a test account
-4. Create and update a draft split sheet
-5. Finalize one invite-sign flow end to end
-6. Confirm SMTP send behavior
-7. Confirm backups exist for the active database and `data/pdfs/`
-
-## Public-cloud recommendation
-For a serious public launch:
-- keep local development on SQLite
-- move cloud runtime to containers
-- point the app at managed PostgreSQL
-- move PDF artifacts to object storage
-
-Recommended target architecture:
-- app container on AWS ECS Express Mode or ECS/Fargate
-- PostgreSQL on Amazon RDS
-- PDF or object artifacts on Amazon S3
-- email via Amazon SES
-
-## Production-hardening next steps
-Before full public exposure, prioritize:
-- validate the PostgreSQL path against a real database
-- rate limiting
-- password reset and recovery
-- stronger logging and monitoring
-- object storage strategy for PDFs
+## Remaining deployment hardening
+- password recovery
+- request-level rate limiting
+- stronger release automation for plugin artifacts
+- code signing for installer / binaries
+- structured monitoring / alerting

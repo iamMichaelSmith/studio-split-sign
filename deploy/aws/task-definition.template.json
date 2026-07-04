@@ -1,0 +1,74 @@
+{
+  "family": "splitsheetstudio-app",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::<account-id>:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::<account-id>:role/splitsheetstudioTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "splitsheetstudio-app",
+      "image": "<account-id>.dkr.ecr.<region>.amazonaws.com/splitsheetstudio:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 5050,
+          "hostPort": 5050,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "HOST", "value": "0.0.0.0" },
+        { "name": "PORT", "value": "5050" },
+        { "name": "PUBLIC_BASE_URL", "value": "https://app.splitsheetstudio.com" },
+        { "name": "DB_PROVIDER", "value": "postgres" },
+        { "name": "PGSSLMODE", "value": "require" },
+        { "name": "PG_SSL_REJECT_UNAUTHORIZED", "value": "false" },
+        { "name": "PDF_STORAGE", "value": "s3" },
+        { "name": "S3_BUCKET", "value": "splitsheetstudio-production-pdfs" },
+        { "name": "S3_REGION", "value": "us-east-1" },
+        { "name": "S3_PREFIX", "value": "final-pdfs" },
+        { "name": "SESSION_STORE", "value": "redis" },
+        { "name": "REDIS_PREFIX", "value": "splitsheet:sess:" },
+        { "name": "COOKIE_SECURE", "value": "true" },
+        { "name": "TRUST_PROXY", "value": "true" },
+        { "name": "ALLOW_PUBLIC_REGISTRATION", "value": "true" },
+        { "name": "SES_REGION", "value": "us-east-1" },
+        { "name": "FROM_EMAIL", "value": "no-reply@splitsheetstudio.com" },
+        { "name": "REPLY_TO_EMAIL", "value": "blakmarigold@gmail.com" },
+        { "name": "NOTIFY_EMAIL", "value": "blakmarigold@gmail.com" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "<secrets-manager-database-url-arn>" },
+        { "name": "SESSION_SECRET", "valueFrom": "<secrets-manager-session-secret-arn>" },
+        { "name": "REDIS_URL", "valueFrom": "<secrets-manager-redis-url-arn>" },
+        { "name": "API_TOKEN_SECRET", "valueFrom": "<secrets-manager-api-token-secret-arn>" },
+        { "name": "ADMIN_USER", "valueFrom": "<secrets-manager-admin-user-arn>" },
+        { "name": "ADMIN_PASS", "valueFrom": "<secrets-manager-admin-pass-arn>" },
+        { "name": "OWNER_EMAIL", "valueFrom": "<secrets-manager-owner-email-arn>" },
+        { "name": "OWNER_PASSWORD", "valueFrom": "<secrets-manager-owner-password-arn>" },
+        { "name": "OWNER_DISPLAY_NAME", "valueFrom": "<secrets-manager-owner-display-name-arn>" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/splitsheetstudio",
+          "awslogs-region": "<region>",
+          "awslogs-stream-prefix": "app"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:5050/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""
+        ],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 20
+      }
+    }
+  ]
+}

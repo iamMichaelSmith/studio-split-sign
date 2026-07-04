@@ -1,0 +1,74 @@
+{
+  "family": "splitsheetstudio-staging",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::309014076408:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::309014076408:role/splitsheetstudioTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "splitsheetstudio-staging",
+      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20260703-175432",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 5050,
+          "hostPort": 5050,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "HOST", "value": "0.0.0.0" },
+        { "name": "PORT", "value": "5050" },
+        { "name": "PUBLIC_BASE_URL", "value": "https://app.splitsheetstudio.com" },
+        { "name": "DB_PROVIDER", "value": "postgres" },
+        { "name": "PGSSLMODE", "value": "require" },
+        { "name": "PG_SSL_REJECT_UNAUTHORIZED", "value": "false" },
+        { "name": "PDF_STORAGE", "value": "s3" },
+        { "name": "S3_BUCKET", "value": "splitsheetstudio-staging-pdfs-309014076408-us-east-1" },
+        { "name": "S3_REGION", "value": "us-east-1" },
+        { "name": "S3_PREFIX", "value": "final-pdfs" },
+        { "name": "SESSION_STORE", "value": "redis" },
+        { "name": "REDIS_PREFIX", "value": "splitsheet:sess:" },
+        { "name": "COOKIE_SECURE", "value": "true" },
+        { "name": "TRUST_PROXY", "value": "true" },
+        { "name": "ALLOW_PUBLIC_REGISTRATION", "value": "true" },
+        { "name": "SES_REGION", "value": "us-east-1" },
+        { "name": "FROM_EMAIL", "value": "no-reply@splitsheetstudio.com" },
+        { "name": "REPLY_TO_EMAIL", "value": "blakmarigold@gmail.com" },
+        { "name": "NOTIFY_EMAIL", "value": "blakmarigold@gmail.com" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/database-url-7VW5bl" },
+        { "name": "SESSION_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/session-secret-dPPQoI" },
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/redis-url-6LsMDq" },
+        { "name": "API_TOKEN_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/api-token-secret-RMALZg" },
+        { "name": "ADMIN_USER", "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/admin-user-wruOet" },
+        { "name": "ADMIN_PASS", "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/admin-pass-yYx3wO" },
+        { "name": "OWNER_EMAIL", "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/owner-email-sUh0Ld" },
+        { "name": "OWNER_PASSWORD", "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/owner-password-YwGvvI" },
+        { "name": "OWNER_DISPLAY_NAME", "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/owner-display-name-6DMF5m" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/splitsheetstudio-staging",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "app"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:5050/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""
+        ],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 20
+      }
+    }
+  ]
+}

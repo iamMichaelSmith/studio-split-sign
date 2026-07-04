@@ -25,9 +25,28 @@ function createSqliteProvider({ dbPath }) {
 
 function createPostgresProvider({ databaseUrl }) {
   if (!databaseUrl) throw new Error("DATABASE_URL is required for postgres provider");
+  const normalizedUrl = new URL(databaseUrl);
+  normalizedUrl.searchParams.delete("sslmode");
+  normalizedUrl.searchParams.delete("ssl");
+  normalizedUrl.searchParams.delete("sslcert");
+  normalizedUrl.searchParams.delete("sslkey");
+  normalizedUrl.searchParams.delete("sslrootcert");
+  normalizedUrl.searchParams.delete("sslaccept");
+  normalizedUrl.searchParams.delete("sslacceptstrict");
+  normalizedUrl.searchParams.delete("gssencmode");
+  const sslMode = String(process.env.PGSSLMODE || "").trim().toLowerCase();
+  const rejectUnauthorized = String(process.env.PG_SSL_REJECT_UNAUTHORIZED || "false").toLowerCase() === "true";
+  let ssl;
+  if (sslMode === "disable") {
+    ssl = false;
+  } else if (sslMode === "verify-full" || rejectUnauthorized) {
+    ssl = { rejectUnauthorized: true };
+  } else {
+    ssl = { rejectUnauthorized: false };
+  }
   const pool = new Pool({
-    connectionString: databaseUrl,
-    ssl: process.env.PGSSLMODE === "disable" ? false : undefined
+    connectionString: normalizedUrl.toString(),
+    ssl
   });
 
   return {

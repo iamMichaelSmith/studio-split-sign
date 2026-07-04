@@ -322,7 +322,7 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     styleLabel(reviewSummaryTitleLabel);
 
     baseUrlEditor.setText(processor.getApiClient().getBaseUrl(), juce::dontSendNotification);
-    styleEditor(baseUrlEditor, "http://127.0.0.1:5050");
+    styleEditor(baseUrlEditor, "https://app.splitsheetstudio.com");
     emailEditor.setText(processor.getUserEmail(), juce::dontSendNotification);
     emailEditor.setInputRestrictions(256);
     styleEditor(emailEditor, "name@example.com");

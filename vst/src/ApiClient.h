@@ -46,7 +46,7 @@ public:
     void createSplitSheet(juce::String accessToken, juce::var payload, SplitSheetCallback callback) const;
 
 private:
-    juce::String baseUrl { "http://127.0.0.1:5050" };
+    juce::String baseUrl { "https://app.splitsheetstudio.com" };
 
     static juce::String trimTrailingSlash(juce::String value);
     static void dispatchToMessageThread(std::function<void()> fn);

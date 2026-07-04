@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SplitSheet Studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="landing-shell">
+    <div class="wrap landing-wrap">
+      <div class="landing-hero">
+        <div class="landing-copy">
+          <div class="landing-kicker">SplitSheet Studio</div>
+          <h1>Split sheets, signatures, and delivery built for real studio sessions.</h1>
+          <p class="landing-subtitle">Capture writer splits, collect signatures, generate final packets, and keep the workflow moving from browser or plugin.</p>
+          <div class="landing-actions">
+            <a class="landing-button landing-button-primary" href="<%= appUrl %>">Open App</a>
+            <a class="landing-button" href="<%= appUrl %>/split-sheet">Open Split Sheet</a>
+          </div>
+          <p class="landing-note">App host: <strong>app.<%= rootDomain %></strong> · Plugin target: <strong>https://app.<%= rootDomain %></strong></p>
+        </div>
+        <div class="landing-panel">
+          <div class="card">
+            <h3>What it does</h3>
+            <ul class="landing-list">
+              <li>Tracks contributor legal info, roles, shares, and signatures</li>
+              <li>Sends invite links or captures in-session signoff</li>
+              <li>Generates final PDF packets and stores them durably</li>
+              <li>Exposes the same workflow to the web app and VST plugin</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid landing-grid">
+        <div class="card">
+          <h3>Web App</h3>
+          <p class="small">Run the full split-sheet workflow in the browser with hosted auth, email delivery, and final packet access.</p>
+          <a href="<%= appUrl %>">Go to app</a>
+        </div>
+        <div class="card">
+          <h3>Plugin Workflow</h3>
+          <p class="small">Use the compact studio workflow inside your DAW and point the plugin at the hosted API instead of localhost.</p>
+          <a href="<%= appUrl %>#plugin">Plugin notes</a>
+        </div>
+        <div class="card">
+          <h3>Studio Use Case</h3>
+          <p class="small">Built for producer and writer sessions where paperwork usually slows down signoff, ownership clarity, and delivery.</p>
+          <a href="<%= appUrl %>/split-sheet">Start a split sheet</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -6,7 +6,10 @@ const fs = require("fs");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 const PDFDocument = require("pdfkit");
+const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { SESv2Client, SendEmailCommand, ListEmailIdentitiesCommand } = require("@aws-sdk/client-sesv2");
+const { RedisStore } = require("connect-redis");
+const { createClient } = require("redis");
 const { nanoid } = require("nanoid");
 const { createAuthService, ApiAuthError } = require("./services/auth-service");
 const { createDatabaseService } = require("./services/database-service");
@@ -24,36 +27,84 @@ const app = express();
 const PORT = process.env.PORT || 5050;
 const HOST = process.env.HOST || "0.0.0.0";
 const baseUrl = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+const baseOrigin = new URL(baseUrl);
+const appHost = baseOrigin.hostname.toLowerCase();
+const rootDomain = String(process.env.ROOT_DOMAIN || appHost.replace(/^app\./, "")).toLowerCase();
+const marketingHosts = new Set([rootDomain, `www.${rootDomain}`].filter(Boolean));
+const trustProxy = String(process.env.TRUST_PROXY || "false").toLowerCase() === "true";
 const dbProvider = process.env.DB_PROVIDER || "sqlite";
+const sessionStoreMode = String(process.env.SESSION_STORE || (process.env.REDIS_URL ? "redis" : "memory")).toLowerCase();
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, "data");
 const submissionsDir = path.join(dataDir, "submissions");
 const pdfDir = path.join(dataDir, "pdfs");
 const authDbPath = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(dataDir, "app.db");
 const pdfLogoMarkPath = path.join(__dirname, "public", "pdf-logo-mark.png");
+const cookieSecure = String(process.env.COOKIE_SECURE || "false") === "true";
+const cookieMaxAgeMs = 1000 * 60 * 60 * 8;
+const sessionTtlSeconds = Math.max(60, Math.floor(cookieMaxAgeMs / 1000));
+const redisPrefix = process.env.REDIS_PREFIX || "splitsheet:sess:";
+const pdfStorageMode = String(process.env.PDF_STORAGE || (process.env.S3_BUCKET ? "s3" : "local")).toLowerCase();
+const s3Bucket = process.env.S3_BUCKET || "";
+const s3Region = process.env.S3_REGION || process.env.AWS_REGION || "us-east-1";
+const s3Prefix = String(process.env.S3_PREFIX || "final-pdfs/").replace(/^\/+/, "").replace(/\/+$/, "");
 
 fs.mkdirSync(submissionsDir, { recursive: true });
 fs.mkdirSync(pdfDir, { recursive: true });
 
+let redisClient = null;
+let s3Client = null;
+let redisStore = null;
+
+if (sessionStoreMode === "redis") {
+  if (!process.env.REDIS_URL) {
+    throw new Error("SESSION_STORE=redis requires REDIS_URL");
+  }
+  redisClient = createClient({ url: process.env.REDIS_URL });
+  redisClient.on("error", (err) => {
+    console.error("Redis session store error:", err.message || err);
+  });
+  redisStore = new RedisStore({
+    client: redisClient,
+    prefix: redisPrefix,
+    ttl: sessionTtlSeconds
+  });
+}
+
+if (pdfStorageMode === "s3") {
+  if (!s3Bucket) {
+    throw new Error("PDF_STORAGE=s3 requires S3_BUCKET");
+  }
+  s3Client = new S3Client({ region: s3Region });
+}
+
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
+if (trustProxy) {
+  app.set("trust proxy", 1);
+}
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/vendor/signature_pad", express.static(path.join(__dirname, "node_modules", "signature_pad", "dist")));
 app.use(session({
+  store: redisStore || undefined,
   secret: process.env.SESSION_SECRET || "split-open-sign",
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
     sameSite: "lax",
-    secure: String(process.env.COOKIE_SECURE || "false") === "true",
-    maxAge: 1000 * 60 * 60 * 8
+    secure: cookieSecure,
+    maxAge: cookieMaxAgeMs
   }
 }));
 
 function nowIso() { return new Date().toISOString(); }
 function uniq(arr) { return [...new Set(arr.filter(Boolean))]; }
+function pdfDownloadFilename(id, kind = "final") { return `split-sheet-${id}-${kind}.pdf`; }
+function splitPdfS3Key(id) {
+  return s3Prefix ? `${s3Prefix}/${pdfDownloadFilename(id)}` : pdfDownloadFilename(id);
+}
 let sesIdentityCache = null;
 const allowPublicRegistration = String(process.env.ALLOW_PUBLIC_REGISTRATION || "false").toLowerCase() === "true";
 const databaseService = createDatabaseService({
@@ -108,6 +159,23 @@ function clearLoginFailures(req) {
 
 function requestIp(req) {
   return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "");
+}
+
+function requestHost(req) {
+  const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
+  const directHost = String(req.headers.host || "").split(",")[0].trim();
+  return (forwardedHost || directHost).replace(/:\d+$/, "").toLowerCase();
+}
+
+function isMarketingHost(req) {
+  return marketingHosts.has(requestHost(req));
+}
+
+function ensureAppHost(req, res, next) {
+  if (!isMarketingHost(req)) {
+    return next();
+  }
+  return res.redirect(302, `${baseUrl}${req.originalUrl}`);
 }
 
 async function loadSubmission(id) {
@@ -617,9 +685,64 @@ function generateFinalSplitPdf(docJson) {
   pdf.end();
 
   return new Promise((resolve, reject) => {
-    stream.on("finish", () => resolve({ outPath, auditChecksum }));
+    stream.on("finish", async () => {
+      try {
+        let storage = null;
+        if (pdfStorageMode === "s3") {
+          const key = splitPdfS3Key(docJson.id);
+          await s3Client.send(new PutObjectCommand({
+            Bucket: s3Bucket,
+            Key: key,
+            Body: fs.createReadStream(outPath),
+            ContentType: "application/pdf",
+            ContentDisposition: `attachment; filename="${pdfDownloadFilename(docJson.id)}"`
+          }));
+          storage = {
+            provider: "s3",
+            bucket: s3Bucket,
+            key,
+            region: s3Region,
+            uploadedAt: nowIso()
+          };
+          docJson.payload = docJson.payload || {};
+          docJson.payload.finalPdfStorage = storage;
+        }
+        resolve({ outPath, auditChecksum, storage });
+      } catch (error) {
+        reject(error);
+      }
+    });
     stream.on("error", reject);
   });
+}
+
+async function streamStoredFinalPdf(docJson, res) {
+  const remotePdf = docJson?.payload?.finalPdfStorage;
+  if (!remotePdf || remotePdf.provider !== "s3" || !remotePdf.bucket || !remotePdf.key || !s3Client) {
+    return false;
+  }
+
+  const s3Object = await s3Client.send(new GetObjectCommand({
+    Bucket: remotePdf.bucket,
+    Key: remotePdf.key
+  }));
+  res.setHeader("Content-Type", s3Object.ContentType || "application/pdf");
+  res.setHeader("Content-Disposition", s3Object.ContentDisposition || `attachment; filename="${pdfDownloadFilename(docJson.id)}"`);
+  if (s3Object.ContentLength) {
+    res.setHeader("Content-Length", String(s3Object.ContentLength));
+  }
+  s3Object.Body.pipe(res);
+  return true;
+}
+
+async function initializeRuntime() {
+  if (redisClient && !redisClient.isOpen) {
+    await redisClient.connect();
+    console.log(`Redis session store connected (${redisPrefix})`);
+  }
+  if (pdfStorageMode === "s3") {
+    console.log(`S3 PDF storage enabled (${s3Bucket}/${s3Prefix || "."})`);
+  }
 }
 
 async function sendEmail({ subject, html, to, attachments = [] }) {
@@ -878,7 +1001,18 @@ async function updateDraftSplitSheet(doc, input, req) {
   });
 }
 
-app.get("/", (req, res) => res.render("index"));
+app.use(["/split-sheet", "/admin"], ensureAppHost);
+
+app.get("/", (req, res) => {
+  if (isMarketingHost(req)) {
+    return res.render("landing", {
+      appUrl: baseUrl,
+      pluginUrl: `${baseUrl}#plugin`,
+      rootDomain
+    });
+  }
+  return res.render("index", { appUrl: baseUrl });
+});
 app.get("/health", (req, res) => res.json({ ok: true, at: nowIso() }));
 app.get("/ready", (req, res) => res.json({
   ok: true,
@@ -1192,12 +1326,19 @@ app.get("/split-sheet/pdf/:id", async (req, res) => {
 
   const finalPdf = splitPdfPath(docJson.id);
   if (fs.existsSync(finalPdf)) {
-    return res.download(finalPdf, `split-sheet-${docJson.id}-final.pdf`);
+    return res.download(finalPdf, pdfDownloadFilename(docJson.id));
+  }
+  try {
+    if (await streamStoredFinalPdf(docJson, res)) {
+      return;
+    }
+  } catch (error) {
+    console.error(`Failed to stream final PDF from S3 for ${docJson.id}:`, error.message || error);
   }
 
   // fallback summary packet if final not generated yet
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="split-sheet-${docJson.id}-summary.pdf"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${pdfDownloadFilename(docJson.id, "summary")}"`);
 
   const pdf = new PDFDocument({ margin: 24 });
   pdf.pipe(res);
@@ -1283,7 +1424,14 @@ app.get("/admin/doc/:id", requireAdmin, async (req, res) => {
 });
 
 if (require.main === module) {
-  app.listen(PORT, HOST, () => console.log(`Split Sheet Open Sign running at ${baseUrl}`));
+  initializeRuntime()
+    .then(() => {
+      app.listen(PORT, HOST, () => console.log(`Split Sheet Open Sign running at ${baseUrl}`));
+    })
+    .catch((error) => {
+      console.error("Startup failed:", error.message || error);
+      process.exit(1);
+    });
 }
 
 module.exports = app;
