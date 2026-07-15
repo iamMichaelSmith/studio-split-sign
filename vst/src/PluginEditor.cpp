@@ -365,6 +365,8 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     styleButton(settingsButton);
     styleButton(readyButton);
     styleButton(loginButton, accentColour, juce::Colours::black);
+    styleButton(createAccountButton);
+    styleButton(forgotPasswordButton);
     styleButton(addContributorButton);
     styleButton(setEqualSplitsButton);
     styleButton(nextStepButton);
@@ -377,6 +379,8 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     settingsButton.addListener(this);
     readyButton.addListener(this);
     loginButton.addListener(this);
+    createAccountButton.addListener(this);
+    forgotPasswordButton.addListener(this);
     songStepButton.addListener(this);
     contributorsStepButton.addListener(this);
     reviewStepButton.addListener(this);
@@ -386,18 +390,20 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     submitButton.addListener(this);
     logoutButton.addListener(this);
 
-    for (auto* component : std::array<juce::Component*, 32>{
+    for (auto* component : std::array<juce::Component*, 33>{
              &titleLabel, &subtitleLabel, &statusBadgeLabel, &statusLabel, &settingsButton,
              &baseUrlLabel, &baseUrlEditor, &readyButton, &emailLabel, &emailEditor,
-             &passwordLabel, &passwordEditor, &loginButton, &songStepButton,
+             &passwordLabel, &passwordEditor, &loginButton, &createAccountButton,
+             &forgotPasswordButton, &songStepButton,
              &contributorsStepButton, &reviewStepButton, &welcomeLabel, &songTitleLabel,
              &songTitleEditor, &alternateTitleLabel, &alternateTitleEditor, &dateLabel,
              &dateEditor, &sessionLocationLabel, &sessionLocationEditor, &iswcLabel,
-             &iswcEditor, &isrcLabel, &isrcEditor, &notesLabel, &notesEditor,
-             &contributorsViewport })
+             &iswcEditor, &isrcLabel, &isrcEditor, &notesLabel, &notesEditor })
     {
         addAndMakeVisible(*component);
     }
+
+    addAndMakeVisible(contributorsViewport);
 
     for (auto* component : std::array<juce::Component*, 14>{
              &contributorsLabel, &contributorsHintLabel, &totalsLabel, &addContributorButton,
@@ -428,6 +434,8 @@ SplitSheetStudioEditor::~SplitSheetStudioEditor()
     settingsButton.removeListener(this);
     readyButton.removeListener(this);
     loginButton.removeListener(this);
+    createAccountButton.removeListener(this);
+    forgotPasswordButton.removeListener(this);
     songStepButton.removeListener(this);
     contributorsStepButton.removeListener(this);
     reviewStepButton.removeListener(this);
@@ -503,8 +511,8 @@ void SplitSheetStudioEditor::resized()
 
     if (!isAuthenticated())
     {
-        auto loginArea = area.removeFromTop(220);
-        loginArea = loginArea.withSizeKeepingCentre(420, 220);
+        auto loginArea = area.removeFromTop(270);
+        loginArea = loginArea.withSizeKeepingCentre(420, 270);
 
         emailLabel.setBounds(loginArea.removeFromTop(20));
         loginArea.removeFromTop(4);
@@ -517,6 +525,10 @@ void SplitSheetStudioEditor::resized()
         loginArea.removeFromTop(18);
 
         loginButton.setBounds(loginArea.removeFromTop(42).removeFromLeft(180));
+        loginArea.removeFromTop(12);
+        createAccountButton.setBounds(loginArea.removeFromTop(36));
+        loginArea.removeFromTop(8);
+        forgotPasswordButton.setBounds(loginArea.removeFromTop(36));
         return;
     }
 
@@ -683,6 +695,13 @@ void SplitSheetStudioEditor::buttonClicked(juce::Button* button)
     if (button == &loginButton)
     {
         runLogin();
+        return;
+    }
+
+    if (button == &createAccountButton || button == &forgotPasswordButton)
+    {
+        const auto accountUrl = processor.getApiClient().getBaseUrl() + (button == &createAccountButton ? "/signup" : "/forgot-password");
+        juce::URL(accountUrl).launchInDefaultBrowser();
         return;
     }
 
@@ -905,6 +924,8 @@ void SplitSheetStudioEditor::refreshViewState()
     passwordLabel.setVisible(!authed);
     passwordEditor.setVisible(!authed);
     loginButton.setVisible(!authed);
+    createAccountButton.setVisible(!authed);
+    forgotPasswordButton.setVisible(!authed);
 
     songStepButton.setVisible(authed);
     contributorsStepButton.setVisible(authed);
@@ -1124,6 +1145,8 @@ void SplitSheetStudioEditor::setBusy(bool busy)
     settingsButton.setEnabled(!busy);
     readyButton.setEnabled(!busy);
     loginButton.setEnabled(!busy);
+    createAccountButton.setEnabled(!busy);
+    forgotPasswordButton.setEnabled(!busy);
     songStepButton.setEnabled(!busy);
     contributorsStepButton.setEnabled(!busy);
     reviewStepButton.setEnabled(!busy);

@@ -122,6 +122,8 @@ private:
     juce::TextButton settingsButton { "Connection Settings" };
     juce::TextButton readyButton { "Check Connection" };
     juce::TextButton loginButton { "Sign In" };
+    juce::TextButton createAccountButton { "Create Account" };
+    juce::TextButton forgotPasswordButton { "Forgot Password" };
     juce::TextButton songStepButton { "1 Song" };
     juce::TextButton contributorsStepButton { "2 Contributors" };
     juce::TextButton reviewStepButton { "3 Review & Submit" };

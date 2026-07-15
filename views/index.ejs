@@ -1,1 +1,38 @@
-<!doctype html><html><head><meta charset="utf-8"><title>SplitSheet Studio App</title><link rel="stylesheet" href="/style.css"></head><body><div class="wrap"><h1>SplitSheet Studio</h1><p class="small">Hosted split-sheet workflow for session capture, signatures, delivery, and plugin-connected studio use.</p><div class="grid"><div class="card"><h3>Split Sheet</h3><p class="small">Capture co-writer splits, signatures, and recipient delivery in one pass.</p><a href="/split-sheet">Open</a></div><div class="card"><h3>Plugin API</h3><p class="small">Default plugin target is now the hosted app instead of localhost.</p><a href="<%= appUrl %>/api/ready">Check API</a></div></div><p><a href="/admin/login">Admin login</a></p></div></body></html>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SplitSheet Studio App</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <h1>SplitSheet Studio</h1>
+    <p class="small">Hosted split-sheet workflow for session capture, signatures, delivery, and plugin-connected studio use.</p>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Split Sheet</h3>
+        <p class="small">Capture co-writer splits, signatures, and recipient delivery in one pass.</p>
+        <a href="/split-sheet">Open</a>
+      </div>
+      <div class="card">
+        <h3>Create Account</h3>
+        <p class="small">Public signup for plugin access, password recovery, and future hosted account tools.</p>
+        <a href="<%= signupUrl %>">Sign up</a>
+      </div>
+      <div class="card">
+        <h3>Plugin API</h3>
+        <p class="small">Default plugin target is now the hosted app instead of localhost.</p>
+        <a href="<%= appUrl %>/api/ready">Check API</a>
+      </div>
+    </div>
+
+    <p class="inline-actions">
+      <a href="<%= forgotPasswordUrl %>">Forgot password</a>
+      <a href="/admin/login">Admin login</a>
+    </p>
+  </div>
+</body>
+</html>

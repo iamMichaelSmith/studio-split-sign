@@ -43,6 +43,7 @@ These are the practical “micro-apps” or workflow surfaces that make up the s
 
 2. **Hosted app**
    - account registration and login
+   - email verification and password reset
    - split-sheet creation
    - draft / finalize workflow
 
@@ -131,7 +132,7 @@ It demonstrates:
 
 ### Core app
 - `server.js` -> Express entry point, routing, runtime orchestration
-- `services/auth-service.js` -> registration, login, refresh, ownership
+- `services/auth-service.js` -> registration, verification, reset, login, refresh, ownership
 - `services/database-service.js` -> SQLite / PostgreSQL provider selection
 - `services/submission-service.js` -> submission lifecycle and persistence
 - `services/split-sheet-service.js` -> split-sheet rules and payload shaping
@@ -183,7 +184,6 @@ This repo has already been moved to a live AWS stack with:
 
 ## Remaining public-launch work
 The core hosted system is live, but these are still the main product-hardening items:
-- password reset / recovery
 - request-level rate limiting
 - plugin installer final verification on a clean machine
 - code signing for installer / binaries

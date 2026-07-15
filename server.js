@@ -47,6 +47,8 @@ const pdfStorageMode = String(process.env.PDF_STORAGE || (process.env.S3_BUCKET 
 const s3Bucket = process.env.S3_BUCKET || "";
 const s3Region = process.env.S3_REGION || process.env.AWS_REGION || "us-east-1";
 const s3Prefix = String(process.env.S3_PREFIX || "final-pdfs/").replace(/^\/+/, "").replace(/\/+$/, "");
+const authDebugTokens = String(process.env.AUTH_DEBUG_TOKENS || "false").toLowerCase() === "true";
+const requireEmailVerification = String(process.env.REQUIRE_EMAIL_VERIFICATION || "false").toLowerCase() === "true";
 
 fs.mkdirSync(submissionsDir, { recursive: true });
 fs.mkdirSync(pdfDir, { recursive: true });
@@ -122,7 +124,10 @@ const authService = createAuthService({
   tokenSecret: process.env.API_TOKEN_SECRET || process.env.SESSION_SECRET || "split-open-sign-api-secret",
   accessTokenTtlMinutes: Number(process.env.API_ACCESS_TOKEN_TTL_MINUTES || 15),
   refreshTokenTtlDays: Number(process.env.API_REFRESH_TOKEN_TTL_DAYS || 30),
+  verificationTokenTtlHours: Number(process.env.EMAIL_VERIFICATION_TOKEN_TTL_HOURS || 48),
+  passwordResetTokenTtlHours: Number(process.env.PASSWORD_RESET_TOKEN_TTL_HOURS || 2),
   provider: databaseService.provider,
+  requireEmailVerification,
   bootstrapOwner: {
     email: process.env.OWNER_EMAIL || "",
     password: process.env.OWNER_PASSWORD || "",
@@ -168,7 +173,11 @@ function requestHost(req) {
 }
 
 function isMarketingHost(req) {
-  return marketingHosts.has(requestHost(req));
+  const host = requestHost(req);
+  if (!host || host === appHost) {
+    return false;
+  }
+  return marketingHosts.has(host);
 }
 
 function ensureAppHost(req, res, next) {
@@ -813,6 +822,71 @@ async function sendEmail({ subject, html, to, attachments = [] }) {
   }
 }
 
+function verificationEmailHtml({ displayName, verifyUrl, expiresAt }) {
+  return `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
+    <h2 style="margin:0 0 10px">Verify your SplitSheet Studio account</h2>
+    <p style="margin:0 0 12px">Hi ${displayName || "there"},</p>
+    <p style="margin:0 0 12px">Confirm this email address so you can recover your password and keep your account secure.</p>
+    <p style="margin:0 0 14px"><a href="${verifyUrl}">Verify your email</a></p>
+    <p style="margin:0 0 12px">This link expires on ${new Date(expiresAt).toUTCString()}.</p>
+    <hr style="border:none;border-top:1px solid #ddd;margin:14px 0" />
+    <p style="margin:0">SplitSheet Studio<br/>Account verification</p>
+  </div>`;
+}
+
+function passwordResetEmailHtml({ displayName, resetUrl, expiresAt }) {
+  return `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
+    <h2 style="margin:0 0 10px">Reset your SplitSheet Studio password</h2>
+    <p style="margin:0 0 12px">Hi ${displayName || "there"},</p>
+    <p style="margin:0 0 12px">Use the link below to set a new password for your account.</p>
+    <p style="margin:0 0 14px"><a href="${resetUrl}">Reset password</a></p>
+    <p style="margin:0 0 12px">This link expires on ${new Date(expiresAt).toUTCString()}.</p>
+    <p style="margin:0 0 12px">If you did not request this change, you can ignore this email.</p>
+    <hr style="border:none;border-top:1px solid #ddd;margin:14px 0" />
+    <p style="margin:0">SplitSheet Studio<br/>Account recovery</p>
+  </div>`;
+}
+
+async function sendVerificationEmail({ user, token, expiresAt }) {
+  if (!user?.email || !token || !expiresAt) {
+    return { ok: false, skipped: true, reason: "missing_verification_payload" };
+  }
+  const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(token)}`;
+  const emailResult = await sendEmail({
+    to: [user.email],
+    subject: "Verify your SplitSheet Studio account",
+    html: verificationEmailHtml({
+      displayName: user.displayName,
+      verifyUrl,
+      expiresAt
+    })
+  });
+  return {
+    ...emailResult,
+    verifyUrl: authDebugTokens ? verifyUrl : undefined
+  };
+}
+
+async function sendPasswordResetEmail({ user, token, expiresAt }) {
+  if (!user?.email || !token || !expiresAt) {
+    return { ok: false, skipped: true, reason: "missing_reset_payload" };
+  }
+  const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+  const emailResult = await sendEmail({
+    to: [user.email],
+    subject: "Reset your SplitSheet Studio password",
+    html: passwordResetEmailHtml({
+      displayName: user.displayName,
+      resetUrl,
+      expiresAt
+    })
+  });
+  return {
+    ...emailResult,
+    resetUrl: authDebugTokens ? resetUrl : undefined
+  };
+}
+
 function splitSummaryHtml(contributors = []) {
   if (!Array.isArray(contributors) || !contributors.length) return "";
   const rows = contributors.map((c) => {
@@ -1001,23 +1075,29 @@ async function updateDraftSplitSheet(doc, input, req) {
   });
 }
 
-app.use(["/split-sheet", "/admin"], ensureAppHost);
+app.use(["/split-sheet", "/admin", "/signup", "/forgot-password", "/reset-password", "/verify-email"], ensureAppHost);
 
 app.get("/", (req, res) => {
   if (isMarketingHost(req)) {
     return res.render("landing", {
       appUrl: baseUrl,
+      signupUrl: `${baseUrl}/signup`,
       pluginUrl: `${baseUrl}#plugin`,
       rootDomain
     });
   }
-  return res.render("index", { appUrl: baseUrl });
+  return res.render("index", {
+    appUrl: baseUrl,
+    signupUrl: `${baseUrl}/signup`,
+    forgotPasswordUrl: `${baseUrl}/forgot-password`
+  });
 });
 app.get("/health", (req, res) => res.json({ ok: true, at: nowIso() }));
 app.get("/ready", (req, res) => res.json({
   ok: true,
   at: nowIso(),
   dbProvider: databaseService.provider,
+  requireEmailVerification,
   smtpConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
   sesConfigured: Boolean((process.env.SES_REGION || process.env.AWS_REGION || process.env.AWS_PROFILE || process.env.FROM_EMAIL) && process.env.FROM_EMAIL),
   baseUrl
@@ -1029,6 +1109,7 @@ app.get("/api/ready", (req, res) => res.json({
   api: "v1",
   dbProvider: databaseService.provider,
   allowPublicRegistration,
+  requireEmailVerification,
   smtpConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
   sesConfigured: Boolean((process.env.SES_REGION || process.env.AWS_REGION || process.env.AWS_PROFILE || process.env.FROM_EMAIL) && process.env.FROM_EMAIL),
   baseUrl
@@ -1045,8 +1126,18 @@ app.post("/api/auth/register", async (req, res) => {
       ip: requestIp(req),
       userAgent: req.headers["user-agent"]
     });
+    const verificationEmail = await sendVerificationEmail({
+      user: result.user,
+      token: result.verificationToken,
+      expiresAt: result.verificationExpiresAt
+    });
     clearLoginFailures(req);
-    return res.status(201).json({ ok: true, ...result });
+    return res.status(201).json({
+      ok: true,
+      ...result,
+      verificationEmail,
+      verificationToken: authDebugTokens ? result.verificationToken : undefined
+    });
   } catch (error) {
     if (error instanceof ApiAuthError) {
       return apiError(res, error.statusCode, error.message);
@@ -1080,6 +1171,87 @@ app.post("/api/auth/login", async (req, res) => {
     return apiError(res, 500, "Unexpected server error while creating API session.");
   }
 });
+app.post("/api/auth/resend-verification", async (req, res) => {
+  try {
+    const verification = await authService.createVerificationRequest({
+      email: req.body.email
+    });
+    let verificationEmail = { ok: true, skipped: true, reason: "not_requested" };
+    if (verification.created) {
+      verificationEmail = await sendVerificationEmail({
+        user: verification.user,
+        token: verification.token,
+        expiresAt: verification.expiresAt
+      });
+    }
+    return res.json({
+      ok: true,
+      sent: Boolean(verification.created),
+      verificationEmail,
+      verificationToken: authDebugTokens ? verification.token : undefined
+    });
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return apiError(res, error.statusCode, error.message);
+    }
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while resending verification.");
+  }
+});
+app.post("/api/auth/verify-email", async (req, res) => {
+  try {
+    const result = await authService.verifyEmailToken(req.body.token);
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return apiError(res, error.statusCode, error.message);
+    }
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while verifying email.");
+  }
+});
+app.post("/api/auth/request-password-reset", async (req, res) => {
+  try {
+    const resetRequest = await authService.createPasswordResetRequest({
+      email: req.body.email
+    });
+    let resetEmail = { ok: true, skipped: true, reason: "not_requested" };
+    if (resetRequest.created) {
+      resetEmail = await sendPasswordResetEmail({
+        user: resetRequest.user,
+        token: resetRequest.token,
+        expiresAt: resetRequest.expiresAt
+      });
+    }
+    return res.json({
+      ok: true,
+      sent: Boolean(resetRequest.created),
+      resetEmail,
+      resetToken: authDebugTokens ? resetRequest.token : undefined
+    });
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return apiError(res, error.statusCode, error.message);
+    }
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while requesting password reset.");
+  }
+});
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    const result = await authService.resetPasswordWithToken({
+      token: req.body.token,
+      password: req.body.password
+    });
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return apiError(res, error.statusCode, error.message);
+    }
+    console.error(error);
+    return apiError(res, 500, "Unexpected server error while resetting password.");
+  }
+});
 app.post("/api/auth/refresh", async (req, res) => {
   try {
     const result = await authService.refreshSession({
@@ -1104,6 +1276,188 @@ app.get("/api/me", requireApiAuth, (req, res) => res.json({
   ok: true,
   user: req.apiUser
 }));
+app.get("/signup", (req, res) => res.render("auth-signup", {
+  error: null,
+  values: { displayName: "", email: "" },
+  allowPublicRegistration,
+  baseUrl
+}));
+app.post("/signup", async (req, res) => {
+  if (!allowPublicRegistration && await authService.userCount() > 0) {
+    return res.status(403).render("auth-signup", {
+      error: "Public registration is disabled right now.",
+      values: {
+        displayName: String(req.body.displayName || ""),
+        email: String(req.body.email || "")
+      },
+      allowPublicRegistration,
+      baseUrl
+    });
+  }
+  try {
+    const result = await authService.registerUser({
+      email: req.body.email,
+      password: req.body.password,
+      displayName: req.body.displayName,
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"]
+    });
+    const verificationEmail = await sendVerificationEmail({
+      user: result.user,
+      token: result.verificationToken,
+      expiresAt: result.verificationExpiresAt
+    });
+    return res.render("auth-message", {
+      title: "Account created",
+      message: `We created your account for ${result.user.email}. Check your inbox for the verification link.`,
+      details: verificationEmail.ok
+        ? "Verification email sent."
+        : `Verification email status: ${verificationEmail.reason || "not_sent"}.`,
+      actionHref: "/forgot-password",
+      actionLabel: "Need a reset later?",
+      debugLink: authDebugTokens ? verificationEmail.verifyUrl : null
+    });
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return res.status(error.statusCode).render("auth-signup", {
+        error: error.message,
+        values: {
+          displayName: String(req.body.displayName || ""),
+          email: String(req.body.email || "")
+        },
+        allowPublicRegistration,
+        baseUrl
+      });
+    }
+    console.error(error);
+    return res.status(500).render("auth-signup", {
+      error: "Unexpected server error while creating your account.",
+      values: {
+        displayName: String(req.body.displayName || ""),
+        email: String(req.body.email || "")
+      },
+      allowPublicRegistration,
+      baseUrl
+    });
+  }
+});
+app.get("/forgot-password", (req, res) => res.render("auth-forgot-password", {
+  error: null,
+  value: "",
+  baseUrl
+}));
+app.post("/forgot-password", async (req, res) => {
+  try {
+    const resetRequest = await authService.createPasswordResetRequest({
+      email: req.body.email
+    });
+    let resetEmail = { ok: true, skipped: true, reason: "not_requested" };
+    if (resetRequest.created) {
+      resetEmail = await sendPasswordResetEmail({
+        user: resetRequest.user,
+        token: resetRequest.token,
+        expiresAt: resetRequest.expiresAt
+      });
+    }
+    return res.render("auth-message", {
+      title: "Check your inbox",
+      message: "If that email exists in SplitSheet Studio, a password reset link is on the way.",
+      details: resetEmail.ok
+        ? "Password reset email sent."
+        : `Password reset email status: ${resetEmail.reason || "not_sent"}.`,
+      actionHref: "/signup",
+      actionLabel: "Create a new account",
+      debugLink: authDebugTokens ? resetEmail.resetUrl : null
+    });
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return res.status(error.statusCode).render("auth-forgot-password", {
+        error: error.message,
+        value: String(req.body.email || ""),
+        baseUrl
+      });
+    }
+    console.error(error);
+    return res.status(500).render("auth-forgot-password", {
+      error: "Unexpected server error while requesting password reset.",
+      value: String(req.body.email || ""),
+      baseUrl
+    });
+  }
+});
+app.get("/reset-password", (req, res) => res.render("auth-reset-password", {
+  error: null,
+  success: false,
+  token: String(req.query.token || ""),
+  baseUrl
+}));
+app.post("/reset-password", async (req, res) => {
+  try {
+    await authService.resetPasswordWithToken({
+      token: req.body.token,
+      password: req.body.password
+    });
+    return res.render("auth-reset-password", {
+      error: null,
+      success: true,
+      token: "",
+      baseUrl
+    });
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return res.status(error.statusCode).render("auth-reset-password", {
+        error: error.message,
+        success: false,
+        token: String(req.body.token || ""),
+        baseUrl
+      });
+    }
+    console.error(error);
+    return res.status(500).render("auth-reset-password", {
+      error: "Unexpected server error while resetting your password.",
+      success: false,
+      token: String(req.body.token || ""),
+      baseUrl
+    });
+  }
+});
+app.get("/verify-email", async (req, res) => {
+  try {
+    const token = String(req.query.token || "");
+    if (!token) {
+      return res.status(400).render("auth-message", {
+        title: "Verification link missing",
+        message: "This verification link is incomplete.",
+        details: "Request a fresh link from the signup flow or contact support.",
+        actionHref: "/signup",
+        actionLabel: "Create account",
+        debugLink: null
+      });
+    }
+    const result = await authService.verifyEmailToken(token);
+    return res.render("auth-message", {
+      title: "Email verified",
+      message: `${result.user.email} is now verified.`,
+      details: "You can use this account in the plugin and future hosted account flows.",
+      actionHref: "/forgot-password",
+      actionLabel: "Test password recovery",
+      debugLink: null
+    });
+  } catch (error) {
+    const message = error instanceof ApiAuthError ? error.message : "Unexpected server error while verifying email.";
+    if (!(error instanceof ApiAuthError)) {
+      console.error(error);
+    }
+    return res.status(error instanceof ApiAuthError ? error.statusCode : 500).render("auth-message", {
+      title: "Verification failed",
+      message,
+      details: "Request a fresh verification link if you still need access.",
+      actionHref: "/signup",
+      actionLabel: "Back to signup",
+      debugLink: null
+    });
+  }
+});
 app.get("/api/split-sheets", requireApiAuth, async (req, res) => {
   const statusFilter = String(req.query.status || "").trim().toLowerCase();
   let docs = await submissionStore.listSubmissions({

@@ -34,7 +34,8 @@ async function main() {
       ADMIN_PASS: 'admin-pass-123',
       SESSION_SECRET: 'smoke-session-secret',
       API_TOKEN_SECRET: 'smoke-api-token-secret',
-      ALLOW_PUBLIC_REGISTRATION: 'true'
+      ALLOW_PUBLIC_REGISTRATION: 'true',
+      AUTH_DEBUG_TOKENS: 'true'
     },
     stdio: 'ignore'
   });
@@ -57,6 +58,12 @@ async function main() {
     const split = await fetch(`http://127.0.0.1:${port}/split-sheet`);
     if (!split.ok) throw new Error('split form failed');
 
+    const signupPage = await fetch(`http://127.0.0.1:${port}/signup`);
+    if (!signupPage.ok) throw new Error('signup page failed');
+
+    const forgotPasswordPage = await fetch(`http://127.0.0.1:${port}/forgot-password`);
+    if (!forgotPasswordPage.ok) throw new Error('forgot password page failed');
+
     const unauthorizedValidate = await fetch(`http://127.0.0.1:${port}/api/split-sheets/validate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -76,6 +83,14 @@ async function main() {
     if (!register.ok) throw new Error('api register failed');
     const registered = await register.json();
     if (!registered.user?.id) throw new Error('registered user missing');
+    if (!registered.verificationToken) throw new Error('verification token missing');
+
+    const verify = await fetch(`http://127.0.0.1:${port}/api/auth/verify-email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: registered.verificationToken })
+    });
+    if (!verify.ok) throw new Error('api verify email failed');
 
     const login = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
       method: 'POST',
@@ -198,10 +213,39 @@ async function main() {
     const refreshed = await refresh.json();
     if (!refreshed.accessToken || !refreshed.refreshToken) throw new Error('refreshed tokens missing');
 
+    const passwordResetRequest = await fetch(`http://127.0.0.1:${port}/api/auth/request-password-reset`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: accountEmail })
+    });
+    if (!passwordResetRequest.ok) throw new Error('password reset request failed');
+    const resetRequest = await passwordResetRequest.json();
+    if (!resetRequest.resetToken) throw new Error('password reset token missing');
+
+    const nextPassword = 'smoke-pass-456';
+    const passwordReset = await fetch(`http://127.0.0.1:${port}/api/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: resetRequest.resetToken, password: nextPassword })
+    });
+    if (!passwordReset.ok) throw new Error('password reset failed');
+
+    const relogin = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: accountEmail,
+        password: nextPassword
+      })
+    });
+    if (!relogin.ok) throw new Error('relogin after password reset failed');
+    const reloginJson = await relogin.json();
+    if (!reloginJson.accessToken || !reloginJson.refreshToken) throw new Error('relogin tokens missing');
+
     const logout = await fetch(`http://127.0.0.1:${port}/api/auth/logout`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ refreshToken: refreshed.refreshToken })
+      body: JSON.stringify({ refreshToken: reloginJson.refreshToken })
     });
     if (!logout.ok) throw new Error('api logout failed');
 

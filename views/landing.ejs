@@ -16,6 +16,7 @@
           <p class="landing-subtitle">Capture writer splits, collect signatures, generate final packets, and keep the workflow moving from browser or plugin.</p>
           <div class="landing-actions">
             <a class="landing-button landing-button-primary" href="<%= appUrl %>">Open App</a>
+            <a class="landing-button" href="<%= signupUrl %>">Create Account</a>
             <a class="landing-button" href="<%= appUrl %>/split-sheet">Open Split Sheet</a>
           </div>
           <p class="landing-note">App host: <strong>app.<%= rootDomain %></strong> · Plugin target: <strong>https://app.<%= rootDomain %></strong></p>
@@ -38,6 +39,11 @@
           <h3>Web App</h3>
           <p class="small">Run the full split-sheet workflow in the browser with hosted auth, email delivery, and final packet access.</p>
           <a href="<%= appUrl %>">Go to app</a>
+        </div>
+        <div class="card">
+          <h3>Account Access</h3>
+          <p class="small">Create an account once, then use the same credentials in the browser and plugin. Recovery flows live on the hosted app.</p>
+          <a href="<%= signupUrl %>">Sign up</a>
         </div>
         <div class="card">
           <h3>Plugin Workflow</h3>

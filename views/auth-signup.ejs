@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create account | SplitSheet Studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap auth-wrap">
+    <div class="auth-card card">
+      <h1>Create your account</h1>
+      <p class="small">Use one account across the hosted app and plugin. Verification and password recovery live here.</p>
+      <% if (!allowPublicRegistration) { %>
+        <div class="card legal-note">Public signup is disabled right now.</div>
+      <% } %>
+      <% if (error) { %>
+        <div class="card legal-note"><%= error %></div>
+      <% } %>
+      <form method="post" action="/signup">
+        <label>Display Name</label>
+        <input name="displayName" value="<%= values.displayName %>" required>
+        <label>Email</label>
+        <input type="email" name="email" value="<%= values.email %>" required>
+        <label>Password</label>
+        <input type="password" name="password" placeholder="At least 8 characters" required>
+        <button type="submit" <%= allowPublicRegistration ? "" : "disabled" %>>Create account</button>
+      </form>
+      <p class="small auth-links">
+        <a href="/forgot-password">Forgot password</a>
+        <a href="<%= baseUrl %>">Back to app</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>

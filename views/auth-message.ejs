@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= title %> | SplitSheet Studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap auth-wrap">
+    <div class="auth-card card">
+      <h1><%= title %></h1>
+      <p><%= message %></p>
+      <% if (details) { %>
+        <p class="small"><%= details %></p>
+      <% } %>
+      <% if (debugLink) { %>
+        <div class="card legal-note">
+          Debug link: <a href="<%= debugLink %>"><%= debugLink %></a>
+        </div>
+      <% } %>
+      <% if (actionHref && actionLabel) { %>
+        <p><a href="<%= actionHref %>"><%= actionLabel %></a></p>
+      <% } %>
+    </div>
+  </div>
+</body>
+</html>
