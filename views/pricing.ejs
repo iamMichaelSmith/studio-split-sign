@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= pluginName %> Pricing | SplitSheet Studio</title>
+  <meta name="description" content="Buy the SplitSheet Studio VST3 plugin and connect your DAW workflow to hosted split-sheet accounts, delivery, and rights-ready documentation.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap storefront-wrap">
+    <div class="storefront-hero card">
+      <div class="pill"><%= launchMode === "checkout" ? "Plugin Storefront" : "Plugin Prelaunch" %></div>
+      <h1><%= pluginName %></h1>
+      <p class="landing-subtitle">Run SplitSheet Studio inside your DAW with the same hosted account, validation, delivery, and recovery workflow as the browser app.</p>
+      <div class="storefront-price-row">
+        <div>
+          <div class="storefront-price"><%= priceLabel %></div>
+          <div class="small">Current version: <%= pluginVersionLabel %></div>
+        </div>
+        <form method="post" action="/buy/plugin" class="storefront-buy-form">
+          <button type="submit" <%= checkoutEnabled ? "" : "disabled" %>><%= checkoutEnabled ? "Buy Plugin" : "Checkout Unavailable" %></button>
+        </form>
+      </div>
+      <% if (!checkoutEnabled) { %>
+        <div class="card legal-note">
+          Payments are intentionally deferred for now. You can still create an account, test the hosted workflow, and validate the plugin against the live app.
+        </div>
+        <p><a href="<%= signupUrl %>">Create account</a> · <a href="mailto:<%= supportEmail %>?subject=SplitSheet%20Studio%20plugin%20launch">Join launch list</a></p>
+      <% } %>
+      <% if (typeof error === "string" && error) { %>
+        <div class="banner"><%= error %></div>
+      <% } %>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>What you get</h3>
+        <ul class="landing-list">
+          <li>VST3 workflow for fast session capture inside the DAW</li>
+          <li>Hosted sign-in, public account creation, and password recovery</li>
+          <li>Invite-link signatures or in-session signing</li>
+          <li>Durable PDF records and email delivery</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>What you can do today</h3>
+        <ul class="landing-list">
+          <li>Create and verify an account</li>
+          <li>Test the hosted app on `app.splitsheetstudio.com`</li>
+          <li>Open the VST and sign in against the hosted API</li>
+          <li>Read the blog while checkout is being finalized</li>
+        </ul>
+        <p><a href="<%= appUrl %>">Open hosted app</a></p>
+        <p><a href="<%= blogUrl %>">Read the blog</a></p>
+        <p><a href="mailto:<%= supportEmail %>">Contact support</a></p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

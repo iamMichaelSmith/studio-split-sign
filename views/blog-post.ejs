@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= post.seoTitle %></title>
+  <meta name="description" content="<%= post.metaDescription %>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap blog-wrap">
+    <article class="card blog-post-shell">
+      <div class="pill"><%= post.category %></div>
+      <h1><%= post.title %></h1>
+      <p class="small"><%= post.publishedAt %> · <%= post.readingMinutes %> min read · <%= post.wordCount %> words</p>
+      <div class="blog-post-body"><%- post.bodyHtml %></div>
+      <hr class="muted-rule">
+      <p><a href="<%= pricingUrl %>">Plugin pricing</a> · <a href="<%= appUrl %>">Open app</a> · <a href="<%= blogUrl %>">Back to blog</a></p>
+    </article>
+  </div>
+</body>
+</html>

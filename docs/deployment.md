@@ -4,6 +4,7 @@
 The project now has both:
 - a local-first development path
 - a live AWS-hosted runtime path
+- a verified `VST3` / standalone client path against the hosted API
 
 ### Live public surfaces
 - `https://splitsheetstudio.com`
@@ -48,6 +49,12 @@ npm run dev
 - `TRUST_PROXY=true`
 - `PUBLIC_BASE_URL=https://app.splitsheetstudio.com`
 
+### Current verified state
+- live app responds on `https://app.splitsheetstudio.com/health`
+- live readiness responds on `https://app.splitsheetstudio.com/api/ready`
+- pricing and blog routes respond publicly
+- plugin auth and email delivery were exercised end to end against the hosted service
+
 ## Persistence model
 
 ### Local
@@ -69,6 +76,7 @@ npm run dev
 - app sender: `no-reply@splitsheetstudio.com`
 - reply-to inbox: `blakmarigold@gmail.com`
 - notify inbox: `blakmarigold@gmail.com`
+- support inbox: `SUPPORT_EMAIL` or fallback to notify/reply-to
 
 ### SES DNS work
 The hosted zone now includes:
@@ -105,6 +113,12 @@ ALLOW_PUBLIC_REGISTRATION=true
 FROM_EMAIL=no-reply@splitsheetstudio.com
 REPLY_TO_EMAIL=blakmarigold@gmail.com
 NOTIFY_EMAIL=blakmarigold@gmail.com
+SUPPORT_EMAIL=blakmarigold@gmail.com
+
+STRIPE_PLUGIN_PRICE_USD_CENTS=1000
+PLUGIN_VERSION_LABEL=0.1.0
+PLUGIN_DOWNLOAD_BUCKET=...
+PLUGIN_DOWNLOAD_KEY=downloads/SplitSheetStudio-Setup-0.1.0.exe
 ```
 
 ## Deployment scripts
@@ -139,8 +153,7 @@ Public-entry checks:
 - `https://www.splitsheetstudio.com`
 
 ## Remaining deployment hardening
-- password recovery
-- request-level rate limiting
 - stronger release automation for plugin artifacts
 - code signing for installer / binaries
 - structured monitoring / alerting
+- live Stripe secret and webhook provisioning

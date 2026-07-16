@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Purchase Complete | SplitSheet Studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap auth-wrap">
+    <div class="card">
+      <h1>Purchase complete</h1>
+      <p>Your payment for <strong><%= pluginName %></strong> has been recorded.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>Order details</h3>
+          <p class="small">Amount: <%= priceLabel %></p>
+          <p class="small">Version: <%= pluginVersionLabel %></p>
+          <p class="small">Email: <%= purchase.customerEmail || "Not provided" %></p>
+        </div>
+        <div class="card">
+          <h3>Next step</h3>
+          <p class="small">Use the direct download link below. A receipt and download link are also sent by email when delivery is configured.</p>
+          <p><a href="<%= downloadHref %>">Download installer</a></p>
+          <p><a href="<%= appUrl %>">Open app</a></p>
+        </div>
+      </div>
+      <p><a href="<%= pricingUrl %>">Back to pricing</a></p>
+    </div>
+  </div>
+</body>
+</html>

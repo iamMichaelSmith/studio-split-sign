@@ -22,6 +22,9 @@
       <% if (actionHref && actionLabel) { %>
         <p><a href="<%= actionHref %>"><%= actionLabel %></a></p>
       <% } %>
+      <% if (typeof supportEmail === "string" && supportEmail) { %>
+        <p class="small">Need help? <a href="mailto:<%= supportEmail %>"><%= supportEmail %></a></p>
+      <% } %>
     </div>
   </div>
 </body>

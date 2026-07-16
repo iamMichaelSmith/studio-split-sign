@@ -38,7 +38,11 @@
         { "name": "SES_REGION", "value": "us-east-1" },
         { "name": "FROM_EMAIL", "value": "no-reply@splitsheetstudio.com" },
         { "name": "REPLY_TO_EMAIL", "value": "blakmarigold@gmail.com" },
-        { "name": "NOTIFY_EMAIL", "value": "blakmarigold@gmail.com" }
+        { "name": "NOTIFY_EMAIL", "value": "blakmarigold@gmail.com" },
+        { "name": "STRIPE_PLUGIN_PRICE_USD_CENTS", "value": "1000" },
+        { "name": "PLUGIN_VERSION_LABEL", "value": "0.1.0" },
+        { "name": "PLUGIN_DOWNLOAD_BUCKET", "value": "splitsheetstudio-production-pdfs" },
+        { "name": "PLUGIN_DOWNLOAD_KEY", "value": "downloads/SplitSheetStudio-Setup-0.1.0.exe" }
       ],
       "secrets": [
         { "name": "DATABASE_URL", "valueFrom": "<secrets-manager-database-url-arn>" },

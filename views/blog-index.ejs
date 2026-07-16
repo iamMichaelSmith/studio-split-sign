@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SplitSheet Studio Blog</title>
+  <meta name="description" content="SplitSheet Studio articles on split sheets, producer workflow, publishing admin, and sync licensing readiness.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap blog-wrap">
+    <div class="card">
+      <div class="pill">Blog</div>
+      <h1>SplitSheet Studio Journal</h1>
+      <p class="landing-subtitle">Operational notes on split-sheet workflow, rights hygiene, release prep, and sync-readiness for real music teams.</p>
+      <p><a href="/pricing">Plugin pricing</a> · <a href="<%= appUrl %>">Open app</a> · <a href="<%= signupUrl %>">Create account</a></p>
+    </div>
+
+    <div class="blog-list">
+      <% posts.forEach((post) => { %>
+        <article class="card blog-card">
+          <div class="pill"><%= post.category %></div>
+          <h2><a href="/blog/<%= post.slug %>"><%= post.title %></a></h2>
+          <p><%= post.excerpt %></p>
+          <p class="small"><%= post.publishedAt %> · <%= post.readingMinutes %> min read</p>
+          <p><a href="/blog/<%= post.slug %>">Read article</a></p>
+        </article>
+      <% }) %>
+    </div>
+  </div>
+</body>
+</html>

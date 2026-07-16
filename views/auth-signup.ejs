@@ -11,6 +11,14 @@
     <div class="auth-card card">
       <h1>Create your account</h1>
       <p class="small">Use one account across the hosted app and plugin. Verification and password recovery live here.</p>
+      <div class="card">
+        <p class="small">First-time setup:</p>
+        <ul class="landing-list">
+          <li>Create the account here</li>
+          <li>Verify your email from the inbox link</li>
+          <li>Use the same credentials in the web app and plugin</li>
+        </ul>
+      </div>
       <% if (!allowPublicRegistration) { %>
         <div class="card legal-note">Public signup is disabled right now.</div>
       <% } %>
@@ -28,6 +36,7 @@
       </form>
       <p class="small auth-links">
         <a href="/forgot-password">Forgot password</a>
+        <a href="mailto:<%= supportEmail %>">Support</a>
         <a href="<%= baseUrl %>">Back to app</a>
       </p>
     </div>

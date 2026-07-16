@@ -9,7 +9,7 @@
   "containerDefinitions": [
     {
       "name": "splitsheetstudio-staging",
-      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20260703-175432",
+      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20260715-rate-limit-public-v6",
       "essential": true,
       "portMappings": [
         {
@@ -38,7 +38,11 @@
         { "name": "SES_REGION", "value": "us-east-1" },
         { "name": "FROM_EMAIL", "value": "no-reply@splitsheetstudio.com" },
         { "name": "REPLY_TO_EMAIL", "value": "blakmarigold@gmail.com" },
-        { "name": "NOTIFY_EMAIL", "value": "blakmarigold@gmail.com" }
+        { "name": "NOTIFY_EMAIL", "value": "blakmarigold@gmail.com" },
+        { "name": "STRIPE_PLUGIN_PRICE_USD_CENTS", "value": "1000" },
+        { "name": "PLUGIN_VERSION_LABEL", "value": "0.1.0" },
+        { "name": "PLUGIN_DOWNLOAD_BUCKET", "value": "splitsheetstudio-staging-pdfs-309014076408-us-east-1" },
+        { "name": "PLUGIN_DOWNLOAD_KEY", "value": "downloads/SplitSheetStudio-Setup-0.1.0.exe" }
       ],
       "secrets": [
         { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/database-url-7VW5bl" },

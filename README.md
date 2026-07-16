@@ -10,7 +10,7 @@ It runs today as:
 - a JSON API for external clients
 - a JUCE-based standalone / `VST3` plugin for DAW use
 
-This repository is the full product workspace: web app, API, plugin client, AWS deployment scripts, tests, and reviewer-facing documentation.
+This repository is the full product workspace: web app, API, plugin client, AWS deployment scripts, tests, and operator-facing documentation.
 
 ## Why this project exists
 Studios and writing rooms often leave a session with verbal agreement on ownership but no clean operational path to:
@@ -35,11 +35,12 @@ That gap creates friction at the exact moment everyone wants to leave the room.
 - `https://staging.splitsheetstudio.com` -> staging alias
 
 ### Runtime surfaces inside the product
-These are the practical “micro-apps” or workflow surfaces that make up the system:
+These are the practical micro-apps or workflow surfaces that make up the system:
 
 1. **Marketing landing**
    - explains the product
    - routes users into the hosted app
+   - now includes plugin pricing entry and blog access
 
 2. **Hosted app**
    - account registration and login
@@ -67,6 +68,15 @@ These are the practical “micro-apps” or workflow surfaces that make up the s
    - JUCE standalone / `VST3` client
    - compact session-first UI
    - hosted API login and submission flow
+
+7. **Plugin storefront**
+   - hosted pricing page
+   - Stripe-ready Checkout session flow
+   - gated installer delivery path
+
+8. **Content layer**
+   - product blog for search visibility
+   - educational articles around split sheets and sync-readiness
 
 ## What the system does
 - creates split sheets
@@ -117,16 +127,15 @@ These are the practical “micro-apps” or workflow surfaces that make up the s
 7. Transactional email sends through `SES`
 8. Admin and API clients can retrieve the resulting record state
 
-## Why this repository is strong
-This is not just a themed CRUD app.
+## Public-launch posture
+The hosted app, plugin login target, signup flow, password reset flow, invite workflow, blog, pricing/storefront surface, and request-level rate limiting are all in this repo now.
 
-It demonstrates:
-- product thinking around a real studio workflow problem
-- backend logic tied to rights-management constraints
-- multiple client surfaces against one service layer
-- cloud deployment and runtime operations
-- practical plugin integration beyond the browser
-- documentation written for engineers, operators, and hiring managers
+What is still intentionally deferred:
+- live Stripe payment activation
+- final purchase-to-download automation in production
+- code signing for the Windows installer
+
+That means the product can be validated publicly before live payments are turned on.
 
 ## Repository structure
 
@@ -136,7 +145,9 @@ It demonstrates:
 - `services/database-service.js` -> SQLite / PostgreSQL provider selection
 - `services/submission-service.js` -> submission lifecycle and persistence
 - `services/split-sheet-service.js` -> split-sheet rules and payload shaping
-- `views/` -> landing, app, signer, success, and admin templates
+- `services/storefront-service.js` -> plugin purchase records and gated download tracking
+- `content/blog-posts.js` -> blog content source
+- `views/` -> landing, app, auth, signer, success, admin, pricing, and blog templates
 - `public/` -> shared browser styling and assets
 
 ### Plugin
@@ -182,13 +193,20 @@ This repo has already been moved to a live AWS stack with:
 - durable PDF storage
 - SES transactional email foundation
 
+The current hosted runtime is verified through:
+- `https://app.splitsheetstudio.com/health`
+- `https://app.splitsheetstudio.com/api/ready`
+- live pricing and blog routes
+- plugin sign-in and end-to-end split email delivery tests
+
 ## Remaining public-launch work
-The core hosted system is live, but these are still the main product-hardening items:
-- request-level rate limiting
+The core hosted system is live, but these remain the main product-hardening items:
 - plugin installer final verification on a clean machine
 - code signing for installer / binaries
-- production email brand polish and final SES verification
 - privacy policy / terms / commercial packaging
+- live Stripe keys and webhook secret
+- purchase-to-download fulfillment with live Stripe enabled
+- alerting / uptime monitoring beyond base CloudWatch logs
 
 ## Fast links
 - Product entry: `https://splitsheetstudio.com`
@@ -197,10 +215,11 @@ The core hosted system is live, but these are still the main product-hardening i
 - Ready: `https://app.splitsheetstudio.com/api/ready`
 
 ## Documentation map
-- `HIRING_MANAGER.md`
 - `docs/architecture.md`
 - `docs/api.md`
 - `docs/deployment.md`
+- `docs/public-launch.md`
+- `docs/release-checklist.md`
 - `docs/repo-tour.md`
 - `deploy/aws/README.md`
 
@@ -213,4 +232,5 @@ This repository now reflects the actual platform:
 - AWS-backed runtime
 - plugin client
 - operational scripts
+- content/blog surfaces
 - product documentation

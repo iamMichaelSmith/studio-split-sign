@@ -1,19 +1,26 @@
-require("dotenv").config();
+try {
+  require("dotenv").config();
+} catch {}
 const express = require("express");
+const { rateLimit } = require("express-rate-limit");
 const session = require("express-session");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const Stripe = require("stripe");
 const nodemailer = require("nodemailer");
 const PDFDocument = require("pdfkit");
 const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { SESv2Client, SendEmailCommand, ListEmailIdentitiesCommand } = require("@aws-sdk/client-sesv2");
 const { RedisStore } = require("connect-redis");
+const { RedisStore: RateLimitRedisStore } = require("rate-limit-redis");
 const { createClient } = require("redis");
 const { nanoid } = require("nanoid");
 const { createAuthService, ApiAuthError } = require("./services/auth-service");
 const { createDatabaseService } = require("./services/database-service");
+const { createStorefrontService } = require("./services/storefront-service");
 const { createSubmissionService } = require("./services/submission-service");
+const { listPosts, getPostBySlug } = require("./content/blog-posts");
 const {
   SplitSheetValidationError,
   buildSplitSheetDraftPayload,
@@ -49,6 +56,20 @@ const s3Region = process.env.S3_REGION || process.env.AWS_REGION || "us-east-1";
 const s3Prefix = String(process.env.S3_PREFIX || "final-pdfs/").replace(/^\/+/, "").replace(/\/+$/, "");
 const authDebugTokens = String(process.env.AUTH_DEBUG_TOKENS || "false").toLowerCase() === "true";
 const requireEmailVerification = String(process.env.REQUIRE_EMAIL_VERIFICATION || "false").toLowerCase() === "true";
+const supportEmail = process.env.SUPPORT_EMAIL || process.env.NOTIFY_EMAIL || process.env.REPLY_TO_EMAIL || "blakmarigold@gmail.com";
+const rawStripeSecretKey = String(process.env.STRIPE_SECRET_KEY || "").trim();
+const rawStripeWebhookSecret = String(process.env.STRIPE_WEBHOOK_SECRET || "").trim();
+const stripeSecretKey = /^(disabled|unset|none|null)$/i.test(rawStripeSecretKey) ? "" : rawStripeSecretKey;
+const stripeWebhookSecret = /^(disabled|unset|none|null)$/i.test(rawStripeWebhookSecret) ? "" : rawStripeWebhookSecret;
+const stripePluginPriceUsdCents = Number(process.env.STRIPE_PLUGIN_PRICE_USD_CENTS || 1000);
+const stripePluginProductSku = process.env.STRIPE_PLUGIN_PRODUCT_SKU || "splitsheet-studio-vst3";
+const stripePluginProductName = process.env.STRIPE_PLUGIN_PRODUCT_NAME || "SplitSheet Studio VST3 Plugin";
+const stripePluginProductDescription = process.env.STRIPE_PLUGIN_PRODUCT_DESCRIPTION || "Compact split-sheet workflow inside your DAW with hosted account, email delivery, and signed session records.";
+const pluginVersionLabel = process.env.PLUGIN_VERSION_LABEL || "0.1.0";
+const pluginDownloadUrl = process.env.PLUGIN_DOWNLOAD_URL || "";
+const pluginDownloadBucket = process.env.PLUGIN_DOWNLOAD_BUCKET || s3Bucket;
+const pluginDownloadKey = process.env.PLUGIN_DOWNLOAD_KEY || `downloads/SplitSheetStudio-Setup-${pluginVersionLabel}.exe`;
+const pluginDownloadPath = process.env.PLUGIN_DOWNLOAD_PATH ? path.resolve(process.env.PLUGIN_DOWNLOAD_PATH) : "";
 
 fs.mkdirSync(submissionsDir, { recursive: true });
 fs.mkdirSync(pdfDir, { recursive: true });
@@ -56,6 +77,7 @@ fs.mkdirSync(pdfDir, { recursive: true });
 let redisClient = null;
 let s3Client = null;
 let redisStore = null;
+let redisReady = Promise.resolve();
 
 if (sessionStoreMode === "redis") {
   if (!process.env.REDIS_URL) {
@@ -70,6 +92,9 @@ if (sessionStoreMode === "redis") {
     prefix: redisPrefix,
     ttl: sessionTtlSeconds
   });
+  redisReady = redisClient.connect().then(() => {
+    console.log(`Redis session store connected (${redisPrefix})`);
+  });
 }
 
 if (pdfStorageMode === "s3") {
@@ -79,11 +104,15 @@ if (pdfStorageMode === "s3") {
   s3Client = new S3Client({ region: s3Region });
 }
 
+const stripeClient = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
+const stripeEnabled = Boolean(stripeClient);
+
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 if (trustProxy) {
   app.set("trust proxy", 1);
 }
+app.use("/api/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -113,6 +142,10 @@ const databaseService = createDatabaseService({
   provider: dbProvider,
   dbPath: authDbPath,
   databaseUrl: process.env.DATABASE_URL
+});
+const storefrontService = createStorefrontService({
+  db: databaseService.client,
+  provider: databaseService.provider
 });
 const submissionStore = createSubmissionService({
   db: databaseService.client,
@@ -166,6 +199,10 @@ function requestIp(req) {
   return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "");
 }
 
+function clientIpKey(req) {
+  return String(req.ip || requestIp(req) || "unknown").trim().toLowerCase();
+}
+
 function requestHost(req) {
   const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
   const directHost = String(req.headers.host || "").split(",")[0].trim();
@@ -178,6 +215,74 @@ function isMarketingHost(req) {
     return false;
   }
   return marketingHosts.has(host);
+}
+
+function rateLimitHandler(req, res) {
+  const retryAfterSeconds = req.rateLimit?.resetTime
+    ? Math.max(1, Math.ceil((new Date(req.rateLimit.resetTime).getTime() - Date.now()) / 1000))
+    : undefined;
+
+  if (retryAfterSeconds) {
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+  }
+
+  const payload = {
+    ok: false,
+    error: "Too many requests. Please wait and try again.",
+    retryAfterSeconds
+  };
+
+  if (req.path.startsWith("/api/")) {
+    return res.status(429).json(payload);
+  }
+
+  return res.status(429).render("auth-message", {
+    title: "Too many requests",
+    message: "This action has been rate limited for now.",
+    details: retryAfterSeconds
+      ? `Try again in about ${retryAfterSeconds} seconds.`
+      : "Try again in a few minutes.",
+    actionHref: baseUrl,
+    actionLabel: "Back to app",
+    debugLink: null,
+    supportEmail
+  });
+}
+
+function createRateLimiter({
+  prefix,
+  windowMs,
+  limit,
+  message,
+  keyGenerator,
+  skip,
+  standardHeaders = true
+}) {
+  const store = redisClient
+    ? new RateLimitRedisStore({
+      sendCommand: async (...args) => {
+        await redisReady;
+        return redisClient.sendCommand(args);
+      },
+      prefix: `rl:${prefix}:`
+    })
+    : undefined;
+
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders,
+    legacyHeaders: false,
+    skip,
+    keyGenerator: keyGenerator || ((req) => clientIpKey(req)),
+    store,
+    handler: (req, res) => {
+      if (message) {
+        req.rateLimit = { ...req.rateLimit, message };
+      }
+      return rateLimitHandler(req, res);
+    }
+  });
 }
 
 function ensureAppHost(req, res, next) {
@@ -745,10 +850,7 @@ async function streamStoredFinalPdf(docJson, res) {
 }
 
 async function initializeRuntime() {
-  if (redisClient && !redisClient.isOpen) {
-    await redisClient.connect();
-    console.log(`Redis session store connected (${redisPrefix})`);
-  }
+  await redisReady;
   if (pdfStorageMode === "s3") {
     console.log(`S3 PDF storage enabled (${s3Bucket}/${s3Prefix || "."})`);
   }
@@ -885,6 +987,116 @@ async function sendPasswordResetEmail({ user, token, expiresAt }) {
     ...emailResult,
     resetUrl: authDebugTokens ? resetUrl : undefined
   };
+}
+
+function formatMoney(amountCents, currency = "usd") {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: String(currency || "usd").toUpperCase()
+  }).format(Number(amountCents || 0) / 100);
+}
+
+function storefrontPriceLabel() {
+  return formatMoney(stripePluginPriceUsdCents, "usd");
+}
+
+function latestBlogPosts(limit = 3) {
+  return listPosts().slice(0, limit);
+}
+
+function publicNavModel() {
+  return {
+    appUrl: baseUrl,
+    signupUrl: `${baseUrl}/signup`,
+    pricingUrl: "/pricing",
+    blogUrl: "/blog",
+    supportEmail,
+    rootDomain
+  };
+}
+
+function pluginDownloadHref(purchase) {
+  return `${baseUrl}/downloads/plugin/${encodeURIComponent(purchase.id)}?token=${encodeURIComponent(purchase.downloadToken)}`;
+}
+
+function pluginPurchaseEmailHtml({ purchase, downloadHref }) {
+  return `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
+    <h2 style="margin:0 0 10px">Your SplitSheet Studio plugin is ready</h2>
+    <p style="margin:0 0 10px">Thanks for purchasing <b>${stripePluginProductName}</b>.</p>
+    <p style="margin:0 0 10px">Order amount: <b>${formatMoney(purchase.amountTotal, purchase.currency)}</b></p>
+    <p style="margin:0 0 10px">Version: <b>${pluginVersionLabel}</b></p>
+    <p style="margin:0 0 14px"><a href="${downloadHref}">Download the installer</a></p>
+    <p style="margin:0 0 10px">This link is tied to your purchase record and can be used to install the current build.</p>
+    <hr style="border:none;border-top:1px solid #ddd;margin:14px 0" />
+    <p style="margin:0">SplitSheet Studio storefront<br/>${rootDomain}</p>
+  </div>`;
+}
+
+async function sendPluginPurchaseEmail(purchase) {
+  if (!purchase?.customerEmail) {
+    return { ok: false, skipped: true, reason: "missing_customer_email" };
+  }
+  const downloadHref = pluginDownloadHref(purchase);
+  const result = await sendEmail({
+    to: [purchase.customerEmail],
+    subject: `${stripePluginProductName} download`,
+    html: pluginPurchaseEmailHtml({ purchase, downloadHref })
+  });
+  if (result.ok) {
+    await storefrontService.markDeliveryEmailSent(purchase.id);
+  }
+  return result;
+}
+
+async function fulfillPluginCheckoutSession(session) {
+  const purchase = await storefrontService.recordCheckoutSession(session, {
+    productSku: stripePluginProductSku
+  });
+  if (!purchase.deliveryEmailSentAt && String(purchase.paymentStatus).toLowerCase() === "paid") {
+    await sendPluginPurchaseEmail(purchase);
+    return storefrontService.getPurchaseById(purchase.id);
+  }
+  return purchase;
+}
+
+async function sendPluginInstaller(res) {
+  if (pluginDownloadUrl) {
+    return res.redirect(302, pluginDownloadUrl);
+  }
+
+  if (pluginDownloadPath && fs.existsSync(pluginDownloadPath)) {
+    return res.download(pluginDownloadPath, path.basename(pluginDownloadPath));
+  }
+
+  if (s3Client && pluginDownloadBucket && pluginDownloadKey) {
+    const object = await s3Client.send(new GetObjectCommand({
+      Bucket: pluginDownloadBucket,
+      Key: pluginDownloadKey
+    }));
+    res.setHeader("Content-Type", object.ContentType || "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="${path.basename(pluginDownloadKey)}"`);
+    if (object.ContentLength) {
+      res.setHeader("Content-Length", String(object.ContentLength));
+    }
+    object.Body.pipe(res);
+    return;
+  }
+
+  return res.status(503).render("auth-message", {
+    title: "Installer unavailable",
+    message: "The plugin installer is not configured on this environment yet.",
+    details: "Set PLUGIN_DOWNLOAD_URL, PLUGIN_DOWNLOAD_PATH, or S3 download settings before opening storefront downloads.",
+    actionHref: "/pricing",
+    actionLabel: "Back to pricing",
+    debugLink: null
+  });
+}
+
+function parseWebhookBody(req) {
+  if (Buffer.isBuffer(req.body)) {
+    return req.body;
+  }
+  return Buffer.from(JSON.stringify(req.body || {}));
 }
 
 function splitSummaryHtml(contributors = []) {
@@ -1075,21 +1287,305 @@ async function updateDraftSplitSheet(doc, input, req) {
   });
 }
 
+const publicPageLimiter = createRateLimiter({
+  prefix: "public-page",
+  windowMs: 15 * 60 * 1000,
+  limit: 300
+});
+
+const loginLimiter = createRateLimiter({
+  prefix: "auth-login",
+  windowMs: 15 * 60 * 1000,
+  limit: 10
+});
+
+const registerLimiter = createRateLimiter({
+  prefix: "auth-register",
+  windowMs: 60 * 60 * 1000,
+  limit: 5
+});
+
+const forgotPasswordLimiter = createRateLimiter({
+  prefix: "auth-forgot-password",
+  windowMs: 60 * 60 * 1000,
+  limit: 5
+});
+
+const resendVerificationLimiter = createRateLimiter({
+  prefix: "auth-resend-verification",
+  windowMs: 60 * 60 * 1000,
+  limit: 6
+});
+
+const authenticatedApiLimiter = createRateLimiter({
+  prefix: "api-authenticated",
+  windowMs: 15 * 60 * 1000,
+  limit: 600,
+  keyGenerator: (req) => `user:${req.apiUser?.id || req.apiUser?.email || clientIpKey(req)}`
+});
+
+const splitValidateLimiter = createRateLimiter({
+  prefix: "split-validate",
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  keyGenerator: (req) => `user:${req.apiUser?.id || req.apiUser?.email || clientIpKey(req)}`
+});
+
+const splitDraftLimiter = createRateLimiter({
+  prefix: "split-draft-write",
+  windowMs: 15 * 60 * 1000,
+  limit: 120,
+  keyGenerator: (req) => `user:${req.apiUser?.id || req.apiUser?.email || clientIpKey(req)}`
+});
+
+const splitFinalizeLimiter = createRateLimiter({
+  prefix: "split-finalize",
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  keyGenerator: (req) => `user:${req.apiUser?.id || req.apiUser?.email || clientIpKey(req)}`
+});
+
+const pluginDownloadLimiter = createRateLimiter({
+  prefix: "plugin-download",
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  keyGenerator: (req) => {
+    const purchaseId = String(req.params.purchaseId || "").trim();
+    const token = String(req.query.token || "").trim();
+    return `download:${purchaseId}:${token || clientIpKey(req)}`;
+  }
+});
+
+const adminLimiter = createRateLimiter({
+  prefix: "admin-surface",
+  windowMs: 15 * 60 * 1000,
+  limit: 60
+});
+
+const splitSheetPublicLimiter = createRateLimiter({
+  prefix: "split-sheet-public",
+  windowMs: 15 * 60 * 1000,
+  limit: 60
+});
+
+const splitSheetSubmitLimiter = createRateLimiter({
+  prefix: "split-sheet-submit",
+  windowMs: 60 * 60 * 1000,
+  limit: 20
+});
+
+const signerViewLimiter = createRateLimiter({
+  prefix: "signer-view",
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  keyGenerator: (req) => `signer:${String(req.params.id || "")}:${String(req.params.token || "")}:${clientIpKey(req)}`
+});
+
+const signerSubmitLimiter = createRateLimiter({
+  prefix: "signer-submit",
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  keyGenerator: (req) => `signer-submit:${String(req.params.id || "")}:${String(req.params.token || "")}:${clientIpKey(req)}`
+});
+
 app.use(["/split-sheet", "/admin", "/signup", "/forgot-password", "/reset-password", "/verify-email"], ensureAppHost);
 
-app.get("/", (req, res) => {
+app.get("/", publicPageLimiter, (req, res) => {
   if (isMarketingHost(req)) {
     return res.render("landing", {
-      appUrl: baseUrl,
-      signupUrl: `${baseUrl}/signup`,
+      ...publicNavModel(),
       pluginUrl: `${baseUrl}#plugin`,
-      rootDomain
+      pluginPriceLabel: storefrontPriceLabel(),
+      stripeEnabled,
+      latestPosts: latestBlogPosts()
     });
   }
   return res.render("index", {
-    appUrl: baseUrl,
-    signupUrl: `${baseUrl}/signup`,
+    ...publicNavModel(),
     forgotPasswordUrl: `${baseUrl}/forgot-password`
+  });
+});
+app.get("/pricing", publicPageLimiter, (req, res) => {
+  return res.render("pricing", {
+    ...publicNavModel(),
+    priceLabel: storefrontPriceLabel(),
+    pluginName: stripePluginProductName,
+    pluginVersionLabel,
+    checkoutEnabled: stripeEnabled,
+    launchMode: stripeEnabled ? "checkout" : "prelaunch"
+  });
+});
+app.post("/buy/plugin", publicPageLimiter, async (req, res) => {
+  if (!stripeEnabled) {
+    return res.status(503).render("pricing", {
+      ...publicNavModel(),
+      priceLabel: storefrontPriceLabel(),
+      pluginName: stripePluginProductName,
+      pluginVersionLabel,
+      checkoutEnabled: false,
+      launchMode: "prelaunch",
+      error: "Stripe checkout is not configured on this environment yet."
+    });
+  }
+
+  try {
+    const session = await stripeClient.checkout.sessions.create({
+      mode: "payment",
+      customer_creation: "always",
+      billing_address_collection: "auto",
+      success_url: `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/checkout/cancel`,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: stripePluginPriceUsdCents,
+            product_data: {
+              name: stripePluginProductName,
+              description: `${stripePluginProductDescription} Version ${pluginVersionLabel}.`
+            }
+          }
+        }
+      ],
+      metadata: {
+        productSku: stripePluginProductSku,
+        pluginVersionLabel
+      }
+    });
+
+    return res.redirect(303, session.url);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).render("pricing", {
+      ...publicNavModel(),
+      priceLabel: storefrontPriceLabel(),
+      pluginName: stripePluginProductName,
+      pluginVersionLabel,
+      checkoutEnabled: stripeEnabled,
+      launchMode: stripeEnabled ? "checkout" : "prelaunch",
+      error: "Stripe checkout failed to initialize."
+    });
+  }
+});
+app.get("/checkout/cancel", publicPageLimiter, (req, res) => {
+  return res.render("checkout-cancel", {
+    pricingUrl: "/pricing",
+    appUrl: baseUrl
+  });
+});
+app.get("/checkout/success", publicPageLimiter, async (req, res) => {
+  if (!stripeEnabled) {
+    return res.status(503).render("auth-message", {
+      title: "Checkout unavailable",
+      message: "Stripe is not configured on this environment.",
+      details: "Configure STRIPE_SECRET_KEY before using hosted checkout.",
+      actionHref: "/pricing",
+      actionLabel: "Back to pricing",
+      debugLink: null
+    });
+  }
+
+  const sessionId = String(req.query.session_id || "").trim();
+  if (!sessionId) {
+    return res.status(400).render("auth-message", {
+      title: "Missing checkout session",
+      message: "Stripe did not return a checkout session ID.",
+      details: "Retry the purchase flow from the pricing page.",
+      actionHref: "/pricing",
+      actionLabel: "Back to pricing",
+      debugLink: null
+    });
+  }
+
+  try {
+    const session = await stripeClient.checkout.sessions.retrieve(sessionId);
+    const purchase = await fulfillPluginCheckoutSession(session);
+    return res.render("checkout-success", {
+      purchase,
+      pluginName: stripePluginProductName,
+      pluginVersionLabel,
+      priceLabel: formatMoney(purchase.amountTotal, purchase.currency),
+      downloadHref: pluginDownloadHref(purchase),
+      pricingUrl: "/pricing",
+      appUrl: baseUrl
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).render("auth-message", {
+      title: "Checkout verification failed",
+      message: "The payment completed page could not verify your Stripe session.",
+      details: "Retry from your Stripe receipt or contact support.",
+      actionHref: "/pricing",
+      actionLabel: "Back to pricing",
+      debugLink: null
+    });
+  }
+});
+app.post("/api/stripe/webhook", async (req, res) => {
+  if (!stripeEnabled) {
+    return res.status(503).json({ ok: false, error: "stripe_not_configured" });
+  }
+
+  try {
+    const rawBody = parseWebhookBody(req);
+    const signature = req.headers["stripe-signature"];
+    let event;
+
+    if (stripeWebhookSecret && signature) {
+      event = stripeClient.webhooks.constructEvent(rawBody, signature, stripeWebhookSecret);
+    } else {
+      event = JSON.parse(rawBody.toString("utf8"));
+    }
+
+    if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
+      await fulfillPluginCheckoutSession(event.data.object);
+    }
+
+    return res.json({ received: true });
+  } catch (error) {
+    console.error(error);
+    return res.status(400).json({ ok: false, error: "stripe_webhook_failed" });
+  }
+});
+app.get("/downloads/plugin/:purchaseId", pluginDownloadLimiter, async (req, res) => {
+  const purchaseId = String(req.params.purchaseId || "").trim();
+  const token = String(req.query.token || "").trim();
+  const purchase = await storefrontService.getPurchaseByIdAndToken(purchaseId, token);
+  if (!purchase) {
+    return res.status(404).render("auth-message", {
+      title: "Download link not found",
+      message: "That plugin download link is invalid or expired.",
+      details: "Use the most recent purchase email or purchase again from the pricing page.",
+      actionHref: "/pricing",
+      actionLabel: "Back to pricing",
+      debugLink: null
+    });
+  }
+  await storefrontService.recordDownload(purchase.id);
+  return sendPluginInstaller(res);
+});
+app.get("/blog", publicPageLimiter, (req, res) => {
+  return res.render("blog-index", {
+    posts: listPosts(),
+    ...publicNavModel()
+  });
+});
+app.get("/blog/:slug", publicPageLimiter, (req, res) => {
+  const post = getPostBySlug(String(req.params.slug || ""));
+  if (!post) {
+    return res.status(404).render("auth-message", {
+      title: "Article not found",
+      message: "That blog post does not exist.",
+      details: null,
+      actionHref: "/blog",
+      actionLabel: "View all articles",
+      debugLink: null
+    });
+  }
+  return res.render("blog-post", {
+    post,
+    ...publicNavModel()
   });
 });
 app.get("/health", (req, res) => res.json({ ok: true, at: nowIso() }));
@@ -1098,6 +1594,7 @@ app.get("/ready", (req, res) => res.json({
   at: nowIso(),
   dbProvider: databaseService.provider,
   requireEmailVerification,
+  stripeEnabled,
   smtpConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
   sesConfigured: Boolean((process.env.SES_REGION || process.env.AWS_REGION || process.env.AWS_PROFILE || process.env.FROM_EMAIL) && process.env.FROM_EMAIL),
   baseUrl
@@ -1110,11 +1607,12 @@ app.get("/api/ready", (req, res) => res.json({
   dbProvider: databaseService.provider,
   allowPublicRegistration,
   requireEmailVerification,
+  stripeEnabled,
   smtpConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
   sesConfigured: Boolean((process.env.SES_REGION || process.env.AWS_REGION || process.env.AWS_PROFILE || process.env.FROM_EMAIL) && process.env.FROM_EMAIL),
   baseUrl
 }));
-app.post("/api/auth/register", async (req, res) => {
+app.post("/api/auth/register", registerLimiter, async (req, res) => {
   if (!allowPublicRegistration && await authService.userCount() > 0) {
     return apiError(res, 403, "Public registration is disabled.");
   }
@@ -1146,7 +1644,7 @@ app.post("/api/auth/register", async (req, res) => {
     return apiError(res, 500, "Unexpected server error while creating account.");
   }
 });
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", loginLimiter, async (req, res) => {
   const gate = canAttemptLogin(req);
   if (!gate.allowed) {
     return apiError(res, 429, `Too many attempts. Try again in ${gate.retryAfterSec}s.`);
@@ -1171,7 +1669,7 @@ app.post("/api/auth/login", async (req, res) => {
     return apiError(res, 500, "Unexpected server error while creating API session.");
   }
 });
-app.post("/api/auth/resend-verification", async (req, res) => {
+app.post("/api/auth/resend-verification", resendVerificationLimiter, async (req, res) => {
   try {
     const verification = await authService.createVerificationRequest({
       email: req.body.email
@@ -1210,7 +1708,7 @@ app.post("/api/auth/verify-email", async (req, res) => {
     return apiError(res, 500, "Unexpected server error while verifying email.");
   }
 });
-app.post("/api/auth/request-password-reset", async (req, res) => {
+app.post("/api/auth/request-password-reset", forgotPasswordLimiter, async (req, res) => {
   try {
     const resetRequest = await authService.createPasswordResetRequest({
       email: req.body.email
@@ -1276,13 +1774,14 @@ app.get("/api/me", requireApiAuth, (req, res) => res.json({
   ok: true,
   user: req.apiUser
 }));
-app.get("/signup", (req, res) => res.render("auth-signup", {
+app.get("/signup", publicPageLimiter, (req, res) => res.render("auth-signup", {
   error: null,
   values: { displayName: "", email: "" },
   allowPublicRegistration,
-  baseUrl
+  baseUrl,
+  supportEmail
 }));
-app.post("/signup", async (req, res) => {
+app.post("/signup", registerLimiter, async (req, res) => {
   if (!allowPublicRegistration && await authService.userCount() > 0) {
     return res.status(403).render("auth-signup", {
       error: "Public registration is disabled right now.",
@@ -1291,7 +1790,8 @@ app.post("/signup", async (req, res) => {
         email: String(req.body.email || "")
       },
       allowPublicRegistration,
-      baseUrl
+      baseUrl,
+      supportEmail
     });
   }
   try {
@@ -1326,7 +1826,8 @@ app.post("/signup", async (req, res) => {
           email: String(req.body.email || "")
         },
         allowPublicRegistration,
-        baseUrl
+        baseUrl,
+        supportEmail
       });
     }
     console.error(error);
@@ -1337,16 +1838,18 @@ app.post("/signup", async (req, res) => {
         email: String(req.body.email || "")
       },
       allowPublicRegistration,
-      baseUrl
+      baseUrl,
+      supportEmail
     });
   }
 });
-app.get("/forgot-password", (req, res) => res.render("auth-forgot-password", {
+app.get("/forgot-password", publicPageLimiter, (req, res) => res.render("auth-forgot-password", {
   error: null,
   value: "",
-  baseUrl
+  baseUrl,
+  supportEmail
 }));
-app.post("/forgot-password", async (req, res) => {
+app.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
   try {
     const resetRequest = await authService.createPasswordResetRequest({
       email: req.body.email
@@ -1374,22 +1877,25 @@ app.post("/forgot-password", async (req, res) => {
       return res.status(error.statusCode).render("auth-forgot-password", {
         error: error.message,
         value: String(req.body.email || ""),
-        baseUrl
+        baseUrl,
+        supportEmail
       });
     }
     console.error(error);
     return res.status(500).render("auth-forgot-password", {
       error: "Unexpected server error while requesting password reset.",
       value: String(req.body.email || ""),
-      baseUrl
+      baseUrl,
+      supportEmail
     });
   }
 });
-app.get("/reset-password", (req, res) => res.render("auth-reset-password", {
+app.get("/reset-password", publicPageLimiter, (req, res) => res.render("auth-reset-password", {
   error: null,
   success: false,
   token: String(req.query.token || ""),
-  baseUrl
+  baseUrl,
+  supportEmail
 }));
 app.post("/reset-password", async (req, res) => {
   try {
@@ -1401,7 +1907,8 @@ app.post("/reset-password", async (req, res) => {
       error: null,
       success: true,
       token: "",
-      baseUrl
+      baseUrl,
+      supportEmail
     });
   } catch (error) {
     if (error instanceof ApiAuthError) {
@@ -1409,7 +1916,8 @@ app.post("/reset-password", async (req, res) => {
         error: error.message,
         success: false,
         token: String(req.body.token || ""),
-        baseUrl
+        baseUrl,
+        supportEmail
       });
     }
     console.error(error);
@@ -1417,11 +1925,12 @@ app.post("/reset-password", async (req, res) => {
       error: "Unexpected server error while resetting your password.",
       success: false,
       token: String(req.body.token || ""),
-      baseUrl
+      baseUrl,
+      supportEmail
     });
   }
 });
-app.get("/verify-email", async (req, res) => {
+app.get("/verify-email", publicPageLimiter, async (req, res) => {
   try {
     const token = String(req.query.token || "");
     if (!token) {
@@ -1458,7 +1967,7 @@ app.get("/verify-email", async (req, res) => {
     });
   }
 });
-app.get("/api/split-sheets", requireApiAuth, async (req, res) => {
+app.get("/api/split-sheets", requireApiAuth, authenticatedApiLimiter, async (req, res) => {
   const statusFilter = String(req.query.status || "").trim().toLowerCase();
   let docs = await submissionStore.listSubmissions({
     ownerUserId: req.apiUser.id,
@@ -1473,7 +1982,7 @@ app.get("/api/split-sheets", requireApiAuth, async (req, res) => {
     splitSheets: docs.map((doc) => summarizeSplitSheet(doc, baseUrl))
   });
 });
-app.get("/api/split-sheets/:id", requireApiAuth, async (req, res) => {
+app.get("/api/split-sheets/:id", requireApiAuth, authenticatedApiLimiter, async (req, res) => {
   const doc = await loadSubmission(req.params.id);
   if (!doc || doc.type !== "split-sheet") {
     return apiError(res, 404, "Split sheet not found.");
@@ -1486,7 +1995,7 @@ app.get("/api/split-sheets/:id", requireApiAuth, async (req, res) => {
     splitSheet: detailSplitSheet(doc, baseUrl)
   });
 });
-app.post("/api/split-sheets/drafts", requireApiAuth, async (req, res) => {
+app.post("/api/split-sheets/drafts", requireApiAuth, splitDraftLimiter, async (req, res) => {
   try {
     const draft = await createDraftSplitSheet(req.body, req);
     return res.status(201).json({
@@ -1498,7 +2007,7 @@ app.post("/api/split-sheets/drafts", requireApiAuth, async (req, res) => {
     return apiError(res, 500, "Unexpected server error while saving draft.");
   }
 });
-app.put("/api/split-sheets/:id/draft", requireApiAuth, async (req, res) => {
+app.put("/api/split-sheets/:id/draft", requireApiAuth, splitDraftLimiter, async (req, res) => {
   try {
     const doc = await loadSubmission(req.params.id);
     if (!doc || doc.type !== "split-sheet") {
@@ -1520,7 +2029,7 @@ app.put("/api/split-sheets/:id/draft", requireApiAuth, async (req, res) => {
     return apiError(res, 500, "Unexpected server error while updating draft.");
   }
 });
-app.post("/api/split-sheets/validate", requireApiAuth, async (req, res) => {
+app.post("/api/split-sheets/validate", requireApiAuth, splitValidateLimiter, async (req, res) => {
   try {
     const prepared = await buildSplitSheetPayload(req.body, {
       nextVersion: nextSplitVersion,
@@ -1543,7 +2052,7 @@ app.post("/api/split-sheets/validate", requireApiAuth, async (req, res) => {
     return apiError(res, 500, "Unexpected server error while validating split sheet.");
   }
 });
-app.post("/api/split-sheets", requireApiAuth, async (req, res) => {
+app.post("/api/split-sheets", requireApiAuth, splitFinalizeLimiter, async (req, res) => {
   try {
     const result = await createSplitSheetSubmission(req.body, req);
     return res.status(201).json({
@@ -1562,7 +2071,7 @@ app.post("/api/split-sheets", requireApiAuth, async (req, res) => {
     return apiError(res, 500, "Unexpected server error while saving split sheet.");
   }
 });
-app.get("/api/split-sheets/:id/status", requireApiAuth, async (req, res) => {
+app.get("/api/split-sheets/:id/status", requireApiAuth, authenticatedApiLimiter, async (req, res) => {
   const doc = await loadSubmission(req.params.id);
   if (!doc || doc.type !== "split-sheet") {
     return apiError(res, 404, "Split sheet not found.");
@@ -1575,9 +2084,9 @@ app.get("/api/split-sheets/:id/status", requireApiAuth, async (req, res) => {
     splitSheet: summarizeSplitSheet(doc, baseUrl)
   });
 });
-app.get("/split-sheet", (req, res) => res.render("split-sheet", { error: null }));
+app.get("/split-sheet", splitSheetPublicLimiter, (req, res) => res.render("split-sheet", { error: null }));
 
-app.post("/split-sheet", async (req, res) => {
+app.post("/split-sheet", splitSheetSubmitLimiter, async (req, res) => {
   try {
     const { saved, payload, collectByInvite, emailResult } = await createSplitSheetSubmission(req.body, req);
 
@@ -1600,7 +2109,7 @@ app.post("/split-sheet", async (req, res) => {
   }
 });
 
-app.get("/split-sheet/sign/:id/:token", async (req, res) => {
+app.get("/split-sheet/sign/:id/:token", signerViewLimiter, async (req, res) => {
   const doc = await loadSubmission(req.params.id);
   if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
   const signer = (doc.payload?.contributors || []).find((c) => c.signerToken === req.params.token);
@@ -1615,7 +2124,7 @@ app.get("/split-sheet/sign/:id/:token", async (req, res) => {
   res.render("split-sign", { doc, signer, timeline: splitSignerTimeline(doc), error: null, success: null });
 });
 
-app.post("/split-sheet/sign/:id/:token", async (req, res) => {
+app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) => {
   const doc = await loadSubmission(req.params.id);
   if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
   const contributors = doc.payload?.contributors || [];
@@ -1673,7 +2182,7 @@ app.post("/split-sheet/sign/:id/:token", async (req, res) => {
   });
 });
 
-app.get("/split-sheet/pdf/:id", async (req, res) => {
+app.get("/split-sheet/pdf/:id", splitSheetPublicLimiter, async (req, res) => {
   const docJson = await loadSubmission(req.params.id);
   if (!docJson) return res.status(404).send("Not found");
   if (docJson.type !== "split-sheet") return res.status(400).send("Not a split sheet");
@@ -1700,8 +2209,8 @@ app.get("/split-sheet/pdf/:id", async (req, res) => {
   pdf.end();
 });
 
-app.get("/admin/login", (req, res) => res.render("admin-login", { error: null }));
-app.post("/admin/login", (req, res) => {
+app.get("/admin/login", adminLimiter, (req, res) => res.render("admin-login", { error: null }));
+app.post("/admin/login", adminLimiter, (req, res) => {
   const gate = canAttemptLogin(req);
   if (!gate.allowed) {
     return res.status(429).render("admin-login", { error: `Too many attempts. Try again in ${gate.retryAfterSec}s.` });
@@ -1716,7 +2225,7 @@ app.post("/admin/login", (req, res) => {
   recordLoginFailure(req);
   res.status(401).render("admin-login", { error: "Invalid credentials" });
 });
-app.get("/admin", requireAdmin, async (req, res) => {
+app.get("/admin", adminLimiter, requireAdmin, async (req, res) => {
   const docs = (await listSubmissions()).map((d) => {
     if (d.type !== "split-sheet") return d;
     const contributors = d.payload?.contributors || [];
@@ -1733,7 +2242,7 @@ app.get("/admin", requireAdmin, async (req, res) => {
   res.render("admin", { docs });
 });
 
-app.get("/admin/split/:id", requireAdmin, async (req, res) => {
+app.get("/admin/split/:id", adminLimiter, requireAdmin, async (req, res) => {
   const doc = await loadSubmission(req.params.id);
   if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
 
@@ -1754,7 +2263,7 @@ app.get("/admin/split/:id", requireAdmin, async (req, res) => {
   res.render("admin-split-detail", { doc, timeline, signerStats, banner: req.query.banner || "" });
 });
 
-app.post("/admin/split/:id/remind", requireAdmin, async (req, res) => {
+app.post("/admin/split/:id/remind", adminLimiter, requireAdmin, async (req, res) => {
   const doc = await loadSubmission(req.params.id);
   if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
 
@@ -1771,7 +2280,7 @@ app.post("/admin/split/:id/remind", requireAdmin, async (req, res) => {
   res.redirect(`/admin/split/${doc.id}?banner=${encodeURIComponent(`Reminder email run complete. Sent ${sent} reminder(s).`)}`);
 });
 
-app.get("/admin/doc/:id", requireAdmin, async (req, res) => {
+app.get("/admin/doc/:id", adminLimiter, requireAdmin, async (req, res) => {
   const doc = await loadSubmission(req.params.id);
   if (!doc) return res.status(404).send("Not found");
   res.type("application/json").send(submissionStore.serializeSubmission(doc));

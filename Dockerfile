@@ -7,12 +7,14 @@ ENV PORT=5050
 ENV HOST=0.0.0.0
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 make g++ \
+  && apt-get install -y --no-install-recommends ca-certificates python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm config set strict-ssl false \
+  && npm install --omit=dev --no-audit --fund=false \
+  && npm cache clean --force
 
 COPY . .
 

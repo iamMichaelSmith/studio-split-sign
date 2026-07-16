@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SplitSheet Studio</title>
+  <meta name="description" content="SplitSheet Studio gives music creators a web app and VST workflow for session split capture, signatures, delivery, and rights-ready records.">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -16,10 +17,14 @@
           <p class="landing-subtitle">Capture writer splits, collect signatures, generate final packets, and keep the workflow moving from browser or plugin.</p>
           <div class="landing-actions">
             <a class="landing-button landing-button-primary" href="<%= appUrl %>">Open App</a>
+            <a class="landing-button" href="<%= pricingUrl %>">Buy Plugin — <%= pluginPriceLabel %></a>
             <a class="landing-button" href="<%= signupUrl %>">Create Account</a>
-            <a class="landing-button" href="<%= appUrl %>/split-sheet">Open Split Sheet</a>
+            <a class="landing-button" href="<%= blogUrl %>">Read Blog</a>
           </div>
           <p class="landing-note">App host: <strong>app.<%= rootDomain %></strong> · Plugin target: <strong>https://app.<%= rootDomain %></strong></p>
+          <% if (!stripeEnabled) { %>
+            <p class="small">Payments are not live yet. Accounts, hosted workflow, and plugin testing are live now.</p>
+          <% } %>
         </div>
         <div class="landing-panel">
           <div class="card">
@@ -48,12 +53,48 @@
         <div class="card">
           <h3>Plugin Workflow</h3>
           <p class="small">Use the compact studio workflow inside your DAW and point the plugin at the hosted API instead of localhost.</p>
-          <a href="<%= appUrl %>#plugin">Plugin notes</a>
+          <a href="<%= pricingUrl %>">Plugin pricing</a>
         </div>
         <div class="card">
           <h3>Studio Use Case</h3>
           <p class="small">Built for producer and writer sessions where paperwork usually slows down signoff, ownership clarity, and delivery.</p>
           <a href="<%= appUrl %>/split-sheet">Start a split sheet</a>
+        </div>
+      </div>
+
+      <div class="card landing-feature-card">
+        <div class="landing-feature-header">
+          <div>
+            <h3>Paid plugin download</h3>
+            <p class="small">Sell the VST3 as a direct install while the hosted app handles account sign-in, validation, email delivery, and recovery flows.</p>
+          </div>
+          <div class="landing-price-lockup">
+            <div class="landing-price"><%= pluginPriceLabel %></div>
+            <a class="landing-button landing-button-primary" href="<%= pricingUrl %>"><%= stripeEnabled ? "Buy Plugin" : "Join Waitlist" %></a>
+          </div>
+        </div>
+        <% if (!stripeEnabled) { %>
+          <p class="small">Join the launch list at <a href="mailto:<%= supportEmail %>?subject=SplitSheet%20Studio%20plugin%20launch"><%= supportEmail %></a>.</p>
+        <% } %>
+      </div>
+
+      <div class="card landing-blog-card">
+        <div class="landing-section-header">
+          <div>
+            <h3>From the blog</h3>
+            <p class="small">Rights admin, split-sheet workflow, and sync-readiness notes for artists, producers, and managers.</p>
+          </div>
+          <a href="<%= blogUrl %>">View all posts</a>
+        </div>
+        <div class="grid landing-grid">
+          <% latestPosts.forEach((post) => { %>
+            <article class="card landing-post-card">
+              <div class="pill"><%= post.category %></div>
+              <h3><a href="/blog/<%= post.slug %>"><%= post.title %></a></h3>
+              <p class="small"><%= post.excerpt %></p>
+              <p class="small"><%= post.publishedAt %> · <%= post.readingMinutes %> min read</p>
+            </article>
+          <% }) %>
         </div>
       </div>
     </div>

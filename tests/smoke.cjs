@@ -55,6 +55,15 @@ async function main() {
     const home = await fetch(`http://127.0.0.1:${port}/`);
     if (!home.ok) throw new Error('home failed');
 
+    const pricing = await fetch(`http://127.0.0.1:${port}/pricing`);
+    if (!pricing.ok) throw new Error('pricing page failed');
+
+    const blog = await fetch(`http://127.0.0.1:${port}/blog`);
+    if (!blog.ok) throw new Error('blog index failed');
+
+    const blogPost = await fetch(`http://127.0.0.1:${port}/blog/what-is-a-split-sheet-in-music`);
+    if (!blogPost.ok) throw new Error('blog post failed');
+
     const split = await fetch(`http://127.0.0.1:${port}/split-sheet`);
     if (!split.ok) throw new Error('split form failed');
 

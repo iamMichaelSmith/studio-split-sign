@@ -1,6 +1,5 @@
 const fs = require("fs");
 const path = require("path");
-const Database = require("better-sqlite3");
 const { Pool } = require("pg");
 
 function ensureParentDir(filePath) {
@@ -9,6 +8,12 @@ function ensureParentDir(filePath) {
 
 function createSqliteProvider({ dbPath }) {
   if (!dbPath) throw new Error("dbPath is required for sqlite provider");
+  let Database;
+  try {
+    Database = require("better-sqlite3");
+  } catch (error) {
+    throw new Error("SQLite support requires the optional dependency better-sqlite3 to be installed.");
+  }
   ensureParentDir(dbPath);
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
