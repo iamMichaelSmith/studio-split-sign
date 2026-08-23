@@ -141,7 +141,7 @@ These are the practical micro-apps or workflow surfaces that make up the system:
 9. Admin and API clients can retrieve delivery and signer state
 
 ## Public-launch posture
-The hosted app, plugin login target, signup flow, password reset flow, invite workflow, blog, pricing/storefront surface, and request-level rate limiting are all in this repo now.
+The hosted app, plugin login target, signup flow, password reset flow, invite workflow, blog, legal pages, pricing/storefront surface, plugin update metadata, and request-level rate limiting are all in this repo now.
 
 ### Plans and usage limits
 The app has an internal subscription model with Stripe subscription checkout hooks:
@@ -158,6 +158,7 @@ What is still intentionally deferred:
 - live Stripe account keys, webhook secret, and Stripe Customer Portal configuration
 - final purchase-to-download automation in production
 - code signing for the Windows installer
+- attorney review of public legal templates
 
 That means the product can be validated publicly before live payments are turned on.
 
@@ -171,6 +172,7 @@ That means the product can be validated publicly before live payments are turned
 - `services/split-sheet-service.js` -> split-sheet rules and payload shaping
 - `services/storefront-service.js` -> plugin purchase records and gated download tracking
 - `content/blog-posts.js` -> blog content source
+- `content/legal-pages.js` -> public terms, privacy, refund, E-SIGN consent, and disclaimer content
 - `views/` -> landing, app, auth, signer, success, admin, pricing, and blog templates
 - `public/` -> shared browser styling and assets
 
@@ -201,6 +203,9 @@ Local dev URL:
 ## Plugin status
 The plugin is already wired to the hosted app by default:
 - default API target: `https://app.splitsheetstudio.com`
+- startup update check: `/api/plugin/update?currentVersion=...`
+- latest version is controlled by `PLUGIN_LATEST_VERSION_LABEL`
+- forced upgrade floor is controlled by `PLUGIN_MINIMUM_SUPPORTED_VERSION`
 
 Current installer output:
 - `vst\dist\SplitSheetStudio-Setup-0.1.0.exe`
@@ -222,6 +227,7 @@ The current hosted runtime is verified through:
 - `https://app.splitsheetstudio.com/health`
 - `https://app.splitsheetstudio.com/api/ready`
 - live pricing and blog routes
+- public legal routes under `https://splitsheetstudio.com/legal/...`
 - plugin sign-in and end-to-end split email delivery tests
 
 Local Proxmox copy:
@@ -233,7 +239,7 @@ Local Proxmox copy:
 The core hosted system is live, but these remain the main product-hardening items:
 - plugin installer final verification on a clean machine
 - code signing for installer / binaries
-- privacy policy / terms / commercial packaging
+- attorney review of privacy policy / terms / commercial packaging
 - live Stripe keys and webhook secret
 - purchase-to-download fulfillment with live Stripe enabled
 - alerting / uptime monitoring beyond base CloudWatch logs

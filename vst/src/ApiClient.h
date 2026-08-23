@@ -32,9 +32,23 @@ public:
         juce::String errorMessage;
     };
 
+    struct PluginUpdateResponse
+    {
+        bool ok = false;
+        bool updateAvailable = false;
+        bool updateRequired = false;
+        juce::String latestVersion;
+        juce::String minimumSupportedVersion;
+        juce::String downloadUrl;
+        juce::String releaseNotesUrl;
+        juce::String message;
+        juce::String errorMessage;
+    };
+
     using ReadyCallback = std::function<void (ReadyResponse)>;
     using LoginCallback = std::function<void (LoginResponse)>;
     using SplitSheetCallback = std::function<void (SplitSheetResponse)>;
+    using PluginUpdateCallback = std::function<void (PluginUpdateResponse)>;
 
     void setBaseUrl(juce::String newBaseUrl);
     juce::String getBaseUrl() const;
@@ -44,6 +58,7 @@ public:
     void refreshSession(juce::String refreshToken, LoginCallback callback) const;
     void logout(juce::String refreshToken, std::function<void()> callback) const;
     void createSplitSheet(juce::String accessToken, juce::var payload, SplitSheetCallback callback) const;
+    void fetchPluginUpdate(juce::String currentVersion, PluginUpdateCallback callback) const;
 
 private:
     juce::String baseUrl { "https://app.splitsheetstudio.com" };

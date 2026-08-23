@@ -27,6 +27,7 @@ const {
   planForUser
 } = require("./services/plan-service");
 const { listPosts, getPostBySlug } = require("./content/blog-posts");
+const { commonNotice, getLegalPage, listLegalPages, updatedLabel: legalUpdatedLabel } = require("./content/legal-pages");
 const {
   SplitSheetValidationError,
   buildSplitSheetDraftPayload,
@@ -75,6 +76,9 @@ const stripePluginProductSku = process.env.STRIPE_PLUGIN_PRODUCT_SKU || "splitsh
 const stripePluginProductName = process.env.STRIPE_PLUGIN_PRODUCT_NAME || "Split Sheet Studio VST3 Plugin";
 const stripePluginProductDescription = process.env.STRIPE_PLUGIN_PRODUCT_DESCRIPTION || "Compact split-sheet workflow inside your DAW with hosted account, email delivery, and signed session records.";
 const pluginVersionLabel = process.env.PLUGIN_VERSION_LABEL || "0.1.0";
+const pluginLatestVersionLabel = process.env.PLUGIN_LATEST_VERSION_LABEL || pluginVersionLabel;
+const pluginMinimumSupportedVersion = process.env.PLUGIN_MINIMUM_SUPPORTED_VERSION || "";
+const pluginReleaseNotesUrl = process.env.PLUGIN_RELEASE_NOTES_URL || `${baseUrl}/pricing`;
 const pluginDownloadUrl = process.env.PLUGIN_DOWNLOAD_URL || "";
 const pluginDownloadBucket = process.env.PLUGIN_DOWNLOAD_BUCKET || s3Bucket;
 const pluginDownloadKey = process.env.PLUGIN_DOWNLOAD_KEY || `downloads/SplitSheetStudio-Setup-${pluginVersionLabel}.exe`;
@@ -128,6 +132,20 @@ if (trustProxy) {
 app.use("/api/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(express.json({ limit: "10mb" }));
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  if (req.secure || trustProxy) {
+    res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+  }
+  if (req.path.startsWith("/account") || req.path.startsWith("/admin") || req.path.startsWith("/split-sheet") || req.path.startsWith("/api/")) {
+    res.setHeader("Cache-Control", "no-store");
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/vendor/signature_pad", express.static(path.join(__dirname, "node_modules", "signature_pad", "dist")));
 app.use(session({
@@ -1093,6 +1111,27 @@ function storefrontPriceLabel() {
   return formatMoney(stripePluginPriceUsdCents, "usd");
 }
 
+function versionParts(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^v/i, "")
+    .split(/[^\d]+/)
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((part) => Number(part) || 0);
+}
+
+function compareVersions(a, b) {
+  const left = versionParts(a);
+  const right = versionParts(b);
+  const length = Math.max(left.length, right.length, 3);
+  for (let index = 0; index < length; index += 1) {
+    const diff = (left[index] || 0) - (right[index] || 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
 function latestBlogPosts(limit = 3) {
   return listPosts().slice(0, limit);
 }
@@ -1936,6 +1975,28 @@ app.get("/blog/:slug", publicPageLimiter, (req, res) => {
     ...publicNavModel()
   });
 });
+app.get("/legal", publicPageLimiter, (req, res) => res.redirect(302, "/legal/terms"));
+app.get("/legal/:slug", publicPageLimiter, (req, res) => {
+  const page = getLegalPage(req.params.slug);
+  if (!page) {
+    return res.status(404).render("auth-message", {
+      title: "Legal page not found",
+      message: "That legal page is unavailable.",
+      details: "Use the footer links to open the current policies.",
+      actionHref: "/legal/terms",
+      actionLabel: "View terms",
+      debugLink: null,
+      supportEmail
+    });
+  }
+  return res.render("legal-page", {
+    ...publicNavModel(),
+    page,
+    legalPages: listLegalPages(),
+    commonNotice,
+    updatedLabel: legalUpdatedLabel
+  });
+});
 app.get("/health", (req, res) => res.json({ ok: true, at: nowIso() }));
 app.get("/ready", (req, res) => res.json({
   ok: true,
@@ -1948,6 +2009,28 @@ app.get("/ready", (req, res) => res.json({
   baseUrl
 }));
 app.get("/api/health", (req, res) => res.json({ ok: true, at: nowIso(), api: "v1" }));
+app.get("/api/plugin/update", publicPageLimiter, (req, res) => {
+  const currentVersion = String(req.query.currentVersion || "").trim();
+  const latestVersion = pluginLatestVersionLabel;
+  const updateAvailable = currentVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
+  const updateRequired = currentVersion && pluginMinimumSupportedVersion
+    ? compareVersions(currentVersion, pluginMinimumSupportedVersion) < 0
+    : false;
+  return res.json({
+    ok: true,
+    product: "Split Sheet Studio",
+    currentVersion,
+    latestVersion,
+    minimumSupportedVersion: pluginMinimumSupportedVersion || null,
+    updateAvailable,
+    updateRequired,
+    downloadUrl: pluginDownloadUrl || `${baseUrl}/pricing`,
+    releaseNotesUrl: pluginReleaseNotesUrl,
+    message: updateAvailable
+      ? `Split Sheet Studio ${latestVersion} is available.`
+      : "Split Sheet Studio is up to date."
+  });
+});
 app.get("/api/ready", (req, res) => res.json({
   ok: true,
   at: nowIso(),
@@ -2832,6 +2915,39 @@ app.get("/admin/doc/:id", adminLimiter, requireAdmin, async (req, res) => {
   const doc = await loadSubmission(req.params.id);
   if (!doc) return res.status(404).send("Not found");
   res.type("application/json").send(submissionStore.serializeSubmission(doc));
+});
+
+app.use((req, res) => {
+  if (req.path.startsWith("/api/")) {
+    return res.status(404).json({ ok: false, error: "Not found" });
+  }
+  return res.status(404).render("auth-message", {
+    title: "Page not found",
+    message: "That page is not available.",
+    details: "Use the navigation or return to the app.",
+    actionHref: isMarketingHost(req) ? "/" : baseUrl,
+    actionLabel: "Go back",
+    debugLink: null,
+    supportEmail
+  });
+});
+
+app.use((error, req, res, next) => {
+  void next;
+  console.error("Unhandled request error:", error.message || error);
+  if (res.headersSent) return;
+  if (req.path.startsWith("/api/")) {
+    return res.status(500).json({ ok: false, error: "Unexpected server error" });
+  }
+  return res.status(500).render("auth-message", {
+    title: "Server error",
+    message: "Something went wrong while handling that request.",
+    details: "The issue was logged. Try again or contact support if it continues.",
+    actionHref: isMarketingHost(req) ? "/" : baseUrl,
+    actionLabel: "Go back",
+    debugLink: null,
+    supportEmail
+  });
 });
 
 if (require.main === module) {

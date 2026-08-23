@@ -66,6 +66,12 @@ async function main() {
     const readyJson = await ready.json();
     if (readyJson.dbProvider !== 'postgres') throw new Error('postgres provider not active');
 
+    const terms = await fetch(`http://127.0.0.1:${port}/legal/terms`);
+    if (!terms.ok) throw new Error('terms page failed');
+
+    const pluginUpdate = await fetch(`http://127.0.0.1:${port}/api/plugin/update?currentVersion=0.0.1`);
+    if (!pluginUpdate.ok) throw new Error('plugin update endpoint failed');
+
     const register = await fetch(`http://127.0.0.1:${port}/api/auth/register`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

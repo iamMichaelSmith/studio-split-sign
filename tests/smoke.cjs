@@ -77,6 +77,16 @@ async function main() {
     const blogPost = await fetch(`http://127.0.0.1:${port}/blog/what-is-a-split-sheet-in-music`);
     if (!blogPost.ok) throw new Error('blog post failed');
 
+    for (const slug of ['terms', 'privacy', 'refund-policy', 'electronic-signature-consent', 'disclaimer']) {
+      const legal = await fetch(`http://127.0.0.1:${port}/legal/${slug}`);
+      if (!legal.ok) throw new Error(`legal page failed: ${slug}`);
+    }
+
+    const pluginUpdate = await fetch(`http://127.0.0.1:${port}/api/plugin/update?currentVersion=0.0.1`);
+    if (!pluginUpdate.ok) throw new Error('plugin update endpoint failed');
+    const pluginUpdateJson = await pluginUpdate.json();
+    if (!pluginUpdateJson.latestVersion) throw new Error('plugin update latest version missing');
+
     const split = await fetch(`http://127.0.0.1:${port}/split-sheet`);
     if (!split.ok) throw new Error('split form failed');
     if (!((await split.text()).includes('Sign in'))) throw new Error('split form should require sign in');

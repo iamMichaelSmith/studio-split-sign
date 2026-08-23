@@ -54,6 +54,7 @@ private:
     void removeContributorRow(int index);
     void refreshViewState();
     void restoreSessionIfNeeded();
+    void checkForUpdates();
     void runLogin();
     void runLogout();
     void submitSplitSheet();
@@ -103,6 +104,7 @@ private:
     juce::Label reviewSummaryTitleLabel;
     juce::Label reviewSummaryLabel;
     juce::Label validationLabel;
+    juce::Label updateNoticeLabel;
 
     juce::TextEditor baseUrlEditor;
     juce::TextEditor emailEditor;
@@ -126,6 +128,7 @@ private:
     juce::TextButton loginButton { "Sign In" };
     juce::TextButton createAccountButton { "Create Account" };
     juce::TextButton forgotPasswordButton { "Forgot Password" };
+    juce::TextButton updateDownloadButton { "Download Update" };
     juce::TextButton songStepButton { "1 Song" };
     juce::TextButton contributorsStepButton { "2 Contributors" };
     juce::TextButton reviewStepButton { "3 Review & Submit" };
@@ -146,4 +149,6 @@ private:
     Step currentStep = Step::song;
     bool settingsVisible = false;
     bool restoringSession = false;
+    bool updateAvailable = false;
+    juce::String updateDownloadUrl;
 };

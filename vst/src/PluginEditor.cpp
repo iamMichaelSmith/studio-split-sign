@@ -3,6 +3,10 @@
 #include <array>
 #include <cmath>
 
+#ifndef SPLIT_SHEET_STUDIO_VERSION
+#define SPLIT_SHEET_STUDIO_VERSION "0.1.0"
+#endif
+
 namespace
 {
     const auto backgroundColour = juce::Colour::fromRGB(27, 17, 12);
@@ -20,6 +24,7 @@ namespace
     const auto taupeColour = juce::Colour::fromRGB(201, 161, 127);
     const auto subduedText = juce::Colour::fromRGB(229, 200, 170);
     const auto placeholderColour = juce::Colour::fromRGB(184, 145, 115);
+    const juce::String currentPluginVersion { SPLIT_SHEET_STUDIO_VERSION };
 
     juce::String todayIso()
     {
@@ -463,6 +468,10 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     validationLabel.setColour(juce::Label::textColourId, subduedText);
     validationLabel.setFont(juce::FontOptions(12.5f));
 
+    updateNoticeLabel.setJustificationType(juce::Justification::centredLeft);
+    updateNoticeLabel.setColour(juce::Label::textColourId, accentColour);
+    updateNoticeLabel.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+
     for (auto* label : std::array<juce::Label*, 14>{
              &baseUrlLabel, &emailLabel, &passwordLabel, &songTitleLabel, &alternateTitleLabel,
              &dateLabel, &sessionLocationLabel, &iswcLabel, &isrcLabel, &notesLabel,
@@ -518,6 +527,7 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     styleButton(loginButton, accentColour, panelColour);
     styleButton(createAccountButton);
     styleButton(forgotPasswordButton);
+    styleButton(updateDownloadButton, juce::Colour::fromRGB(78, 51, 35), ivoryColour);
     styleButton(addContributorButton);
     styleButton(setEqualSplitsButton);
     styleButton(nextStepButton);
@@ -532,6 +542,7 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     loginButton.addListener(this);
     createAccountButton.addListener(this);
     forgotPasswordButton.addListener(this);
+    updateDownloadButton.addListener(this);
     songStepButton.addListener(this);
     contributorsStepButton.addListener(this);
     reviewStepButton.addListener(this);
@@ -541,11 +552,11 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     submitButton.addListener(this);
     logoutButton.addListener(this);
 
-    for (auto* component : std::array<juce::Component*, 33>{
+    for (auto* component : std::array<juce::Component*, 34>{
              &titleLabel, &subtitleLabel, &statusBadgeLabel, &statusLabel, &settingsButton,
              &baseUrlLabel, &baseUrlEditor, &readyButton, &emailLabel, &emailEditor,
              &passwordLabel, &passwordEditor, &loginButton, &createAccountButton,
-             &forgotPasswordButton, &songStepButton,
+             &forgotPasswordButton, &updateDownloadButton, &songStepButton,
              &contributorsStepButton, &reviewStepButton, &welcomeLabel, &songTitleLabel,
              &songTitleEditor, &alternateTitleLabel, &alternateTitleEditor, &dateLabel,
              &dateEditor, &sessionLocationLabel, &sessionLocationEditor, &iswcLabel,
@@ -556,11 +567,11 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
 
     addAndMakeVisible(contributorsViewport);
 
-    for (auto* component : std::array<juce::Component*, 14>{
+    for (auto* component : std::array<juce::Component*, 15>{
              &contributorsLabel, &contributorsHintLabel, &totalsLabel, &addContributorButton,
              &setEqualSplitsButton, &nextStepButton, &recipientsLabel, &additionalRecipientsLabel,
              &agreementsLabel, &reviewSummaryTitleLabel, &reviewSummaryLabel,
-             &additionalRecipientOneEditor, &additionalRecipientTwoEditor, &validationLabel })
+             &additionalRecipientOneEditor, &additionalRecipientTwoEditor, &validationLabel, &updateNoticeLabel })
     {
         addAndMakeVisible(*component);
     }
@@ -580,12 +591,14 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     loginButton.setButtonText("SIGN IN");
     createAccountButton.setButtonText("CREATE ACCOUNT");
     forgotPasswordButton.setButtonText("FORGOT PASSWORD?");
+    updateDownloadButton.setButtonText("DOWNLOAD UPDATE");
     nextStepButton.setButtonText("Continue  >");
     submitButton.setButtonText("Send Split Sheet  >");
 
     updateStatus("Ready to connect", neutralColour);
     setSize(1000, 760);
 
+    checkForUpdates();
     restoreSessionIfNeeded();
     refreshViewState();
 }
@@ -598,6 +611,7 @@ SplitSheetStudioEditor::~SplitSheetStudioEditor()
     loginButton.removeListener(this);
     createAccountButton.removeListener(this);
     forgotPasswordButton.removeListener(this);
+    updateDownloadButton.removeListener(this);
     songStepButton.removeListener(this);
     contributorsStepButton.removeListener(this);
     reviewStepButton.removeListener(this);
@@ -675,7 +689,7 @@ void SplitSheetStudioEditor::paint(juce::Graphics& graphics)
         graphics.setFont(juce::FontOptions(8.5f, juce::Font::bold));
         graphics.drawFittedText("POWERED BY BLAK MARIGOLD", juce::Rectangle<int>(300, 143, getWidth() - 600, 16), juce::Justification::centred, 1);
 
-        auto loginCard = juce::Rectangle<int>(0, 0, 520, 440).withCentre(juce::Point<int>(getWidth() / 2, 390));
+        auto loginCard = juce::Rectangle<int>(0, 0, 520, updateAvailable ? 500 : 440).withCentre(juce::Point<int>(getWidth() / 2, updateAvailable ? 410 : 390));
         juce::ColourGradient cardGradient(juce::Colour::fromRGB(105, 76, 58), static_cast<float>(loginCard.getX()), static_cast<float>(loginCard.getY()),
                                           juce::Colour::fromRGB(52, 36, 28), static_cast<float>(loginCard.getRight()), static_cast<float>(loginCard.getBottom()), false);
         graphics.setGradientFill(cardGradient);
@@ -757,6 +771,13 @@ void SplitSheetStudioEditor::resized()
         createAccountButton.setBounds(loginArea.removeFromTop(38));
         loginArea.removeFromTop(8);
         forgotPasswordButton.setBounds(loginArea.removeFromTop(38));
+        if (updateAvailable)
+        {
+            loginArea.removeFromTop(14);
+            updateNoticeLabel.setBounds(loginArea.removeFromTop(22));
+            loginArea.removeFromTop(6);
+            updateDownloadButton.setBounds(loginArea.removeFromTop(34));
+        }
         return;
     }
 
@@ -772,7 +793,15 @@ void SplitSheetStudioEditor::resized()
     statusRow.removeFromLeft(10);
     settingsButton.setBounds(statusRow.removeFromRight(170));
     statusRow.removeFromRight(10);
+    if (updateAvailable)
+    {
+        updateDownloadButton.setBounds(statusRow.removeFromRight(150));
+        statusRow.removeFromRight(10);
+    }
     statusLabel.setBounds(statusRow);
+    updateNoticeLabel.setBounds(area.removeFromTop(updateAvailable ? 22 : 0));
+    if (updateAvailable)
+        area.removeFromTop(6);
     area.removeFromTop(10);
 
     if (settingsVisible)
@@ -957,6 +986,13 @@ void SplitSheetStudioEditor::buttonClicked(juce::Button* button)
     {
         const auto accountUrl = processor.getApiClient().getBaseUrl() + (button == &createAccountButton ? "/signup" : "/forgot-password");
         juce::URL(accountUrl).launchInDefaultBrowser();
+        return;
+    }
+
+    if (button == &updateDownloadButton)
+    {
+        if (updateDownloadUrl.isNotEmpty())
+            juce::URL(updateDownloadUrl).launchInDefaultBrowser();
         return;
     }
 
@@ -1169,7 +1205,7 @@ void SplitSheetStudioEditor::removeContributorRow(int index)
 void SplitSheetStudioEditor::refreshViewState()
 {
     const auto authed = isAuthenticated();
-    const auto targetHeight = authed ? 760 : 650;
+    const auto targetHeight = authed ? 760 : (updateAvailable ? 700 : 650);
     if (getWidth() != 1000 || getHeight() != targetHeight)
         setSize(1000, targetHeight);
 
@@ -1189,6 +1225,8 @@ void SplitSheetStudioEditor::refreshViewState()
     loginButton.setVisible(!authed);
     createAccountButton.setVisible(!authed);
     forgotPasswordButton.setVisible(!authed);
+    updateNoticeLabel.setVisible(updateAvailable);
+    updateDownloadButton.setVisible(updateAvailable);
 
     songStepButton.setVisible(authed);
     contributorsStepButton.setVisible(authed);
@@ -1270,6 +1308,36 @@ void SplitSheetStudioEditor::refreshViewState()
     refreshSubmitState();
     resized();
     repaint();
+}
+
+void SplitSheetStudioEditor::checkForUpdates()
+{
+    juce::Component::SafePointer<SplitSheetStudioEditor> safeThis(this);
+    processor.getApiClient().setBaseUrl(baseUrlEditor.getText());
+    processor.getApiClient().fetchPluginUpdate(currentPluginVersion, [safeThis](SplitSheetApiClient::PluginUpdateResponse response)
+    {
+        if (safeThis == nullptr)
+            return;
+
+        auto& editor = *safeThis;
+        editor.updateAvailable = response.ok && response.updateAvailable;
+        editor.updateDownloadUrl = response.downloadUrl;
+
+        if (editor.updateAvailable)
+        {
+            const juce::String prefix = response.updateRequired ? "Required update: " : "Update available: ";
+            const juce::String version = response.latestVersion.isNotEmpty() ? response.latestVersion : "latest";
+            editor.updateNoticeLabel.setText(prefix + "Split Sheet Studio " + version, juce::dontSendNotification);
+            editor.updateDownloadButton.setButtonText(response.updateRequired ? "UPDATE REQUIRED" : "DOWNLOAD UPDATE");
+            editor.updateStatus(prefix + version, response.updateRequired ? errorColour : warningColour);
+        }
+        else
+        {
+            editor.updateNoticeLabel.setText({}, juce::dontSendNotification);
+        }
+
+        editor.refreshViewState();
+    });
 }
 
 void SplitSheetStudioEditor::restoreSessionIfNeeded()

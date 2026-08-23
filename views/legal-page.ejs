@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= page.title %> | Split Sheet Studio</title>
+  <meta name="description" content="<%= page.description %>">
+  <link rel="canonical" href="https://splitsheetstudio.com/legal/<%= page.slug %>">
+  <meta name="theme-color" content="#171311">
+  <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/premium.css">
+</head>
+<body class="premium-site"><div class="premium-shell">
+  <%- include('partials/site-nav') %>
+  <main class="premium-container legal-page">
+    <section class="legal-hero">
+      <div class="section-kicker">Legal</div>
+      <h1><%= page.title %></h1>
+      <p><%= page.description %></p>
+      <p class="small">Last updated: <%= updatedLabel %></p>
+    </section>
+
+    <section class="legal-alert">
+      <% commonNotice.forEach((notice) => { %>
+        <p><%= notice %></p>
+      <% }) %>
+    </section>
+
+    <section class="legal-toc">
+      <h2>On this page</h2>
+      <ol>
+        <% page.sections.forEach((section, index) => { %>
+          <li><a href="#section-<%= index + 1 %>"><%= section.heading %></a></li>
+        <% }) %>
+      </ol>
+    </section>
+
+    <% page.sections.forEach((section, index) => { %>
+      <section class="legal-section" id="section-<%= index + 1 %>">
+        <h2><%= section.heading %></h2>
+        <% section.body.forEach((paragraph) => { %>
+          <p><%= paragraph %></p>
+        <% }) %>
+      </section>
+    <% }) %>
+  </main>
+  <%- include('partials/site-footer') %>
+</div></body>
+</html>

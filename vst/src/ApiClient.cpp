@@ -206,6 +206,53 @@ void SplitSheetApiClient::createSplitSheet(juce::String accessToken, juce::var p
                        });
 }
 
+void SplitSheetApiClient::fetchPluginUpdate(juce::String currentVersion, PluginUpdateCallback callback) const
+{
+    const auto endpoint = baseUrl + "/api/plugin/update?currentVersion=" + juce::URL::addEscapeChars(currentVersion, true);
+
+    std::thread([endpoint, callback = std::move(callback)]() mutable
+    {
+        PluginUpdateResponse result;
+
+        try
+        {
+            juce::URL url(endpoint);
+            auto stream = url.createInputStream(juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                                                    .withConnectionTimeoutMs(5000));
+
+            if (stream != nullptr)
+            {
+                const auto payload = juce::JSON::parse(readStream(*stream));
+                if (auto* object = payload.getDynamicObject())
+                {
+                    result.ok = object->getProperty("ok");
+                    result.updateAvailable = object->getProperty("updateAvailable");
+                    result.updateRequired = object->getProperty("updateRequired");
+                    result.latestVersion = object->getProperty("latestVersion").toString();
+                    result.minimumSupportedVersion = object->getProperty("minimumSupportedVersion").toString();
+                    result.downloadUrl = object->getProperty("downloadUrl").toString();
+                    result.releaseNotesUrl = object->getProperty("releaseNotesUrl").toString();
+                    result.message = object->getProperty("message").toString();
+                    result.errorMessage = object->getProperty("error").toString();
+                }
+            }
+            else
+            {
+                result.errorMessage = "Update check unavailable";
+            }
+        }
+        catch (...)
+        {
+            result.errorMessage = "Update check unavailable";
+        }
+
+        dispatchToMessageThread([callback = std::move(callback), result]() mutable
+        {
+            callback(result);
+        });
+    }).detach();
+}
+
 juce::String SplitSheetApiClient::trimTrailingSlash(juce::String value)
 {
     while (value.endsWithChar('/'))

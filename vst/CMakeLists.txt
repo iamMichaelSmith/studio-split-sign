@@ -46,6 +46,7 @@ target_compile_definitions(SplitSheetStudio
   PUBLIC
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    SPLIT_SHEET_STUDIO_VERSION="${PROJECT_VERSION}"
 )
 
 if(MSVC)
