@@ -25,6 +25,20 @@ function normalizeNumber(value) {
   return Number.isFinite(amount) ? amount : 0;
 }
 
+function normalizeRightsScope(value) {
+  const normalized = String(value || "composition").trim().toLowerCase();
+  if (["composition", "master", "composition-and-master"].includes(normalized)) return normalized;
+  return "composition";
+}
+
+function includesCompositionRights(rightsScope) {
+  return rightsScope === "composition" || rightsScope === "composition-and-master";
+}
+
+function includesMasterRights(rightsScope) {
+  return rightsScope === "master" || rightsScope === "composition-and-master";
+}
+
 function normalizeContributor(raw = {}) {
   return {
     legalName: String(raw.legalName || "").trim(),
@@ -38,6 +52,7 @@ function normalizeContributor(raw = {}) {
     publisherIpi: String(raw.publisherIpi || "").trim(),
     writerShare: normalizeNumber(raw.writerShare),
     publisherShare: normalizeNumber(raw.publisherShare),
+    masterShare: normalizeNumber(raw.masterShare),
     typedSignatureName: String(raw.typedSignatureName || "").trim(),
     signatureData: String(raw.signatureData || "").trim()
   };
@@ -72,6 +87,7 @@ function parseFlatContributorInput(input) {
   const publisherIpis = pickArray(input, "publisherIpi");
   const writerShares = pickArray(input, "writerShare");
   const publisherShares = pickArray(input, "publisherShare");
+  const masterShares = pickArray(input, "masterShare");
   const typedNames = pickArray(input, "typedSignatureName");
   const signatureData = pickArray(input, "signatureData");
 
@@ -87,6 +103,7 @@ function parseFlatContributorInput(input) {
     publisherIpi: publisherIpis[index],
     writerShare: writerShares[index],
     publisherShare: publisherShares[index],
+    masterShare: masterShares[index],
     typedSignatureName: typedNames[index],
     signatureData: signatureData[index]
   })).filter((contributor) => contributor.legalName);
@@ -102,8 +119,9 @@ function splitTotals(contributors = []) {
   return contributors.reduce((totals, contributor) => {
     totals.writer += normalizeNumber(contributor.writerShare);
     totals.publisher += normalizeNumber(contributor.publisherShare);
+    totals.master += normalizeNumber(contributor.masterShare);
     return totals;
-  }, { writer: 0, publisher: 0 });
+  }, { writer: 0, publisher: 0, master: 0 });
 }
 
 function normalizeRecipientEmails(value) {
@@ -120,10 +138,12 @@ function normalizeRecipientEmails(value) {
     .filter(Boolean);
 }
 
-async function buildSplitSheetPayload(input, { nextVersion, createSignerToken, nowIso }) {
+async function buildSplitSheetPayload(input, { nextVersion, createSignerToken, signerLinkExpiresAt, nowIso }) {
   const contributors = parseContributors(input);
   const totals = splitTotals(contributors);
   const collectByInvite = toBooleanFlag(input.collectSignaturesByInvite);
+  const rightsScope = normalizeRightsScope(input.rightsScope);
+  const recipientEmails = normalizeRecipientEmails(input.recipientEmails);
 
   if (!String(input.songTitle || "").trim()) {
     throw new SplitSheetValidationError("Song title is required.", { field: "songTitle" });
@@ -152,10 +172,16 @@ async function buildSplitSheetPayload(input, { nextVersion, createSignerToken, n
     }
   }
 
-  if (Math.round(totals.writer * 100) / 100 !== 100 || Math.round(totals.publisher * 100) / 100 !== 100) {
-    throw new SplitSheetValidationError(`Shares invalid. Writer total=${totals.writer}, Publisher total=${totals.publisher}. Both must equal 100.`, {
+  const compositionTotalsValid = !includesCompositionRights(rightsScope) || (
+    Math.round(totals.writer * 100) / 100 === 100 &&
+    Math.round(totals.publisher * 100) / 100 === 100
+  );
+  const masterTotalValid = !includesMasterRights(rightsScope) || Math.round(totals.master * 100) / 100 === 100;
+  if (!compositionTotalsValid || !masterTotalValid) {
+    throw new SplitSheetValidationError(`Shares invalid for ${rightsScope}. Required ownership totals must equal 100.`, {
       field: "contributors",
-      totals
+      totals,
+      rightsScope
     });
   }
 
@@ -171,16 +197,28 @@ async function buildSplitSheetPayload(input, { nextVersion, createSignerToken, n
     date: String(input.date || "").trim(),
     sessionLocation: String(input.sessionLocation || "").trim(),
     notes: String(input.notes || "").trim(),
+    rightsScope,
     supersedesPrevious: toBooleanFlag(input.supersedesPrevious),
-    allPartiesAgree: true,
+    initiatorConfirmedProposedSplits: true,
+    allPartiesAgree: !collectByInvite,
     collectSignaturesByInvite: collectByInvite,
+    recipientEmails,
+    completedAt: collectByInvite ? null : nowIso(),
+    auditTrail: [{ type: "proposal-created", at: nowIso() }],
     version: await nextVersion(input.songTitle),
     contributors: contributors.map((contributor) => ({
       ...contributor,
       signerToken: collectByInvite ? createSignerToken() : null,
-      inviteSentAt: collectByInvite ? nowIso() : null,
+      signerTokenExpiresAt: collectByInvite ? (typeof signerLinkExpiresAt === "function" ? signerLinkExpiresAt() : null) : null,
+      inviteSentAt: null,
+      inviteEmailStatus: collectByInvite ? "pending" : "not-required",
+      inviteEmailReason: null,
+      inviteCount: 0,
       reminderSentAt: null,
+      reminderCount: 0,
       viewedAt: null,
+      agreementAcceptedAt: collectByInvite ? null : nowIso(),
+      agreementVersion: "remote-split-v1",
       signedAt: collectByInvite ? null : nowIso()
     }))
   };
@@ -190,7 +228,7 @@ async function buildSplitSheetPayload(input, { nextVersion, createSignerToken, n
     contributors: payload.contributors,
     totals,
     collectByInvite,
-    recipientEmails: normalizeRecipientEmails(input.recipientEmails)
+    recipientEmails
   };
 }
 
@@ -211,6 +249,7 @@ async function buildSplitSheetDraftPayload(input, { nextVersion, existingPayload
     date: String(input.date ?? existingPayload.date ?? "").trim(),
     sessionLocation: String(input.sessionLocation ?? existingPayload.sessionLocation ?? "").trim(),
     notes: String(input.notes ?? existingPayload.notes ?? "").trim(),
+    rightsScope: normalizeRightsScope(input.rightsScope ?? existingPayload.rightsScope),
     supersedesPrevious: toBooleanFlag(input.supersedesPrevious ?? existingPayload.supersedesPrevious),
     allPartiesAgree: toBooleanFlag(input.allPartiesAgree ?? existingPayload.allPartiesAgree),
     collectSignaturesByInvite: toBooleanFlag(input.collectSignaturesByInvite ?? existingPayload.collectSignaturesByInvite),
@@ -232,7 +271,23 @@ function summarizeSplitSheet(doc, baseUrl) {
     updatedAt: doc.updatedAt,
     songTitle: doc.payload?.songTitle || "",
     version: Number(doc.payload?.version || 1),
+    rightsScope: normalizeRightsScope(doc.payload?.rightsScope),
     collectSignaturesByInvite: Boolean(doc.payload?.collectSignaturesByInvite),
+    allPartiesAgree: Boolean(doc.payload?.allPartiesAgree),
+    completedAt: doc.payload?.completedAt || null,
+    delivery: doc.payload?.completionEmailDelivery || null,
+    signers: contributors.map((contributor, index) => ({
+      index: index + 1,
+      legalName: contributor.legalName || "",
+      role: contributor.role || "",
+      inviteEmailStatus: contributor.inviteEmailStatus || "unknown",
+      inviteCount: Number(contributor.inviteCount || 0),
+      reminderCount: Number(contributor.reminderCount || 0),
+      signerTokenExpiresAt: contributor.signerTokenExpiresAt || null,
+      viewedAt: contributor.viewedAt || null,
+      agreementAcceptedAt: contributor.agreementAcceptedAt || null,
+      signedAt: contributor.signedAt || null
+    })),
     signerStats: {
       total: contributors.length,
       signed: signedCount,
@@ -257,6 +312,9 @@ module.exports = {
   buildSplitSheetPayload,
   buildSplitSheetDraftPayload,
   detailSplitSheet,
+  includesCompositionRights,
+  includesMasterRights,
+  normalizeRightsScope,
   parseContributors,
   splitTotals,
   summarizeSplitSheet

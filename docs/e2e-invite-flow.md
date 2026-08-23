@@ -59,7 +59,9 @@ What happens:
 
 What happens:
 - Signer sees song + role + split percentages.
-- Signs via touch/mouse canvas and submits.
+- Reviews the complete contributor split.
+- Explicitly confirms agreement, signs via touch/mouse canvas, and submits.
+- Secure links expire after the configured TTL and can be renewed by resend.
 
 ### 6) Signer #1 submission confirmation (pending)
 
@@ -83,6 +85,7 @@ What happens:
 What happens:
 - Workflow is completed.
 - Final packet generation + email delivery confirmation shown.
+- The record is locked only after every contributor has agreed and signed.
 
 ---
 
@@ -91,6 +94,7 @@ What happens:
 - Invite emails include signer-specific secure URLs.
 - Completion email is sent to selected recipients.
 - Split summary table is embedded in signer invite and completion email content.
+- Delivery status and the final audit timeline remain attached to the split record.
 
 ---
 

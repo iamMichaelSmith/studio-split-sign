@@ -1,6 +1,6 @@
-# AWS Deployment Notes
+﻿# AWS Deployment Notes
 
-This folder contains the AWS deployment path for `SplitSheet Studio`.
+This folder contains the AWS deployment path for `Split Sheet Studio`.
 
 ## What is already live
 - domain registration: `splitsheetstudio.com`
@@ -30,6 +30,8 @@ The ECS task definition is built around:
 - `PDF_STORAGE=s3`
 - `COOKIE_SECURE=true`
 - `TRUST_PROXY=true`
+- `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` when checkout is live
+- optional `STRIPE_CREATOR_PRICE_ID` and `STRIPE_STUDIO_PRO_PRICE_ID` for fixed Stripe Price IDs
 
 ## AWS services used
 - `Route 53`
@@ -44,6 +46,8 @@ The ECS task definition is built around:
 - `Secrets Manager`
 - `CloudWatch Logs`
 - `IAM`
+
+Stripe remains an external payment processor. The app uses Stripe Checkout for the VST plugin purchase and Creator/Studio Pro subscriptions, Stripe webhooks for plan updates, and Stripe Customer Portal for customer billing management.
 
 ## Script responsibilities
 

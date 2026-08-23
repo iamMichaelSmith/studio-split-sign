@@ -23,6 +23,7 @@ This repository now includes a JSON API layer for split-sheet workflows and plug
 - `POST /api/split-sheets/validate`
 - `POST /api/split-sheets`
 - `GET /api/split-sheets/:id/status`
+- `POST /api/split-sheets/:id/signers/:index/resend`
 
 ## Current status
 The backend now supports:
@@ -39,12 +40,7 @@ What is ready:
 - PostgreSQL adapter support behind the same service contract
 - legacy JSON import into the current database-backed model
 
-What is not ready yet:
-- production PostgreSQL environment verification in this repo
-- fine-grained authorization and team roles
-- richer dashboard/catalog endpoints beyond the current split list/detail API
-- rate limiting for public API traffic
-- password reset and account recovery
+Remote signing now includes expiring links, explicit signer consent, resend support, delivery state, final locking, and completion only after every contributor signs.
 
 ## Draft flow
 Drafts are stored as split sheets with `status: "draft"`.
@@ -61,6 +57,7 @@ Recommended plugin flow:
 {
   "draftId": "optional-draft-id",
   "songTitle": "Example Song",
+  "rightsScope": "composition",
   "date": "2026-07-01",
   "allPartiesAgree": true,
   "collectSignaturesByInvite": true,
@@ -84,8 +81,7 @@ Recommended plugin flow:
 ```
 
 ## Next API priorities
-1. validate the PostgreSQL path against a real database
-2. profile and catalog endpoints
-3. rate limiting and public-traffic hardening
-4. password reset and account recovery
-5. team roles and shared studio access
+1. team roles and shared studio access
+2. richer dashboard/catalog endpoints
+3. delivery-provider webhook reconciliation
+4. structured activity export for external rights systems

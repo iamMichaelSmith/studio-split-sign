@@ -1,11 +1,16 @@
-param(
+﻿param(
   [string]$BuildDir = ".\build",
   [string]$Configuration = "Release",
   [string]$OutputDir = ".\dist",
   [string]$Version = "0.1.0",
+  [string]$CertificateThumbprint = $env:SPLITSHEET_SIGNING_CERT_THUMBPRINT,
+  [string]$PfxPath = $env:SPLITSHEET_SIGNING_PFX_PATH,
+  [string]$PfxPassword = $env:SPLITSHEET_SIGNING_PFX_PASSWORD,
+  [string]$TimestampUrl = "http://timestamp.digicert.com",
   [switch]$SkipBuild,
   [switch]$InstallAfterBuild,
-  [switch]$LaunchStudioOne
+  [switch]$LaunchStudioOne,
+  [switch]$RequireSigning
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,6 +33,54 @@ function Resolve-ToolPath {
   }
 
   return $null
+}
+
+function Resolve-SignToolPath {
+  $command = Get-Command "signtool.exe" -ErrorAction SilentlyContinue
+  if ($command) {
+    return $command.Source
+  }
+
+  $kitsRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+  if (Test-Path -LiteralPath $kitsRoot) {
+    return Get-ChildItem -LiteralPath $kitsRoot -Filter "signtool.exe" -Recurse -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.FullName -match "\\x64\\signtool\.exe$" } |
+      Sort-Object FullName -Descending |
+      Select-Object -ExpandProperty FullName -First 1
+  }
+
+  return $null
+}
+
+function Invoke-CodeSigning {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path,
+    [Parameter(Mandatory = $true)]
+    [string]$SignToolPath
+  )
+
+  $arguments = @("sign", "/fd", "SHA256", "/td", "SHA256", "/tr", $TimestampUrl)
+  if ($PfxPath) {
+    $resolvedPfxPath = (Resolve-Path -LiteralPath $PfxPath).Path
+    $arguments += @("/f", $resolvedPfxPath)
+    if ($PfxPassword) {
+      $arguments += @("/p", $PfxPassword)
+    }
+  } else {
+    $arguments += @("/sha1", $CertificateThumbprint)
+  }
+  $arguments += $Path
+
+  & $SignToolPath @arguments
+  if ($LASTEXITCODE -ne 0) {
+    throw "Code signing failed for $Path"
+  }
+
+  & $SignToolPath verify /pa /v $Path
+  if ($LASTEXITCODE -ne 0) {
+    throw "Signature verification failed for $Path"
+  }
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -57,9 +110,9 @@ if (-not $SkipBuild) {
 }
 
 $standaloneSource = Join-Path $buildPath "SplitSheetStudio_artefacts\$Configuration\Standalone"
-$vst3Source = Join-Path $buildPath "SplitSheetStudio_artefacts\$Configuration\VST3\SplitSheet Studio.vst3"
+$vst3Source = Join-Path $buildPath "SplitSheetStudio_artefacts\$Configuration\VST3\Split Sheet Studio.vst3"
 
-if (-not (Test-Path (Join-Path $standaloneSource "SplitSheet Studio.exe"))) {
+if (-not (Test-Path (Join-Path $standaloneSource "Split Sheet Studio.exe"))) {
   throw "Standalone build artifact missing at $standaloneSource"
 }
 if (-not (Test-Path $vst3Source)) {
@@ -73,20 +126,42 @@ if (Test-Path $stagePath) {
 New-Item -ItemType Directory -Force -Path $standaloneStage | Out-Null
 New-Item -ItemType Directory -Force -Path $vst3Stage | Out-Null
 
-Copy-Item -LiteralPath (Join-Path $standaloneSource "SplitSheet Studio.exe") -Destination $standaloneStage -Force
-Copy-Item -LiteralPath $vst3Source -Destination (Join-Path $vst3Stage "SplitSheet Studio.vst3") -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $standaloneSource "Split Sheet Studio.exe") -Destination $standaloneStage -Force
+Copy-Item -LiteralPath $vst3Source -Destination (Join-Path $vst3Stage "Split Sheet Studio.vst3") -Recurse -Force
+
+$standaloneBinary = Join-Path $standaloneStage "Split Sheet Studio.exe"
+$vst3Binary = Join-Path $vst3Stage "Split Sheet Studio.vst3\Contents\x86_64-win\Split Sheet Studio.vst3"
+$signingRequested = [bool]($CertificateThumbprint -or $PfxPath)
+$signToolExe = Resolve-SignToolPath
+
+if ($RequireSigning -and -not $signingRequested) {
+  throw "Release signing is required. Set SPLITSHEET_SIGNING_CERT_THUMBPRINT or SPLITSHEET_SIGNING_PFX_PATH."
+}
+if ($signingRequested -and -not $signToolExe) {
+  throw "SignTool was not found. Install the Windows SDK signing tools."
+}
+if ($signingRequested) {
+  Invoke-CodeSigning -Path $standaloneBinary -SignToolPath $signToolExe
+  Invoke-CodeSigning -Path $vst3Binary -SignToolPath $signToolExe
+} else {
+  Write-Warning "Building an unsigned development installer. Do not publish it to customers."
+}
 
 $issPath = Join-Path $PSScriptRoot "installer\SplitSheetStudio.iss"
 & $isccExe `
   "/DMyAppVersion=$Version" `
   "/DStandaloneSource=$standaloneStage" `
-  "/DVst3Source=$(Join-Path $vst3Stage 'SplitSheet Studio.vst3')" `
+  "/DVst3Source=$(Join-Path $vst3Stage 'Split Sheet Studio.vst3')" `
   "/DOutputDir=$outputPath" `
   $issPath
 
 $installerPath = Join-Path $outputPath "SplitSheetStudio-Setup-$Version.exe"
 if (-not (Test-Path $installerPath)) {
   throw "Installer was not created at $installerPath"
+}
+
+if ($signingRequested) {
+  Invoke-CodeSigning -Path $installerPath -SignToolPath $signToolExe
 }
 
 Write-Host "Installer created: $installerPath"

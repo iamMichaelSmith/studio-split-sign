@@ -1,9 +1,9 @@
-# Architecture
+﻿# Architecture
 
 ![Architecture diagram](assets/architecture-diagram.svg)
 
 ## Overview
-`SplitSheet Studio` is a multi-surface music-rights workflow system.
+`Split Sheet Studio` is a multi-surface music-rights workflow system.
 
 It has one core business workflow but several different access surfaces:
 - marketing landing

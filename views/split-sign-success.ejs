@@ -14,7 +14,14 @@
       <p><b>Status:</b> <%= everyoneSigned ? 'Completed' : 'Pending remaining signer(s)' %></p>
       <p><%= message %></p>
       <% if (everyoneSigned) { %>
+        <% if (emailResult && emailResult.ok) { %>
+          <p class="banner"><b>Delivery confirmed:</b> the completed packet was accepted by the email provider for every contributor.</p>
+        <% } else if (emailResult) { %>
+          <p class="form-error"><b>Email needs attention:</b> the packet is complete, but automatic delivery did not confirm successfully.</p>
+        <% } %>
         <p><a href="/split-sheet/pdf/<%= doc.id %>">Download final packet</a></p>
+      <% } else { %>
+        <p>You can close this page. The completed copy will be emailed automatically after the remaining contributor signs.</p>
       <% } %>
     </div>
     <p><a href="/">Back to home</a></p>

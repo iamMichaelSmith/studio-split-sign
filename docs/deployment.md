@@ -48,12 +48,18 @@ npm run dev
 - `COOKIE_SECURE=true`
 - `TRUST_PROXY=true`
 - `PUBLIC_BASE_URL=https://app.splitsheetstudio.com`
+- `SIGNER_LINK_TTL_HOURS=168`
+- `AUTO_SIGNER_REMINDERS=true`
+- `SIGNER_REMINDER_AFTER_HOURS=24`
+- `SIGNER_REMINDER_INTERVAL_MINUTES=60`
 
 ### Current verified state
 - live app responds on `https://app.splitsheetstudio.com/health`
 - live readiness responds on `https://app.splitsheetstudio.com/api/ready`
 - pricing and blog routes respond publicly
 - plugin auth and email delivery were exercised end to end against the hosted service
+- remote split sheets remain pending until every contributor explicitly agrees and signs
+- final packets include execution metadata and are delivered to every contributor
 
 ## Persistence model
 
@@ -116,10 +122,16 @@ NOTIFY_EMAIL=blakmarigold@gmail.com
 SUPPORT_EMAIL=blakmarigold@gmail.com
 
 STRIPE_PLUGIN_PRICE_USD_CENTS=1000
+STRIPE_SECRET_KEY=sk_live_or_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_CREATOR_PRICE_ID=price_creator_monthly_optional
+STRIPE_STUDIO_PRO_PRICE_ID=price_studio_pro_monthly_optional
 PLUGIN_VERSION_LABEL=0.1.0
 PLUGIN_DOWNLOAD_BUCKET=...
 PLUGIN_DOWNLOAD_KEY=downloads/SplitSheetStudio-Setup-0.1.0.exe
 ```
+
+If `STRIPE_CREATOR_PRICE_ID` or `STRIPE_STUDIO_PRO_PRICE_ID` are omitted, the app creates Stripe Checkout sessions with inline monthly `price_data` using the built-in `$5/mo` Creator and `$20/mo` Studio Pro plan definitions. Use Stripe Price IDs before public launch if you want cleaner Stripe reporting and easier price changes.
 
 ## Deployment scripts
 Key scripts live in `deploy/aws/`:

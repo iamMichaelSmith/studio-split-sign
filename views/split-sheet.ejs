@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Blak Marigold Studio Split Sheet</title><link rel="stylesheet" href="/style.css"></head><body><div class="wrap"><h1>Blak Marigold Studio Split Sheet</h1><p class="small">Fast legal split workflow. Fill once, capture signatures, email both parties instantly.</p><% if (error) { %><div class="card"><b><%= error %></b></div><% } %>
+<!doctype html><html><head><meta charset="utf-8"><title>Split Sheet Studio</title><link rel="stylesheet" href="/style.css"></head><body><div class="wrap"><div class="timeline-top"><div><h1>Split Sheet Studio</h1><p class="small">Fast legal split workflow. Fill once, capture signatures, email both parties instantly.</p></div><div class="small"><% if (typeof user !== 'undefined' && user) { %>Signed in as <b><%= user.displayName %></b><br><a href="/account">Account</a><% } %></div></div><% if (typeof usage !== 'undefined' && usage) { %><div class="card usage-card"><b><%= usage.plan.name %></b> plan · <%= usage.used %>/<%= usage.limit %> split sheets used in <%= usage.window.label %> · <%= usage.remaining %> remaining</div><% } %><% if (error) { %><div class="card"><b><%= error %></b></div><% } %>
 
 <div class="step-tabs">
   <button type="button" class="step-tab active" data-step-btn="1">1 Song</button>
@@ -12,6 +12,15 @@
       <div class="row">
         <div><label>Song title</label><input name="songTitle" required></div>
         <div><label>Alternate title (optional)</label><input name="alternateTitle"></div>
+      </div>
+      <div>
+        <label>Rights covered by this split sheet</label>
+        <select name="rightsScope" id="rightsScope">
+          <option value="composition">Songwriting and publishing</option>
+          <option value="master">Master recording ownership</option>
+          <option value="composition-and-master">Songwriting/publishing and master ownership</option>
+        </select>
+        <p class="small">Choose master ownership only when this sheet is also dividing ownership of the sound recording.</p>
       </div>
       <div class="row">
         <div><label>Date</label><input type="date" name="date" required></div>
@@ -57,7 +66,7 @@
     </div>
     <div class="card legal-note">
       <label><input type="checkbox" name="supersedesPrevious" value="yes"> This split supersedes any previous draft for this song.</label>
-      <label><input type="checkbox" id="allAgree" name="allPartiesAgree" value="yes" required> All parties reviewed and agree to these splits.</label>
+      <label><input type="checkbox" id="allAgree" name="allPartiesAgree" value="yes" required> I confirm these proposed splits are ready to send. Every contributor must agree separately before finalization.</label>
       <label><input type="checkbox" id="collectByInvite" name="collectSignaturesByInvite" value="yes"> Collect signatures by invite links instead of in-session signing.</label>
       <div id="submitHint" class="small" style="margin-top:8px;color:#ffd48a;">Complete all required fields and signatures to enable submit.</div>
     </div>
@@ -68,7 +77,8 @@
 <div class="sticky-totals" id="stickyTotals">
   <div><strong>Writer Total:</strong> <span id="writerTotal">0</span>%</div>
   <div><strong>Publisher Total:</strong> <span id="publisherTotal">0</span>%</div>
-  <div id="totalsStatus" class="small">Both must equal 100%</div>
+  <div id="masterTotalWrap" style="display:none"><strong>Master Total:</strong> <span id="masterTotal">0</span>%</div>
+  <div id="totalsStatus" class="small">Required totals must equal 100%</div>
 </div>
 
 <p><a href="/">Back</a></p></div>
@@ -144,8 +154,9 @@ function add(prefill){
   <div class="row"><div><label>Address</label><input name="address" required></div><div><label>Phone</label><input name="phone" required></div></div>
   <div class="row"><div><label>Email</label><input type="email" name="email" required></div><div><label>PRO</label><input name="pro" required></div></div>
   <div class="row"><div><label>IPI #</label><input name="ipi" required></div><div><label>Publisher name</label><input name="publisherName" required></div></div>
-  <div class="row"><div><label>Publisher IPI #</label><input name="publisherIpi" required></div><div><label>Writer share %</label><input type="number" step="0.01" name="writerShare" required></div></div>
-  <div class="row"><div><label>Publisher share %</label><input type="number" step="0.01" name="publisherShare" required></div><div><label>Typed signature name</label><input name="typedSignatureName" id="typed${i}" placeholder="First Last"></div></div>
+  <div class="row"><div><label>Publisher IPI #</label><input name="publisherIpi" required></div><div class="composition-field"><label>Writer share %</label><input type="number" step="0.01" name="writerShare" required></div></div>
+  <div class="row"><div class="composition-field"><label>Publisher share %</label><input type="number" step="0.01" name="publisherShare" required></div><div class="master-field" style="display:none"><label>Master recording share %</label><input type="number" step="0.01" name="masterShare"></div></div>
+  <div><label>Typed signature name</label><input name="typedSignatureName" id="typed${i}" placeholder="First Last"></div>
   <div><label>Signature preview (cursive)</label><div class="typed-signature-preview" id="typedPreview${i}">First Last</div></div>
   <h4>Draw signature</h4>
   <div class="sig-wrap"><canvas id="sig${i}" class="sig"></canvas><span class="sig-hint" id="sig${i}-hint">sign</span></div>
@@ -159,7 +170,7 @@ function add(prefill){
   card.querySelectorAll('input,select,textarea').forEach(i=> i.addEventListener('input', () => { updateTotals(); saveDraft(); }));
 
   if(prefill){
-    const names = ['legalName','role','address','phone','email','pro','ipi','publisherName','publisherIpi','writerShare','publisherShare','typedSignatureName','signatureData'];
+    const names = ['legalName','role','address','phone','email','pro','ipi','publisherName','publisherIpi','writerShare','publisherShare','masterShare','typedSignatureName','signatureData'];
     names.forEach((name) => {
       const node = card.querySelector(`[name="${name}"]`);
       if(node && prefill[name] !== undefined){ node.value = prefill[name]; }
@@ -174,30 +185,53 @@ function add(prefill){
   }
 
   idx++;
+  updateRightsFields();
   updateTotals();
 }
 
 function getVals(name){ return Array.from(document.querySelectorAll(`[name="${name}"]`)).map(i=>i.value); }
 function num(n){ return Number(n||0); }
+function currentRightsScope(){ return document.getElementById('rightsScope').value || 'composition'; }
+function includesComposition(){ return currentRightsScope() !== 'master'; }
+function includesMaster(){ return currentRightsScope() !== 'composition'; }
+
+function updateRightsFields(){
+  document.querySelectorAll('.composition-field').forEach((wrap)=>{
+    wrap.style.display = includesComposition() ? '' : 'none';
+    const input = wrap.querySelector('input'); if(input) input.required = includesComposition();
+  });
+  document.querySelectorAll('.master-field').forEach((wrap)=>{
+    wrap.style.display = includesMaster() ? '' : 'none';
+    const input = wrap.querySelector('input'); if(input) input.required = includesMaster();
+  });
+  document.getElementById('masterTotalWrap').style.display = includesMaster() ? '' : 'none';
+}
 
 function totalsAreValid(){
   const w = getVals('writerShare').reduce((a,v)=>a+num(v),0);
   const p = getVals('publisherShare').reduce((a,v)=>a+num(v),0);
-  return (Math.round(w*100)/100 === 100) && (Math.round(p*100)/100 === 100);
+  const m = getVals('masterShare').reduce((a,v)=>a+num(v),0);
+  const compositionValid = !includesComposition() || ((Math.round(w*100)/100 === 100) && (Math.round(p*100)/100 === 100));
+  const masterValid = !includesMaster() || (Math.round(m*100)/100 === 100);
+  return compositionValid && masterValid;
 }
 
 function setEqualSplits(){
   const writer = Array.from(document.querySelectorAll('input[name="writerShare"]'));
   const publisher = Array.from(document.querySelectorAll('input[name="publisherShare"]'));
+  const master = Array.from(document.querySelectorAll('input[name="masterShare"]'));
   if(!writer.length) return;
   const each = Number((100 / writer.length).toFixed(2));
   writer.forEach((el) => el.value = each);
   publisher.forEach((el) => el.value = each);
+  master.forEach((el) => el.value = each);
 
   const wTotal = writer.reduce((sum, el) => sum + Number(el.value || 0), 0);
   const pTotal = publisher.reduce((sum, el) => sum + Number(el.value || 0), 0);
+  const mTotal = master.reduce((sum, el) => sum + Number(el.value || 0), 0);
   if(writer.length){ writer[writer.length - 1].value = (100 - (wTotal - Number(writer[writer.length - 1].value))).toFixed(2); }
   if(publisher.length){ publisher[publisher.length - 1].value = (100 - (pTotal - Number(publisher[publisher.length - 1].value))).toFixed(2); }
+  if(master.length){ master[master.length - 1].value = (100 - (mTotal - Number(master[master.length - 1].value))).toFixed(2); }
   updateTotals();
   saveDraft();
 }
@@ -205,11 +239,13 @@ function setEqualSplits(){
 function updateTotals(){
   const w = getVals('writerShare').reduce((a,v)=>a+num(v),0);
   const p = getVals('publisherShare').reduce((a,v)=>a+num(v),0);
+  const m = getVals('masterShare').reduce((a,v)=>a+num(v),0);
   document.getElementById('writerTotal').textContent = w.toFixed(2).replace(/\.00$/,'');
   document.getElementById('publisherTotal').textContent = p.toFixed(2).replace(/\.00$/,'');
+  document.getElementById('masterTotal').textContent = m.toFixed(2).replace(/\.00$/,'');
   const ok = totalsAreValid();
   const status = document.getElementById('totalsStatus');
-  status.textContent = ok ? 'Looks good. Totals are valid.' : 'Both must equal exactly 100%.';
+  status.textContent = ok ? 'Looks good. Required totals are valid.' : 'Every selected rights total must equal exactly 100%.';
   status.style.color = ok ? '#9be49b' : '#ffd48a';
   renderReview();
 }
@@ -231,13 +267,17 @@ function renderReview(){
   const roles=getVals('role');
   const writer=getVals('writerShare');
   const publisher=getVals('publisherShare');
+  const master=getVals('masterShare');
   const typed=getVals('typedSignatureName');
   const drawn=Array.from(document.querySelectorAll('[name="signatureData"]')).map(i=>!!i.value);
   const song = document.querySelector('[name="songTitle"]').value || '(missing song title)';
 
-  let html = `<p><b>Song:</b> ${song}</p><ul>`;
+  const scopeLabel = currentRightsScope()==='master' ? 'Master recording ownership' : (currentRightsScope()==='composition-and-master' ? 'Songwriting/publishing and master ownership' : 'Songwriting and publishing');
+  let html = `<p><b>Song:</b> ${song}</p><p><b>Rights covered:</b> ${scopeLabel}</p><ul>`;
   for(let i=0;i<names.length;i++){
-    html += `<li><b>${names[i]||'(missing name)'}</b> (${roles[i]||'role missing'}) - Writer ${writer[i]||0}% / Publisher ${publisher[i]||0}% - Typed: ${typed[i]||'missing'} - Drawn: ${drawn[i]?'yes':'no'}</li>`;
+    const compositionText = includesComposition() ? `Writer ${writer[i]||0}% / Publisher ${publisher[i]||0}%` : '';
+    const masterText = includesMaster() ? `${compositionText ? ' / ' : ''}Master ${master[i]||0}%` : '';
+    html += `<li><b>${names[i]||'(missing name)'}</b> (${roles[i]||'role missing'}) - ${compositionText}${masterText} - Typed: ${typed[i]||'missing'} - Drawn: ${drawn[i]?'yes':'no'}</li>`;
   }
   html += `</ul>`;
   document.getElementById('reviewSummary').innerHTML = html;
@@ -245,24 +285,27 @@ function renderReview(){
 
   const w = Number(document.getElementById('writerTotal').textContent || 0);
   const p = Number(document.getElementById('publisherTotal').textContent || 0);
+  const m = Number(document.getElementById('masterTotal').textContent || 0);
   const collectByInvite = !!document.getElementById('collectByInvite') && document.getElementById('collectByInvite').checked;
   const hasDrawn = drawn.every(Boolean) && drawn.length >= 2;
   const hasTyped = typed.every(v=>String(v||'').trim().length>1) && typed.length>=1;
   const checkedRecipients = Array.from(document.querySelectorAll('input[name="recipientEmails"][type="checkbox"]:checked')).length;
   const allAgree = !!document.getElementById('allAgree') && document.getElementById('allAgree').checked;
   const signaturesReady = collectByInvite ? true : (hasDrawn && hasTyped);
-  const valid = (Math.round(w*100)/100===100) && (Math.round(p*100)/100===100) && signaturesReady && names.length>=1 && song !== '(missing song title)' && checkedRecipients>=1 && allAgree;
+  const compositionValid = !includesComposition() || ((Math.round(w*100)/100===100) && (Math.round(p*100)/100===100));
+  const masterValid = !includesMaster() || (Math.round(m*100)/100===100);
+  const valid = compositionValid && masterValid && signaturesReady && names.length>=2 && song !== '(missing song title)' && checkedRecipients>=1 && allAgree;
   document.getElementById('submitBtn').disabled = !valid;
   const hint=document.getElementById('submitHint');
   if(hint){
-    hint.textContent = valid ? 'Ready to submit.' : (collectByInvite ? 'Need valid 100/100 totals, at least 1 contributor, at least 1 recipient email checked, and agreement confirmation checked.' : 'Need valid 100/100 totals, at least 1 contributor signed and typed, at least 1 recipient email checked, and agreement confirmation checked.');
+    hint.textContent = valid ? 'Ready to send for signatures.' : (collectByInvite ? 'Need valid 100% rights totals, at least 2 contributors, a recipient email, and proposal confirmation.' : 'Need valid 100% rights totals, at least 2 signed contributors, a recipient email, and agreement confirmation.');
     hint.style.color = valid ? '#9be49b' : '#ffd48a';
   }
 }
 
 function goStep(n){
   if(String(n)==='3' && !totalsAreValid()){
-    alert('Cannot move to review until Writer total = 100% and Publisher total = 100%.');
+    alert('Cannot move to review until every selected rights total equals 100%.');
     return;
   }
   document.querySelectorAll('.step-panel').forEach(p=> p.style.display = p.dataset.step==String(n) ? '' : 'none');
@@ -280,6 +323,7 @@ document.addEventListener('change', (e)=>{
   if(e.target && e.target.matches('input[name="recipientEmails"][type="checkbox"]')) renderReview();
   if(e.target && e.target.id === 'allAgree') renderReview();
   if(e.target && e.target.id === 'collectByInvite') renderReview();
+  if(e.target && e.target.id === 'rightsScope') { updateRightsFields(); updateTotals(); }
   saveDraft();
 });
 
@@ -298,5 +342,6 @@ document.getElementById('splitForm').addEventListener('submit', () => {
 
 add();
 restoreDraft();
+updateRightsFields();
 updateTotals();
 </script></body></html>

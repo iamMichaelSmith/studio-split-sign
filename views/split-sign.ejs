@@ -1,38 +1,89 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Sign Split Sheet</title><link rel="stylesheet" href="/style.css"></head><body><div class="wrap"><h1>Split Sheet Signature</h1><div class="card"><p><b>Song:</b> <%= doc.payload.songTitle %></p><p><b>Contributor:</b> <%= signer.legalName %> (<%= signer.role %>)</p><p><b>Writer:</b> <%= signer.writerShare %>% | <b>Publisher:</b> <%= signer.publisherShare %>%</p><p class="small">Submission ID: <%= doc.id %></p></div>
+﻿<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Review and sign | Split Sheet Studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap signer-wrap">
+    <div class="signer-hero">
+      <span class="landing-kicker">Secure remote signature</span>
+      <h1>Review and sign your split</h1>
+      <p>No account is required. Review every percentage below before signing.</p>
+    </div>
 
-<div class="card"><h3>Signing progress</h3><% timeline.forEach(function(row){ const pillClass = row.status === 'Signed' ? 'status-signed' : (row.status === 'Viewed' ? 'status-viewed' : (row.status === 'Invited' ? 'status-invited' : 'status-pending')); %><div class="timeline-item"><div class="timeline-top"><div><div><b><%= row.legalName %></b></div><div class="small"><%= row.role %> · Writer <%= row.writerShare %>% · Publisher <%= row.publisherShare %>%</div></div><div><span class="pill <%= pillClass %>"><%= row.status %></span></div></div><div class="small timeline-meta">Invite sent: <%= row.inviteSentAt || '—' %> | Viewed: <%= row.viewedAt || '—' %> | Signed: <%= row.signedAt || '—' %></div></div><% }) %></div>
+    <div class="card">
+      <div class="signer-summary-grid">
+        <div><span class="small">Song</span><strong><%= doc.payload.songTitle %></strong></div>
+        <div><span class="small">You are signing as</span><strong><%= signer.legalName %> · <%= signer.role %></strong></div>
+        <div><span class="small">Rights covered</span><strong><%= doc.payload.rightsScope === 'master' ? 'Master recording ownership' : (doc.payload.rightsScope === 'composition-and-master' ? 'Songwriting/publishing and master ownership' : 'Songwriting and publishing') %></strong></div>
+        <div><span class="small">Link expires</span><strong><%= signer.signerTokenExpiresAt || 'Not specified' %></strong></div>
+      </div>
+      <p class="small">Submission ID: <%= doc.id %></p>
+    </div>
 
-<% if (error) { %><div class="card"><b><%= error %></b></div><% } %>
-<% if (success) { %><div class="card"><b><%= success %></b></div><% } %>
+    <div class="card">
+      <h2>Proposed ownership</h2>
+      <p class="small">The final PDF will not be issued until every contributor confirms and signs.</p>
+      <div class="signer-split-list">
+        <% (doc.payload.contributors || []).forEach(function(row){ %>
+          <div class="signer-split-row <%= row.email === signer.email ? 'current-signer' : '' %>">
+            <div><strong><%= row.legalName %></strong><span class="small"><%= row.role %><%= row.email === signer.email ? ' · You' : '' %></span></div>
+            <% if (doc.payload.rightsScope !== 'master') { %>
+              <div><span class="small">Writer</span><strong><%= row.writerShare %>%</strong></div>
+              <div><span class="small">Publisher</span><strong><%= row.publisherShare %>%</strong></div>
+            <% } %>
+            <% if (doc.payload.rightsScope === 'master' || doc.payload.rightsScope === 'composition-and-master') { %>
+              <div><span class="small">Master</span><strong><%= row.masterShare %>%</strong></div>
+            <% } %>
+            <div><span class="pill <%= row.signedAt ? 'status-signed' : 'status-invited' %>"><%= row.signedAt ? 'Signed' : 'Awaiting signature' %></span></div>
+          </div>
+        <% }) %>
+      </div>
+    </div>
 
-<form method="post" class="card">
-  <label>Typed signature name</label>
-  <input name="typedSignatureName" value="<%= signer.typedSignatureName || '' %>" required>
+    <% if (error) { %><div class="card form-error"><b><%= error %></b></div><% } %>
+    <% if (success) { %><div class="card banner"><b><%= success %></b></div><% } %>
 
-  <h4>Draw signature</h4>
-  <div class="sig-wrap"><canvas id="sig" class="sig"></canvas><span class="sig-hint" id="sig-hint">sign</span></div>
-  <input type="hidden" id="signatureData" name="signatureData" value="<%= signer.signatureData || '' %>">
-  <div class="inline-actions"><button type="button" id="clearSig">Clear signature</button></div>
+    <form method="post" class="card signer-form" id="signerForm">
+      <h2>Confirm and sign</h2>
+      <label class="agreement-check">
+        <input type="checkbox" name="agreeToSplits" value="yes" required>
+        <span>I reviewed the complete split above and agree that the percentages shown for me and the other contributors are accurate.</span>
+      </label>
 
-  <button type="submit">Sign now</button>
-</form>
+      <label>Type your full legal name</label>
+      <input name="typedSignatureName" value="<%= signer.typedSignatureName || signer.legalName || '' %>" required autocomplete="name">
 
-<p><a href="/">Back to home</a></p></div>
-<script src="/vendor/signature_pad/signature_pad.umd.min.js"></script>
-<script>
-const canvas=document.getElementById('sig');
-const input=document.getElementById('signatureData');
-const hint=document.getElementById('sig-hint');
-if (typeof SignaturePad === 'undefined') {
-  hint.textContent = 'signature tool failed to load - refresh page';
-} else {
-  const resize=()=>{const ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext('2d').scale(ratio,ratio);};
-  resize();window.addEventListener('resize',resize);
-  const pad=new SignaturePad(canvas,{backgroundColor:'rgb(255,255,255)'});
-  if(input.value && input.value.startsWith('data:image/')){ try{ pad.fromDataURL(input.value);}catch{} }
-  const sync=()=>{const has=!pad.isEmpty(); input.value=has?pad.toDataURL():''; hint.style.display=has?'none':'block';};
-  canvas.addEventListener('mouseup',sync);canvas.addEventListener('touchend',sync);canvas.addEventListener('pointerup',sync);
-  document.getElementById('clearSig').addEventListener('click',()=>{pad.clear();sync();});
-  sync();
-}
-</script></body></html>
+      <h3>Draw your signature</h3>
+      <div class="sig-wrap signer-canvas"><canvas id="sig" class="sig"></canvas><span class="sig-hint" id="sig-hint">Draw signature here</span></div>
+      <input type="hidden" id="signatureData" name="signatureData" value="<%= signer.signatureData || '' %>">
+      <div class="inline-actions"><button type="button" id="clearSig" class="secondary-button">Clear signature</button></div>
+
+      <button type="submit" id="signButton">Confirm and sign split sheet</button>
+      <p class="small">Submitting records your consent, timestamp, and signing-session audit information. The record is locked after every contributor signs.</p>
+    </form>
+  </div>
+  <script src="/vendor/signature_pad/signature_pad.umd.min.js"></script>
+  <script>
+    const canvas=document.getElementById('sig');
+    const input=document.getElementById('signatureData');
+    const hint=document.getElementById('sig-hint');
+    const form=document.getElementById('signerForm');
+    if (typeof SignaturePad === 'undefined') {
+      hint.textContent = 'Signature tool failed to load. Refresh the page.';
+    } else {
+      const pad=new SignaturePad(canvas,{backgroundColor:'rgb(255,255,255)'});
+      const resize=()=>{const ratio=Math.max(window.devicePixelRatio||1,1);const data=input.value;canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext('2d').scale(ratio,ratio);if(data&&data.startsWith('data:image/')){try{pad.fromDataURL(data);}catch{}}};
+      const sync=()=>{const has=!pad.isEmpty();input.value=has?pad.toDataURL():'';hint.style.display=has?'none':'block';};
+      resize();window.addEventListener('resize',resize);
+      canvas.addEventListener('mouseup',sync);canvas.addEventListener('touchend',sync);canvas.addEventListener('pointerup',sync);
+      document.getElementById('clearSig').addEventListener('click',()=>{pad.clear();sync();});
+      form.addEventListener('submit',(event)=>{sync();if(!input.value){event.preventDefault();alert('Please draw your signature before submitting.');}});
+      sync();
+    }
+  </script>
+</body>
+</html>

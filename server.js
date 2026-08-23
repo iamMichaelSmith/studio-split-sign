@@ -1,4 +1,4 @@
-try {
+﻿try {
   require("dotenv").config();
 } catch {}
 const express = require("express");
@@ -20,12 +20,21 @@ const { createAuthService, ApiAuthError } = require("./services/auth-service");
 const { createDatabaseService } = require("./services/database-service");
 const { createStorefrontService } = require("./services/storefront-service");
 const { createSubmissionService } = require("./services/submission-service");
+const {
+  PLAN_DEFINITIONS,
+  buildUsageSummary,
+  normalizePlanKey,
+  planForUser
+} = require("./services/plan-service");
 const { listPosts, getPostBySlug } = require("./content/blog-posts");
 const {
   SplitSheetValidationError,
   buildSplitSheetDraftPayload,
   buildSplitSheetPayload,
   detailSplitSheet,
+  includesCompositionRights,
+  includesMasterRights,
+  normalizeRightsScope,
   splitTotals,
   summarizeSplitSheet
 } = require("./services/split-sheet-service");
@@ -63,13 +72,17 @@ const stripeSecretKey = /^(disabled|unset|none|null)$/i.test(rawStripeSecretKey)
 const stripeWebhookSecret = /^(disabled|unset|none|null)$/i.test(rawStripeWebhookSecret) ? "" : rawStripeWebhookSecret;
 const stripePluginPriceUsdCents = Number(process.env.STRIPE_PLUGIN_PRICE_USD_CENTS || 1000);
 const stripePluginProductSku = process.env.STRIPE_PLUGIN_PRODUCT_SKU || "splitsheet-studio-vst3";
-const stripePluginProductName = process.env.STRIPE_PLUGIN_PRODUCT_NAME || "SplitSheet Studio VST3 Plugin";
+const stripePluginProductName = process.env.STRIPE_PLUGIN_PRODUCT_NAME || "Split Sheet Studio VST3 Plugin";
 const stripePluginProductDescription = process.env.STRIPE_PLUGIN_PRODUCT_DESCRIPTION || "Compact split-sheet workflow inside your DAW with hosted account, email delivery, and signed session records.";
 const pluginVersionLabel = process.env.PLUGIN_VERSION_LABEL || "0.1.0";
 const pluginDownloadUrl = process.env.PLUGIN_DOWNLOAD_URL || "";
 const pluginDownloadBucket = process.env.PLUGIN_DOWNLOAD_BUCKET || s3Bucket;
 const pluginDownloadKey = process.env.PLUGIN_DOWNLOAD_KEY || `downloads/SplitSheetStudio-Setup-${pluginVersionLabel}.exe`;
 const pluginDownloadPath = process.env.PLUGIN_DOWNLOAD_PATH ? path.resolve(process.env.PLUGIN_DOWNLOAD_PATH) : "";
+const signerLinkTtlHours = Math.max(1, Number(process.env.SIGNER_LINK_TTL_HOURS || 168));
+const signerReminderAfterHours = Math.max(1, Number(process.env.SIGNER_REMINDER_AFTER_HOURS || 24));
+const signerReminderIntervalMinutes = Math.max(5, Number(process.env.SIGNER_REMINDER_INTERVAL_MINUTES || 60));
+const automaticSignerReminders = String(process.env.AUTO_SIGNER_REMINDERS || "false").toLowerCase() === "true";
 
 fs.mkdirSync(submissionsDir, { recursive: true });
 fs.mkdirSync(pdfDir, { recursive: true });
@@ -132,6 +145,19 @@ app.use(session({
 
 function nowIso() { return new Date().toISOString(); }
 function uniq(arr) { return [...new Set(arr.filter(Boolean))]; }
+function hoursFromNow(hours) { return new Date(Date.now() + (hours * 60 * 60 * 1000)).toISOString(); }
+function isPast(value) { const time = new Date(value || 0).getTime(); return Number.isFinite(time) && time > 0 && time <= Date.now(); }
+function rightsScopeLabel(value) {
+  const scope = normalizeRightsScope(value);
+  if (scope === "master") return "Master recording ownership";
+  if (scope === "composition-and-master") return "Songwriting/publishing and master recording ownership";
+  return "Songwriting and publishing";
+}
+function appendAuditEvent(doc, event) {
+  doc.payload = doc.payload || {};
+  doc.payload.auditTrail = Array.isArray(doc.payload.auditTrail) ? doc.payload.auditTrail : [];
+  doc.payload.auditTrail.push({ ...event, at: event.at || nowIso() });
+}
 function pdfDownloadFilename(id, kind = "final") { return `split-sheet-${id}-${kind}.pdf`; }
 function splitPdfS3Key(id) {
   return s3Prefix ? `${s3Prefix}/${pdfDownloadFilename(id)}` : pdfDownloadFilename(id);
@@ -164,7 +190,8 @@ const authService = createAuthService({
   bootstrapOwner: {
     email: process.env.OWNER_EMAIL || "",
     password: process.env.OWNER_PASSWORD || "",
-    displayName: process.env.OWNER_DISPLAY_NAME || "Owner"
+    displayName: process.env.OWNER_DISPLAY_NAME || "Owner",
+    planKey: process.env.OWNER_PLAN_KEY || "studio_pro"
   }
 });
 
@@ -319,6 +346,31 @@ async function listSubmissions() {
   return submissionStore.listSubmissions();
 }
 
+async function listUserSplitSheets(user) {
+  if (!user?.id && !user?.email) return [];
+  return submissionStore.listSubmissions({
+    ownerUserId: user.id,
+    ownerEmail: user.email,
+    type: "split-sheet"
+  });
+}
+
+async function usageSummaryForUser(user) {
+  const splitSheets = await listUserSplitSheets(user);
+  return buildUsageSummary(user, splitSheets);
+}
+
+async function requireAvailableSplitSheetUsage(user) {
+  if (!user?.id) {
+    throw new ApiAuthError("Sign in before creating a split sheet.", 401);
+  }
+  const usage = await usageSummaryForUser(user);
+  if (!usage.canCreate) {
+    throw new ApiAuthError(`${usage.plan.name} plan limit reached: ${usage.used}/${usage.limit} split sheets used for ${usage.window.label}. Upgrade to create more split sheets.`, 402);
+  }
+  return usage;
+}
+
 async function nextSplitVersion(songTitle) {
   return submissionStore.nextSplitVersion(songTitle);
 }
@@ -340,12 +392,18 @@ function splitSignerTimeline(docJson) {
     email: c.email || "",
     writerShare: Number(c.writerShare || 0),
     publisherShare: Number(c.publisherShare || 0),
+    masterShare: Number(c.masterShare || 0),
     inviteSentAt: c.inviteSentAt || null,
+    inviteEmailStatus: c.inviteEmailStatus || "unknown",
+    inviteCount: Number(c.inviteCount || 0),
+    signerTokenExpiresAt: c.signerTokenExpiresAt || null,
     viewedAt: c.viewedAt || null,
     reminderSentAt: c.reminderSentAt || null,
+    reminderCount: Number(c.reminderCount || 0),
+    agreementAcceptedAt: c.agreementAcceptedAt || null,
     signedAt: c.signedAt || null,
     typedSignatureName: c.typedSignatureName || "",
-    status: c.signedAt ? "Signed" : (c.viewedAt ? "Viewed" : (c.inviteSentAt ? "Invited" : "Pending"))
+    status: c.signedAt ? "Signed" : (isPast(c.signerTokenExpiresAt) ? "Expired" : (c.viewedAt ? "Viewed" : (c.inviteSentAt ? "Invited" : "Pending")))
   }));
 }
 
@@ -605,15 +663,15 @@ function drawDetailRow(pdf, label, value, x, y, width) {
   pdf.fillColor("#111111").fontSize(9).text(safeText(value), x, y + 10, { width });
 }
 
-function drawContributorDetailSection(pdf, contributor, index) {
-  ensurePdfSpace(pdf, 470);
+function drawContributorDetailSection(pdf, contributor, index, rightsScope = "composition") {
+  ensurePdfSpace(pdf, 510);
   const left = pdf.page.margins.left;
   const width = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
   const top = pdf.y;
   const signatureBuffer = signatureImageBuffer(contributor.signatureData);
 
   pdf.save();
-  pdf.roundedRect(left, top, width, 470, 10).fillAndStroke("#ffffff", "#c8b68b");
+  pdf.roundedRect(left, top, width, 510, 10).fillAndStroke("#ffffff", "#c8b68b");
   pdf.roundedRect(left + 16, top + 16, 110, 22, 10).fill("#f3ead4");
   pdf.fillColor("#6b5b3a").fontSize(8).text(`CONTRIBUTOR ${index + 1}`, left + 16, top + 23, { width: 110, align: "center" });
   pdf.fillColor("#111111").fontSize(14).text(safeText(contributor.legalName), left + 140, top + 19, { width: width - 156 });
@@ -638,6 +696,12 @@ function drawContributorDetailSection(pdf, contributor, index) {
   y += 34;
   drawDetailRow(pdf, "Writer Share", formatPercent(contributor.writerShare), col1, y, colWidth);
   drawDetailRow(pdf, "Publisher Share", formatPercent(contributor.publisherShare), col2, y, colWidth);
+
+  if (includesMasterRights(normalizeRightsScope(rightsScope))) {
+    y += 34;
+    drawDetailRow(pdf, "Master Recording Share", formatPercent(contributor.masterShare), col1, y, colWidth);
+    drawDetailRow(pdf, "Rights Scope", rightsScopeLabel(rightsScope), col2, y, colWidth);
+  }
 
   const signatureTop = y + 42;
   pdf.moveTo(left + 16, signatureTop).lineTo(left + width - 16, signatureTop).strokeColor("#e2d8bd").lineWidth(1).stroke();
@@ -677,9 +741,10 @@ function drawContributorDetailSection(pdf, contributor, index) {
   });
   drawDetailRow(pdf, "Signed At", formatIsoLabel(contributor.signedAt), left + 330, signatureTop + 155, 180);
   drawDetailRow(pdf, "Email Confirmation", contributor.email, left + 330, signatureTop + 195, 180);
+  drawDetailRow(pdf, "Agreement Confirmed", formatIsoLabel(contributor.agreementAcceptedAt), left + 16, signatureTop + 215, 250);
 
   pdf.restore();
-  pdf.y = top + 486;
+  pdf.y = top + 526;
 }
 
 function renderSplitSheetPdf(pdf, docJson, options = {}) {
@@ -691,7 +756,7 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
 
   drawPdfHeader(
     pdf,
-    "Songwriter Split Sheet",
+    "Rights Split Sheet",
     `${packetLabel} for ${safeText(payload.songTitle)}`
   );
 
@@ -713,7 +778,9 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
     { label: "ISWC", value: safeText(payload.iswc) },
     { label: "ISRC", value: safeText(payload.isrc) },
     { label: "Submission ID", value: safeText(docJson.id) },
-    { label: "Version / status", value: `${safeText(payload.version || 1)} / ${safeText(docJson.status)}` }
+    { label: "Version / status", value: `${safeText(payload.version || 1)} / ${safeText(docJson.status)}` },
+    { label: "Rights covered", value: rightsScopeLabel(payload.rightsScope) },
+    { label: "Completed", value: formatIsoLabel(payload.completedAt) }
   ];
   drawKeyValueGrid(pdf, songInfoRows);
 
@@ -729,12 +796,20 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
   }
 
   drawSectionHeading(pdf, "Ownership Summary");
-  drawKeyValueGrid(pdf, [
-    { label: "Total writer share", value: formatPercent(totals.writer) },
-    { label: "Total publisher share", value: formatPercent(totals.publisher) },
+  const ownershipRows = [
     { label: "Contributors", value: String(contributors.length) },
     { label: "Signature state", value: options.pendingSummary ? "Still collecting signatures" : "All signatures completed" }
-  ]);
+  ];
+  if (includesCompositionRights(normalizeRightsScope(payload.rightsScope))) {
+    ownershipRows.unshift(
+      { label: "Total writer share", value: formatPercent(totals.writer) },
+      { label: "Total publisher share", value: formatPercent(totals.publisher) }
+    );
+  }
+  if (includesMasterRights(normalizeRightsScope(payload.rightsScope))) {
+    ownershipRows.unshift({ label: "Total master share", value: formatPercent(totals.master) });
+  }
+  drawKeyValueGrid(pdf, ownershipRows);
 
   contributors.forEach((contributor, index) => {
     pdf.addPage();
@@ -744,7 +819,7 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
       `${safeText(payload.songTitle)} | contributor ${index + 1} of ${contributors.length}`
     );
     drawSectionHeading(pdf, "Contributor Details");
-    drawContributorDetailSection(pdf, contributor, index);
+    drawContributorDetailSection(pdf, contributor, index, payload.rightsScope);
   });
 
   pdf.addPage();
@@ -760,13 +835,13 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
   const legalTop = pdf.y;
   pdf.roundedRect(legalLeft, legalTop, legalWidth, 190, 10).fillAndStroke("#fffdf8", "#d7c49b");
   pdf.fillColor("#111111").fontSize(10).text(
-    "This split sheet is intended to memorialize the parties' current agreement regarding ownership of the musical composition identified in this packet.",
+    `This split sheet is intended to memorialize the parties' current agreement regarding ${rightsScopeLabel(payload.rightsScope).toLowerCase()} for the recording identified in this packet.`,
     legalLeft + 18,
     legalTop + 18,
     { width: legalWidth - 36, lineGap: 3 }
   );
   [
-    "Each contributor confirms that the writer share and publisher share percentages shown in this packet are accurate to the best of that contributor's knowledge as of the execution date.",
+    "Each contributor confirms that the applicable ownership percentages shown in this packet are accurate to the best of that contributor's knowledge as of the execution date.",
     "Each contributor agrees that the typed name and captured signature image associated with that contributor are intended to serve as that contributor's electronic signature and authentication of this record.",
     "The parties acknowledge that this document may be relied upon as a written record of authorship, ownership, and publishing information for administrative, royalty, and clearance purposes.",
     "Any later change to ownership, publishing, administration, or contributor information should be documented in a revised split sheet signed by all affected parties."
@@ -779,6 +854,14 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
     );
   });
   pdf.y = legalTop + 206;
+
+  drawSectionHeading(pdf, "Execution Audit");
+  drawKeyValueGrid(pdf, [
+    { label: "All parties confirmed", value: payload.allPartiesAgree ? "Yes" : "No" },
+    { label: "Completed at", value: formatIsoLabel(payload.completedAt) },
+    { label: "Audit events", value: String((payload.auditTrail || []).length) },
+    { label: "Record checksum", value: auditChecksum }
+  ]);
 
   pdf.fontSize(7).fillColor("#666666").text(
     "Blak Marigold Studio | blakmarigold.com | splitsheet delivery record",
@@ -854,10 +937,20 @@ async function initializeRuntime() {
   if (pdfStorageMode === "s3") {
     console.log(`S3 PDF storage enabled (${s3Bucket}/${s3Prefix || "."})`);
   }
+  if (automaticSignerReminders) {
+    const timer = setInterval(() => {
+      runAutomaticSignerReminders().catch((error) => console.error("Automatic signer reminder failed:", error.message || error));
+    }, signerReminderIntervalMinutes * 60 * 1000);
+    timer.unref();
+    setTimeout(() => {
+      runAutomaticSignerReminders().catch((error) => console.error("Initial signer reminder run failed:", error.message || error));
+    }, 5000).unref();
+    console.log(`Automatic signer reminders enabled (${signerReminderAfterHours}h threshold)`);
+  }
 }
 
 async function sendEmail({ subject, html, to, attachments = [] }) {
-  const recipientList = Array.isArray(to) ? to.filter(Boolean) : [];
+  const recipientList = Array.isArray(to) ? uniq(to.filter(Boolean)) : [];
   if (!recipientList.length) {
     return { ok: false, skipped: true, reason: "no_recipients" };
   }
@@ -880,8 +973,8 @@ async function sendEmail({ subject, html, to, attachments = [] }) {
       }
     });
     try {
-      await t.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: recipientList.join(","), subject, html, attachments });
-      return { ok: true, skipped: false, reason: "sent" };
+      const info = await t.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: recipientList.join(","), subject, html, attachments });
+      return { ok: true, skipped: false, reason: "sent", provider: "smtp", messageId: info.messageId || null, sentAt: nowIso() };
     } catch (e) {
       console.error("Email send failed:", e.message || e);
       return { ok: false, skipped: false, reason: `smtp_error:${e.message || "unknown"}` };
@@ -909,7 +1002,7 @@ async function sendEmail({ subject, html, to, attachments = [] }) {
     SES: { sesClient, SendEmailCommand }
   });
   try {
-    await sesTransport.sendMail({
+    const info = await sesTransport.sendMail({
       from: process.env.FROM_EMAIL,
       to: uniq(normalizedRecipients).join(","),
       replyTo: process.env.REPLY_TO_EMAIL || process.env.NOTIFY_EMAIL || process.env.FROM_EMAIL,
@@ -917,7 +1010,7 @@ async function sendEmail({ subject, html, to, attachments = [] }) {
       html,
       attachments
     });
-    return { ok: true, skipped: false, reason: "sent" };
+    return { ok: true, skipped: false, reason: "sent", provider: "ses", messageId: info.messageId || null, sentAt: nowIso() };
   } catch (e) {
     console.error("SES send failed:", e.message || e);
     return { ok: false, skipped: false, reason: `ses_error:${e.message || "unknown"}` };
@@ -926,26 +1019,26 @@ async function sendEmail({ subject, html, to, attachments = [] }) {
 
 function verificationEmailHtml({ displayName, verifyUrl, expiresAt }) {
   return `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
-    <h2 style="margin:0 0 10px">Verify your SplitSheet Studio account</h2>
+    <h2 style="margin:0 0 10px">Verify your Split Sheet Studio account</h2>
     <p style="margin:0 0 12px">Hi ${displayName || "there"},</p>
     <p style="margin:0 0 12px">Confirm this email address so you can recover your password and keep your account secure.</p>
     <p style="margin:0 0 14px"><a href="${verifyUrl}">Verify your email</a></p>
     <p style="margin:0 0 12px">This link expires on ${new Date(expiresAt).toUTCString()}.</p>
     <hr style="border:none;border-top:1px solid #ddd;margin:14px 0" />
-    <p style="margin:0">SplitSheet Studio<br/>Account verification</p>
+    <p style="margin:0">Split Sheet Studio<br/>Account verification</p>
   </div>`;
 }
 
 function passwordResetEmailHtml({ displayName, resetUrl, expiresAt }) {
   return `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
-    <h2 style="margin:0 0 10px">Reset your SplitSheet Studio password</h2>
+    <h2 style="margin:0 0 10px">Reset your Split Sheet Studio password</h2>
     <p style="margin:0 0 12px">Hi ${displayName || "there"},</p>
     <p style="margin:0 0 12px">Use the link below to set a new password for your account.</p>
     <p style="margin:0 0 14px"><a href="${resetUrl}">Reset password</a></p>
     <p style="margin:0 0 12px">This link expires on ${new Date(expiresAt).toUTCString()}.</p>
     <p style="margin:0 0 12px">If you did not request this change, you can ignore this email.</p>
     <hr style="border:none;border-top:1px solid #ddd;margin:14px 0" />
-    <p style="margin:0">SplitSheet Studio<br/>Account recovery</p>
+    <p style="margin:0">Split Sheet Studio<br/>Account recovery</p>
   </div>`;
 }
 
@@ -956,7 +1049,7 @@ async function sendVerificationEmail({ user, token, expiresAt }) {
   const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(token)}`;
   const emailResult = await sendEmail({
     to: [user.email],
-    subject: "Verify your SplitSheet Studio account",
+    subject: "Verify your Split Sheet Studio account",
     html: verificationEmailHtml({
       displayName: user.displayName,
       verifyUrl,
@@ -976,7 +1069,7 @@ async function sendPasswordResetEmail({ user, token, expiresAt }) {
   const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
   const emailResult = await sendEmail({
     to: [user.email],
-    subject: "Reset your SplitSheet Studio password",
+    subject: "Reset your Split Sheet Studio password",
     html: passwordResetEmailHtml({
       displayName: user.displayName,
       resetUrl,
@@ -1015,20 +1108,73 @@ function publicNavModel() {
   };
 }
 
+function paidPlanOptions() {
+  return Object.values(PLAN_DEFINITIONS).filter((plan) => Number(plan.monthlyPriceUsdCents || 0) > 0);
+}
+
+function stripePriceIdForPlan(plan) {
+  return String(process.env[plan.stripePriceEnv] || "").trim();
+}
+
+function stripeLineItemForPlan(plan) {
+  const priceId = stripePriceIdForPlan(plan);
+  if (priceId) {
+    return { quantity: 1, price: priceId };
+  }
+  return {
+    quantity: 1,
+    price_data: {
+      currency: "usd",
+      unit_amount: Number(plan.monthlyPriceUsdCents || 0),
+      recurring: { interval: "month" },
+      product_data: {
+        name: `Split Sheet Studio ${plan.name}`,
+        description: `${plan.monthlySheetLimit} completed split sheets per month. ${plan.description}`
+      }
+    }
+  };
+}
+
+async function updateUserFromStripePlanCheckout(session) {
+  const planKey = normalizePlanKey(session.metadata?.planKey);
+  const userId = String(session.client_reference_id || session.metadata?.userId || "").trim();
+  if (!userId || planKey === "free") return null;
+  return authService.updateUserBilling({
+    userId,
+    planKey,
+    stripeCustomerId: session.customer ? String(session.customer) : null,
+    stripeSubscriptionId: session.subscription ? String(session.subscription) : null
+  });
+}
+
+async function updateUserFromStripeSubscription(subscription) {
+  const userId = String(subscription.metadata?.userId || "").trim();
+  if (!userId) return null;
+  const status = String(subscription.status || "").toLowerCase();
+  const active = ["active", "trialing"].includes(status);
+  const planKey = active ? normalizePlanKey(subscription.metadata?.planKey) : "free";
+  return authService.updateUserBilling({
+    userId,
+    planKey,
+    stripeCustomerId: subscription.customer ? String(subscription.customer) : null,
+    stripeSubscriptionId: active && subscription.id ? String(subscription.id) : null
+  });
+}
+
 function pluginDownloadHref(purchase) {
   return `${baseUrl}/downloads/plugin/${encodeURIComponent(purchase.id)}?token=${encodeURIComponent(purchase.downloadToken)}`;
 }
 
 function pluginPurchaseEmailHtml({ purchase, downloadHref }) {
   return `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
-    <h2 style="margin:0 0 10px">Your SplitSheet Studio plugin is ready</h2>
+    <h2 style="margin:0 0 10px">Your Split Sheet Studio plugin is ready</h2>
     <p style="margin:0 0 10px">Thanks for purchasing <b>${stripePluginProductName}</b>.</p>
     <p style="margin:0 0 10px">Order amount: <b>${formatMoney(purchase.amountTotal, purchase.currency)}</b></p>
     <p style="margin:0 0 10px">Version: <b>${pluginVersionLabel}</b></p>
     <p style="margin:0 0 14px"><a href="${downloadHref}">Download the installer</a></p>
     <p style="margin:0 0 10px">This link is tied to your purchase record and can be used to install the current build.</p>
     <hr style="border:none;border-top:1px solid #ddd;margin:14px 0" />
-    <p style="margin:0">SplitSheet Studio storefront<br/>${rootDomain}</p>
+    <p style="margin:0">Split Sheet Studio storefront<br/>${rootDomain}</p>
   </div>`;
 }
 
@@ -1099,25 +1245,40 @@ function parseWebhookBody(req) {
   return Buffer.from(JSON.stringify(req.body || {}));
 }
 
-function splitSummaryHtml(contributors = []) {
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function splitSummaryHtml(contributors = [], rightsScope = "composition") {
   if (!Array.isArray(contributors) || !contributors.length) return "";
+  const scope = normalizeRightsScope(rightsScope);
+  const compositionColumns = includesCompositionRights(scope)
+    ? `<th style="padding:6px 8px;border:1px solid #ddd;text-align:right;">Writer %</th><th style="padding:6px 8px;border:1px solid #ddd;text-align:right;">Publisher %</th>`
+    : "";
+  const masterColumn = includesMasterRights(scope)
+    ? `<th style="padding:6px 8px;border:1px solid #ddd;text-align:right;">Master %</th>`
+    : "";
   const rows = contributors.map((c) => {
     return `<tr>
-      <td style="padding:6px 8px;border:1px solid #ddd;">${c.legalName || ""}</td>
-      <td style="padding:6px 8px;border:1px solid #ddd;">${c.role || ""}</td>
-      <td style="padding:6px 8px;border:1px solid #ddd;text-align:right;">${Number(c.writerShare || 0)}%</td>
-      <td style="padding:6px 8px;border:1px solid #ddd;text-align:right;">${Number(c.publisherShare || 0)}%</td>
+      <td style="padding:6px 8px;border:1px solid #ddd;">${escapeHtml(c.legalName)}</td>
+      <td style="padding:6px 8px;border:1px solid #ddd;">${escapeHtml(c.role)}</td>
+      ${includesCompositionRights(scope) ? `<td style="padding:6px 8px;border:1px solid #ddd;text-align:right;">${Number(c.writerShare || 0)}%</td><td style="padding:6px 8px;border:1px solid #ddd;text-align:right;">${Number(c.publisherShare || 0)}%</td>` : ""}
+      ${includesMasterRights(scope) ? `<td style="padding:6px 8px;border:1px solid #ddd;text-align:right;">${Number(c.masterShare || 0)}%</td>` : ""}
     </tr>`;
   }).join("");
 
-  return `<h3 style="margin:12px 0 6px;">Split summary</h3>
+  return `<h3 style="margin:12px 0 6px;">Split summary</h3><p><b>Rights covered:</b> ${escapeHtml(rightsScopeLabel(scope))}</p>
     <table style="border-collapse:collapse;width:100%;max-width:720px;font-size:14px;">
       <thead>
         <tr>
           <th style="padding:6px 8px;border:1px solid #ddd;text-align:left;">Contributor</th>
           <th style="padding:6px 8px;border:1px solid #ddd;text-align:left;">Role</th>
-          <th style="padding:6px 8px;border:1px solid #ddd;text-align:right;">Writer %</th>
-          <th style="padding:6px 8px;border:1px solid #ddd;text-align:right;">Publisher %</th>
+          ${compositionColumns}${masterColumn}
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -1138,15 +1299,61 @@ function completionEmailHtml({ title, id, songLabel, downloadUrl, recipients, sp
   </div>`;
 }
 
-async function sendSplitInvite(doc, contributor) {
+function refreshSignerToken(contributor) {
+  contributor.signerToken = nanoid(22);
+  contributor.signerTokenExpiresAt = hoursFromNow(signerLinkTtlHours);
+}
+
+async function sendSplitInvite(doc, contributor, { reminder = false, renew = false } = {}) {
+  if (renew || !contributor.signerToken || !contributor.signerTokenExpiresAt || isPast(contributor.signerTokenExpiresAt)) {
+    refreshSignerToken(contributor);
+  }
   const notifyInbox = process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com";
   const link = `${baseUrl}/split-sheet/sign/${doc.id}/${contributor.signerToken}`;
-  const splitHtml = splitSummaryHtml(doc.payload?.contributors || []);
-  await sendEmail({
-    subject: `Action required: Sign split sheet for ${doc.payload.songTitle}`,
+  const splitHtml = splitSummaryHtml(doc.payload?.contributors || [], doc.payload?.rightsScope);
+  const result = await sendEmail({
+    subject: `${reminder ? "Reminder" : "Action required"}: Review and sign ${doc.payload.songTitle}`,
     to: [contributor.email, notifyInbox],
-    html: `<h2>Signature Request</h2><p>Song: <b>${doc.payload.songTitle}</b></p><p>Contributor: ${contributor.legalName}</p>${splitHtml}<p style="margin-top:12px;"><a href="${link}">Open your secure signing link</a></p><p>Submission ID: ${doc.id}</p>`
+    html: `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111"><h2>${reminder ? "Signature reminder" : "Your split sheet is ready for review"}</h2><p>Song: <b>${escapeHtml(doc.payload.songTitle)}</b></p><p>Contributor: <b>${escapeHtml(contributor.legalName)}</b></p>${splitHtml}<p style="margin:18px 0;"><a href="${link}" style="display:inline-block;background:#b8860b;color:#111;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;">Review and sign split sheet</a></p><p>No account is required. Review the complete split, confirm your agreement, and sign from your phone or computer.</p><p><b>Secure link expires:</b> ${escapeHtml(formatIsoLabel(contributor.signerTokenExpiresAt))}</p><p>Submission ID: ${escapeHtml(doc.id)}</p></div>`
   });
+  contributor.inviteEmailStatus = result.ok ? "sent" : "failed";
+  contributor.inviteEmailReason = result.reason || null;
+  if (result.ok) {
+    contributor.inviteSentAt = result.sentAt || nowIso();
+    contributor.inviteCount = Number(contributor.inviteCount || 0) + 1;
+  }
+  if (reminder) {
+    contributor.reminderSentAt = result.ok ? (result.sentAt || nowIso()) : contributor.reminderSentAt;
+    contributor.reminderCount = Number(contributor.reminderCount || 0) + 1;
+  }
+  appendAuditEvent(doc, {
+    type: reminder ? "signer-reminder-sent" : "signer-invite-sent",
+    contributorEmail: contributor.email,
+    deliveryStatus: contributor.inviteEmailStatus,
+    expiresAt: contributor.signerTokenExpiresAt
+  });
+  return result;
+}
+
+async function runAutomaticSignerReminders() {
+  const thresholdMs = signerReminderAfterHours * 60 * 60 * 1000;
+  const docs = await listSubmissions();
+  for (const doc of docs.filter((row) => row.type === "split-sheet" && row.status === "pending-signatures")) {
+    let changed = false;
+    for (const contributor of doc.payload?.contributors || []) {
+      if (contributor.signedAt || !contributor.email) continue;
+      const lastContactAt = contributor.reminderSentAt || contributor.inviteSentAt || doc.createdAt;
+      const lastContactTime = new Date(lastContactAt || 0).getTime();
+      if (!Number.isFinite(lastContactTime) || Date.now() - lastContactTime < thresholdMs) continue;
+      await sendSplitInvite(doc, contributor, { reminder: true, renew: isPast(contributor.signerTokenExpiresAt) });
+      changed = true;
+    }
+    if (changed) {
+      doc.updatedAt = nowIso();
+      doc.lastReminderRun = { at: nowIso(), mode: "automatic" };
+      await saveSubmissionRow(doc);
+    }
+  }
 }
 
 function requireAdmin(req, res, next) { if (req.session && req.session.isAdmin) return next(); res.redirect("/admin/login"); }
@@ -1177,6 +1384,38 @@ async function requireApiAuth(req, res, next) {
   }
 }
 
+async function attachWebUser(req, res, next) {
+  try {
+    if (req.session?.userId) {
+      const user = await authService.getUserById(req.session.userId);
+      if (user?.status === "active") {
+        req.webUser = user;
+        res.locals.webUser = user;
+      } else {
+        delete req.session.userId;
+      }
+    }
+    return next();
+  } catch (error) {
+    console.error(error);
+    return next(error);
+  }
+}
+
+function safeRedirectPath(value, fallback = "/account") {
+  const candidate = String(value || "").trim();
+  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//")) return fallback;
+  return candidate;
+}
+
+function requireWebAuth(req, res, next) {
+  if (req.webUser) {
+    req.apiUser = req.webUser;
+    return next();
+  }
+  return res.redirect(`/login?next=${encodeURIComponent(req.originalUrl || "/account")}`);
+}
+
 function canAccessSplitSheet(doc, user) {
   if (!doc) return false;
   if (doc.ownerUserId && user?.id) return doc.ownerUserId === user.id;
@@ -1186,6 +1425,8 @@ function canAccessSplitSheet(doc, user) {
 }
 
 async function createSplitSheetSubmission(input, req) {
+  await requireAvailableSplitSheetUsage(req.apiUser);
+
   let draft = null;
   if (input.draftId) {
     draft = await loadSubmission(String(input.draftId).trim());
@@ -1200,6 +1441,7 @@ async function createSplitSheetSubmission(input, req) {
   const { payload, collectByInvite, recipientEmails } = await buildSplitSheetPayload(input, {
     nextVersion: nextSplitVersion,
     createSignerToken: () => nanoid(22),
+    signerLinkExpiresAt: () => hoursFromNow(signerLinkTtlHours),
     nowIso
   });
   const saved = draft
@@ -1221,14 +1463,25 @@ async function createSplitSheetSubmission(input, req) {
   let emailResult = { ok: false, skipped: true, reason: "not_attempted" };
 
   if (collectByInvite) {
-    for (const contributor of payload.contributors) {
-      await sendSplitInvite(saved, contributor);
+    const inviteResults = [];
+    for (const contributor of saved.payload.contributors) {
+      inviteResults.push(await sendSplitInvite(saved, contributor));
     }
-    emailResult = await sendEmail({
+    const proposalEmailResult = await sendEmail({
       subject: `Split Sheet Created - ${payload.songTitle} (v${payload.version})`,
       to: recipients,
-      html: `<h2>Split Sheet Created</h2><p>ID: ${saved.id}</p><p>Song: ${payload.songTitle}</p><p>Version: ${payload.version}</p><p>Status: Pending signatures</p><p><a href="${baseUrl}/split-sheet/pdf/${saved.id}">Download Current PDF Summary</a></p><p><b>Recipients:</b> ${recipients.join(", ")}</p>`
+      html: `<h2>Split Sheet Created</h2><p>ID: ${escapeHtml(saved.id)}</p><p>Song: ${escapeHtml(payload.songTitle)}</p><p>Rights covered: ${escapeHtml(rightsScopeLabel(payload.rightsScope))}</p><p>Version: ${payload.version}</p><p>Status: Pending signatures</p><p>Every contributor must review, agree, and sign before the final packet is generated.</p><p><a href="${baseUrl}/split-sheet/pdf/${saved.id}">Download Current PDF Summary</a></p><p><b>Recipients:</b> ${recipients.map(escapeHtml).join(", ")}</p>`
     });
+    saved.payload.proposalEmailDelivery = proposalEmailResult;
+    appendAuditEvent(saved, { type: "proposal-email-sent", deliveryStatus: proposalEmailResult.ok ? "sent" : "failed" });
+    await saveSubmissionRow(saved);
+    emailResult = {
+      ok: inviteResults.every((result) => result.ok) && proposalEmailResult.ok,
+      skipped: false,
+      reason: inviteResults.every((result) => result.ok) && proposalEmailResult.ok ? "sent" : "partial_failure",
+      inviteResults: inviteResults.map((result) => ({ ok: result.ok, reason: result.reason })),
+      proposalEmail: proposalEmailResult
+    };
   } else {
     const { auditChecksum } = await generateFinalSplitPdf(saved);
     saved.payload.auditChecksum = auditChecksum;
@@ -1245,10 +1498,13 @@ async function createSplitSheetSubmission(input, req) {
         songLabel: `Song: ${payload.songTitle} (v${payload.version})`,
         downloadUrl: `${baseUrl}/split-sheet/pdf/${saved.id}`,
         recipients,
-        splitHtml: splitSummaryHtml(payload.contributors || [])
+        splitHtml: splitSummaryHtml(payload.contributors || [], payload.rightsScope)
       }),
       attachments: fs.existsSync(finalPdf) ? [{ filename: path.basename(finalPdf), path: finalPdf }] : []
     });
+    saved.payload.completionEmailDelivery = emailResult;
+    appendAuditEvent(saved, { type: "completion-email-sent", deliveryStatus: emailResult.ok ? "sent" : "failed" });
+    await saveSubmissionRow(saved);
   }
 
   return { saved, payload, collectByInvite, emailResult };
@@ -1388,7 +1644,8 @@ const signerSubmitLimiter = createRateLimiter({
   keyGenerator: (req) => `signer-submit:${String(req.params.id || "")}:${String(req.params.token || "")}:${clientIpKey(req)}`
 });
 
-app.use(["/split-sheet", "/admin", "/signup", "/forgot-password", "/reset-password", "/verify-email"], ensureAppHost);
+app.use(["/split-sheet", "/account", "/login", "/logout", "/admin", "/signup", "/forgot-password", "/reset-password", "/verify-email"], ensureAppHost);
+app.use(attachWebUser);
 
 app.get("/", publicPageLimiter, (req, res) => {
   if (isMarketingHost(req)) {
@@ -1411,6 +1668,7 @@ app.get("/pricing", publicPageLimiter, (req, res) => {
     priceLabel: storefrontPriceLabel(),
     pluginName: stripePluginProductName,
     pluginVersionLabel,
+    planOptions: Object.values(PLAN_DEFINITIONS),
     checkoutEnabled: stripeEnabled,
     launchMode: stripeEnabled ? "checkout" : "prelaunch"
   });
@@ -1422,6 +1680,7 @@ app.post("/buy/plugin", publicPageLimiter, async (req, res) => {
       priceLabel: storefrontPriceLabel(),
       pluginName: stripePluginProductName,
       pluginVersionLabel,
+      planOptions: Object.values(PLAN_DEFINITIONS),
       checkoutEnabled: false,
       launchMode: "prelaunch",
       error: "Stripe checkout is not configured on this environment yet."
@@ -1462,12 +1721,92 @@ app.post("/buy/plugin", publicPageLimiter, async (req, res) => {
       priceLabel: storefrontPriceLabel(),
       pluginName: stripePluginProductName,
       pluginVersionLabel,
+      planOptions: Object.values(PLAN_DEFINITIONS),
       checkoutEnabled: stripeEnabled,
       launchMode: stripeEnabled ? "checkout" : "prelaunch",
       error: "Stripe checkout failed to initialize."
     });
   }
 });
+
+app.post("/account/billing/checkout", requireWebAuth, async (req, res) => {
+  if (!stripeEnabled) {
+    return res.status(503).render("auth-message", {
+      title: "Billing unavailable",
+      message: "Stripe is not configured on this environment.",
+      details: "Connect Stripe keys before live subscription upgrades.",
+      actionHref: "/account",
+      actionLabel: "Back to account",
+      debugLink: null
+    });
+  }
+
+  const planKey = normalizePlanKey(req.body.planKey);
+  const plan = PLAN_DEFINITIONS[planKey];
+  if (!plan || Number(plan.monthlyPriceUsdCents || 0) <= 0) {
+    return res.redirect("/account");
+  }
+
+  try {
+    const checkoutSession = await stripeClient.checkout.sessions.create({
+      mode: "subscription",
+      customer: req.webUser.stripeCustomerId || undefined,
+      customer_email: req.webUser.stripeCustomerId ? undefined : req.webUser.email,
+      client_reference_id: req.webUser.id,
+      billing_address_collection: "auto",
+      success_url: `${baseUrl}/account?billing=success`,
+      cancel_url: `${baseUrl}/account?billing=cancelled`,
+      line_items: [stripeLineItemForPlan(plan)],
+      metadata: {
+        checkoutType: "subscription_plan",
+        userId: req.webUser.id,
+        planKey
+      },
+      subscription_data: {
+        metadata: {
+          userId: req.webUser.id,
+          planKey
+        }
+      }
+    });
+    return res.redirect(303, checkoutSession.url);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).render("auth-message", {
+      title: "Checkout failed",
+      message: "Stripe could not start the subscription checkout.",
+      details: "Check Stripe API keys and price configuration, then try again.",
+      actionHref: "/account",
+      actionLabel: "Back to account",
+      debugLink: null
+    });
+  }
+});
+
+app.post("/account/billing/portal", requireWebAuth, async (req, res) => {
+  if (!stripeEnabled || !req.webUser.stripeCustomerId) {
+    return res.redirect("/account");
+  }
+
+  try {
+    const portalSession = await stripeClient.billingPortal.sessions.create({
+      customer: req.webUser.stripeCustomerId,
+      return_url: `${baseUrl}/account`
+    });
+    return res.redirect(303, portalSession.url);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).render("auth-message", {
+      title: "Billing portal unavailable",
+      message: "Stripe could not open the customer billing portal.",
+      details: "Confirm the Stripe Customer Portal is configured in your Stripe dashboard.",
+      actionHref: "/account",
+      actionLabel: "Back to account",
+      debugLink: null
+    });
+  }
+});
+
 app.get("/checkout/cancel", publicPageLimiter, (req, res) => {
   return res.render("checkout-cancel", {
     pricingUrl: "/pricing",
@@ -1539,7 +1878,16 @@ app.post("/api/stripe/webhook", async (req, res) => {
     }
 
     if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
-      await fulfillPluginCheckoutSession(event.data.object);
+      const session = event.data.object;
+      if (session.metadata?.checkoutType === "subscription_plan") {
+        await updateUserFromStripePlanCheckout(session);
+      } else {
+        await fulfillPluginCheckoutSession(session);
+      }
+    }
+
+    if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+      await updateUserFromStripeSubscription(event.data.object);
     }
 
     return res.json({ received: true });
@@ -1770,10 +2118,79 @@ app.post("/api/auth/logout", async (req, res) => {
   const revoked = await authService.revokeSessionByRefreshToken(req.body.refreshToken);
   return res.json({ ok: true, revoked });
 });
-app.get("/api/me", requireApiAuth, (req, res) => res.json({
-  ok: true,
-  user: req.apiUser
+app.get("/api/me", requireApiAuth, authenticatedApiLimiter, async (req, res) => {
+  const usage = await usageSummaryForUser(req.apiUser);
+  return res.json({
+    ok: true,
+    user: req.apiUser,
+    usage
+  });
+});
+app.get("/api/account/usage", requireApiAuth, authenticatedApiLimiter, async (req, res) => {
+  const usage = await usageSummaryForUser(req.apiUser);
+  return res.json({ ok: true, usage });
+});
+app.get("/login", publicPageLimiter, (req, res) => res.render("auth-login", {
+  error: null,
+  values: { email: "" },
+  next: safeRedirectPath(req.query.next, "/account"),
+  signupUrl: `${baseUrl}/signup`,
+  forgotPasswordUrl: `${baseUrl}/forgot-password`,
+  supportEmail
 }));
+app.post("/login", loginLimiter, async (req, res) => {
+  const next = safeRedirectPath(req.body.next, "/account");
+  try {
+    const result = await authService.createSession({
+      email: req.body.email,
+      password: req.body.password,
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"]
+    });
+    req.session.userId = result.user.id;
+    return res.redirect(next);
+  } catch (error) {
+    if (error instanceof ApiAuthError) {
+      return res.status(error.statusCode).render("auth-login", {
+        error: error.message,
+        values: { email: String(req.body.email || "") },
+        next,
+        signupUrl: `${baseUrl}/signup`,
+        forgotPasswordUrl: `${baseUrl}/forgot-password`,
+        supportEmail
+      });
+    }
+    console.error(error);
+    return res.status(500).render("auth-login", {
+      error: "Unexpected server error while signing in.",
+      values: { email: String(req.body.email || "") },
+      next,
+      signupUrl: `${baseUrl}/signup`,
+      forgotPasswordUrl: `${baseUrl}/forgot-password`,
+      supportEmail
+    });
+  }
+});
+app.post("/logout", requireWebAuth, (req, res) => {
+  req.session.destroy(() => res.redirect("/login"));
+});
+app.get("/account", requireWebAuth, async (req, res) => {
+  const usage = await usageSummaryForUser(req.webUser);
+  const splitSheets = await listUserSplitSheets(req.webUser);
+  return res.render("account", {
+    user: req.webUser,
+    usage,
+    splitSheets: splitSheets.slice(0, 10),
+    planOptions: Object.values(PLAN_DEFINITIONS),
+    paidPlanOptions: paidPlanOptions(),
+    currentPlan: planForUser(req.webUser),
+    billingEnabled: stripeEnabled,
+    billingNotice: req.query.billing || "",
+    pricingUrl: "/pricing",
+    splitSheetUrl: "/split-sheet",
+    supportEmail
+  });
+});
 app.get("/signup", publicPageLimiter, (req, res) => res.render("auth-signup", {
   error: null,
   values: { displayName: "", email: "" },
@@ -1813,8 +2230,8 @@ app.post("/signup", registerLimiter, async (req, res) => {
       details: verificationEmail.ok
         ? "Verification email sent."
         : `Verification email status: ${verificationEmail.reason || "not_sent"}.`,
-      actionHref: "/forgot-password",
-      actionLabel: "Need a reset later?",
+      actionHref: "/login",
+      actionLabel: "Sign in",
       debugLink: authDebugTokens ? verificationEmail.verifyUrl : null
     });
   } catch (error) {
@@ -1864,7 +2281,7 @@ app.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
     }
     return res.render("auth-message", {
       title: "Check your inbox",
-      message: "If that email exists in SplitSheet Studio, a password reset link is on the way.",
+      message: "If that email exists in Split Sheet Studio, a password reset link is on the way.",
       details: resetEmail.ok
         ? "Password reset email sent."
         : `Password reset email status: ${resetEmail.reason || "not_sent"}.`,
@@ -1948,8 +2365,8 @@ app.get("/verify-email", publicPageLimiter, async (req, res) => {
       title: "Email verified",
       message: `${result.user.email} is now verified.`,
       details: "You can use this account in the plugin and future hosted account flows.",
-      actionHref: "/forgot-password",
-      actionLabel: "Test password recovery",
+      actionHref: "/login",
+      actionLabel: "Sign in",
       debugLink: null
     });
   } catch (error) {
@@ -2034,6 +2451,7 @@ app.post("/api/split-sheets/validate", requireApiAuth, splitValidateLimiter, asy
     const prepared = await buildSplitSheetPayload(req.body, {
       nextVersion: nextSplitVersion,
       createSignerToken: () => nanoid(22),
+      signerLinkExpiresAt: () => hoursFromNow(signerLinkTtlHours),
       nowIso
     });
     return res.json({
@@ -2041,6 +2459,7 @@ app.post("/api/split-sheets/validate", requireApiAuth, splitValidateLimiter, asy
       songTitle: prepared.payload.songTitle,
       version: prepared.payload.version,
       collectSignaturesByInvite: prepared.collectByInvite,
+      rightsScope: prepared.payload.rightsScope,
       totals: prepared.totals,
       contributorCount: prepared.contributors.length
     });
@@ -2084,9 +2503,30 @@ app.get("/api/split-sheets/:id/status", requireApiAuth, authenticatedApiLimiter,
     splitSheet: summarizeSplitSheet(doc, baseUrl)
   });
 });
-app.get("/split-sheet", splitSheetPublicLimiter, (req, res) => res.render("split-sheet", { error: null }));
+app.post("/api/split-sheets/:id/signers/:index/resend", requireApiAuth, splitFinalizeLimiter, async (req, res) => {
+  const doc = await loadSubmission(req.params.id);
+  if (!doc || doc.type !== "split-sheet") return apiError(res, 404, "Split sheet not found.");
+  if (!canAccessSplitSheet(doc, req.apiUser)) return apiError(res, 403, "You do not have access to this split sheet.");
+  if (doc.status === "completed") return apiError(res, 409, "Completed split sheets are locked and cannot be resent.");
+  const contributorIndex = Number(req.params.index) - 1;
+  const contributor = doc.payload?.contributors?.[contributorIndex];
+  if (!contributor) return apiError(res, 404, "Contributor not found.");
+  if (contributor.signedAt) return apiError(res, 409, "This contributor has already signed.");
+  const emailResult = await sendSplitInvite(doc, contributor, { reminder: true, renew: true });
+  doc.updatedAt = nowIso();
+  await saveSubmissionRow(doc);
+  return res.json({
+    ok: emailResult.ok,
+    emailResult,
+    contributor: splitSignerTimeline(doc)[contributorIndex]
+  });
+});
+app.get("/split-sheet", splitSheetPublicLimiter, requireWebAuth, async (req, res) => {
+  const usage = await usageSummaryForUser(req.webUser);
+  return res.render("split-sheet", { error: null, user: req.webUser, usage });
+});
 
-app.post("/split-sheet", splitSheetSubmitLimiter, async (req, res) => {
+app.post("/split-sheet", splitSheetSubmitLimiter, requireWebAuth, async (req, res) => {
   try {
     const { saved, payload, collectByInvite, emailResult } = await createSplitSheetSubmission(req.body, req);
 
@@ -2101,11 +2541,15 @@ app.post("/split-sheet", splitSheetSubmitLimiter, async (req, res) => {
       emailResult
     });
   } catch (error) {
+    const usage = await usageSummaryForUser(req.webUser);
+    if (error instanceof ApiAuthError) {
+      return res.status(error.statusCode).render("split-sheet", { error: error.message, user: req.webUser, usage });
+    }
     if (error instanceof SplitSheetValidationError) {
-      return res.status(error.statusCode).render("split-sheet", { error: error.message });
+      return res.status(error.statusCode).render("split-sheet", { error: error.message, user: req.webUser, usage });
     }
     console.error(error);
-    res.status(500).render("split-sheet", { error: "Unexpected server error while saving split sheet." });
+    res.status(500).render("split-sheet", { error: "Unexpected server error while saving split sheet.", user: req.webUser, usage });
   }
 });
 
@@ -2115,8 +2559,36 @@ app.get("/split-sheet/sign/:id/:token", signerViewLimiter, async (req, res) => {
   const signer = (doc.payload?.contributors || []).find((c) => c.signerToken === req.params.token);
   if (!signer) return res.status(404).send("Invalid sign link");
 
+  if (signer.signedAt) {
+    return res.render("split-sign-success", {
+      doc,
+      signer,
+      everyoneSigned: doc.status === "completed",
+      emailResult: doc.payload?.completionEmailDelivery || null,
+      message: doc.status === "completed"
+        ? "Your signature is already saved and the completed split sheet has been issued."
+        : "Your signature is already saved. We are waiting on the remaining contributor(s)."
+    });
+  }
+  if (isPast(signer.signerTokenExpiresAt)) {
+    return res.status(410).render("auth-message", {
+      title: "Signing link expired",
+      message: "This secure signing link has expired.",
+      details: `Ask the split-sheet creator to resend your invitation. Submission ID: ${doc.id}`,
+      actionHref: "/",
+      actionLabel: "Return home",
+      debugLink: null
+    });
+  }
+
   if (!signer.viewedAt) {
     signer.viewedAt = nowIso();
+    appendAuditEvent(doc, {
+      type: "signer-viewed",
+      contributorEmail: signer.email,
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"] || ""
+    });
     doc.updatedAt = nowIso();
     await saveSubmissionRow(doc);
   }
@@ -2130,30 +2602,67 @@ app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) =
   const contributors = doc.payload?.contributors || [];
   const signerIndex = contributors.findIndex((c) => c.signerToken === req.params.token);
   if (signerIndex < 0) return res.status(404).send("Invalid sign link");
+  const currentSigner = contributors[signerIndex];
+  if (currentSigner.signedAt) {
+    return res.render("split-sign-success", {
+      doc,
+      signer: currentSigner,
+      everyoneSigned: doc.status === "completed",
+      emailResult: doc.payload?.completionEmailDelivery || null,
+      message: "Your signature was already submitted. No duplicate signature was created."
+    });
+  }
+  if (isPast(currentSigner.signerTokenExpiresAt)) {
+    return res.status(410).render("auth-message", {
+      title: "Signing link expired",
+      message: "This secure signing link has expired.",
+      details: `Ask the split-sheet creator to resend your invitation. Submission ID: ${doc.id}`,
+      actionHref: "/",
+      actionLabel: "Return home",
+      debugLink: null
+    });
+  }
 
   const typedSignatureName = String(req.body.typedSignatureName || "").trim();
   const signatureData = String(req.body.signatureData || "").trim();
-  if (!typedSignatureName || !signatureData.startsWith("data:image/")) {
+  const agreementAccepted = ["yes", "true", "1", "on"].includes(String(req.body.agreeToSplits || "").trim().toLowerCase());
+  if (!typedSignatureName || !signatureData.startsWith("data:image/") || !agreementAccepted) {
     const signer = contributors[signerIndex];
-    return res.status(400).render("split-sign", { doc, signer, timeline: splitSignerTimeline(doc), error: "Typed name and drawn signature are required.", success: null });
+    return res.status(400).render("split-sign", { doc, signer, timeline: splitSignerTimeline(doc), error: "Review confirmation, typed name, and drawn signature are required.", success: null });
   }
 
   contributors[signerIndex].typedSignatureName = typedSignatureName;
   contributors[signerIndex].signatureData = signatureData;
+  contributors[signerIndex].agreementAcceptedAt = nowIso();
+  contributors[signerIndex].agreementVersion = "remote-split-v1";
+  contributors[signerIndex].signerIp = requestIp(req);
+  contributors[signerIndex].signerUserAgent = req.headers["user-agent"] || "";
   contributors[signerIndex].signedAt = nowIso();
+  appendAuditEvent(doc, {
+    type: "signer-agreed-and-signed",
+    contributorEmail: contributors[signerIndex].email,
+    ip: requestIp(req),
+    userAgent: req.headers["user-agent"] || "",
+    agreementVersion: "remote-split-v1"
+  });
 
   const everyoneSigned = contributors.every((c) => c.signedAt);
+  let emailResult = null;
   if (everyoneSigned) {
     doc.status = "completed";
+    doc.payload.allPartiesAgree = true;
+    doc.payload.completedAt = nowIso();
+    appendAuditEvent(doc, { type: "split-sheet-finalized", contributorCount: contributors.length });
     const { auditChecksum } = await generateFinalSplitPdf(doc);
     doc.payload.auditChecksum = auditChecksum;
 
     const recipients = uniq([
       process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com",
-      ...contributors.map((c) => c.email)
+      ...contributors.map((c) => c.email),
+      ...(doc.payload?.recipientEmails || [])
     ]);
     const finalPdf = splitPdfPath(doc.id);
-    await sendEmail({
+    emailResult = await sendEmail({
       subject: `Completed Split Sheet - ${doc.payload.songTitle} (v${doc.payload.version})`,
       to: recipients,
       html: completionEmailHtml({
@@ -2162,10 +2671,12 @@ app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) =
         songLabel: `Song: ${doc.payload.songTitle} (v${doc.payload.version})`,
         downloadUrl: `${baseUrl}/split-sheet/pdf/${doc.id}`,
         recipients,
-        splitHtml: splitSummaryHtml(doc.payload?.contributors || [])
+        splitHtml: splitSummaryHtml(doc.payload?.contributors || [], doc.payload?.rightsScope)
       }),
       attachments: fs.existsSync(finalPdf) ? [{ filename: path.basename(finalPdf), path: finalPdf }] : []
     });
+    doc.payload.completionEmailDelivery = emailResult;
+    appendAuditEvent(doc, { type: "completion-email-sent", deliveryStatus: emailResult.ok ? "sent" : "failed" });
   }
 
   doc.updatedAt = nowIso();
@@ -2176,8 +2687,11 @@ app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) =
     doc,
     signer,
     everyoneSigned,
+    emailResult,
     message: everyoneSigned
-      ? "Submitted. Final packet has been generated and emailed to all recipients. Please check your email."
+      ? (emailResult?.ok
+        ? "Submitted. The final packet was generated and emailed to every contributor."
+        : "Submitted and finalized, but email delivery reported a problem. The completed packet remains available for download.")
       : "Submitted. Your signature is saved. We are waiting on the remaining signer(s)."
   });
 });
@@ -2239,7 +2753,28 @@ app.get("/admin", adminLimiter, requireAdmin, async (req, res) => {
       }
     };
   });
-  res.render("admin", { docs });
+  const users = await Promise.all((await authService.listUsers()).map(async (user) => ({
+    ...user,
+    usage: await usageSummaryForUser(user)
+  })));
+  res.render("admin", {
+    docs,
+    users,
+    planOptions: Object.values(PLAN_DEFINITIONS),
+    banner: req.query.banner || ""
+  });
+});
+
+app.post("/admin/users/:id/plan", adminLimiter, requireAdmin, async (req, res) => {
+  const planKey = normalizePlanKey(req.body.planKey);
+  const updated = await authService.updateUserPlan({
+    userId: req.params.id,
+    planKey
+  });
+  const banner = updated
+    ? `${updated.email} moved to ${PLAN_DEFINITIONS[planKey].name}.`
+    : "User not found.";
+  res.redirect(`/admin?banner=${encodeURIComponent(banner)}`);
 });
 
 app.get("/admin/split/:id", adminLimiter, requireAdmin, async (req, res) => {
@@ -2270,14 +2805,27 @@ app.post("/admin/split/:id/remind", adminLimiter, requireAdmin, async (req, res)
   const pending = (doc.payload?.contributors || []).filter((c) => c.signerToken && !c.signedAt);
   let sent = 0;
   for (const contributor of pending) {
-    contributor.reminderSentAt = nowIso();
-    await sendSplitInvite(doc, contributor);
-    sent += 1;
+    const result = await sendSplitInvite(doc, contributor, { reminder: true, renew: isPast(contributor.signerTokenExpiresAt) });
+    if (result.ok) sent += 1;
   }
   doc.updatedAt = nowIso();
-  doc.lastReminderRun = { at: nowIso(), sent };
+  doc.lastReminderRun = { at: nowIso(), sent, mode: "manual" };
   await saveSubmissionRow(doc);
   res.redirect(`/admin/split/${doc.id}?banner=${encodeURIComponent(`Reminder email run complete. Sent ${sent} reminder(s).`)}`);
+});
+
+app.post("/admin/split/:id/resend/:index", adminLimiter, requireAdmin, async (req, res) => {
+  const doc = await loadSubmission(req.params.id);
+  if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
+  if (doc.status === "completed") return res.redirect(`/admin/split/${doc.id}?banner=${encodeURIComponent("Completed split sheets are locked.")}`);
+  const contributorIndex = Number(req.params.index) - 1;
+  const contributor = doc.payload?.contributors?.[contributorIndex];
+  if (!contributor || contributor.signedAt) return res.redirect(`/admin/split/${doc.id}?banner=${encodeURIComponent("Contributor is unavailable or already signed.")}`);
+  const result = await sendSplitInvite(doc, contributor, { reminder: true, renew: true });
+  doc.updatedAt = nowIso();
+  await saveSubmissionRow(doc);
+  const banner = result.ok ? `A new secure link was sent to ${contributor.email}.` : `Resend failed: ${result.reason}`;
+  res.redirect(`/admin/split/${doc.id}?banner=${encodeURIComponent(banner)}`);
 });
 
 app.get("/admin/doc/:id", adminLimiter, requireAdmin, async (req, res) => {
@@ -2289,7 +2837,7 @@ app.get("/admin/doc/:id", adminLimiter, requireAdmin, async (req, res) => {
 if (require.main === module) {
   initializeRuntime()
     .then(() => {
-      app.listen(PORT, HOST, () => console.log(`Split Sheet Open Sign running at ${baseUrl}`));
+      app.listen(PORT, HOST, () => console.log(`Split Sheet Studio running at ${baseUrl}`));
     })
     .catch((error) => {
       console.error("Startup failed:", error.message || error);

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.22)
+﻿cmake_minimum_required(VERSION 3.22)
 
 project(SplitSheetStudioVST VERSION 0.1.0)
 
@@ -12,6 +12,11 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(JUCE)
 
+juce_add_binary_data(SplitSheetAssets
+  SOURCES
+    ../public/bronze-texture.png
+)
+
 juce_add_plugin(SplitSheetStudio
   COMPANY_NAME "Blak Marigold Studio"
   BUNDLE_ID com.blakmarigold.splitsheetstudio
@@ -24,7 +29,7 @@ juce_add_plugin(SplitSheetStudio
   PLUGIN_MANUFACTURER_CODE BmSs
   PLUGIN_CODE Sss1
   FORMATS VST3 Standalone
-  PRODUCT_NAME "SplitSheet Studio"
+  PRODUCT_NAME "Split Sheet Studio"
 )
 
 target_sources(SplitSheetStudio
@@ -43,8 +48,13 @@ target_compile_definitions(SplitSheetStudio
     JUCE_USE_CURL=0
 )
 
+if(MSVC)
+  target_compile_options(SplitSheetStudio PRIVATE /utf-8)
+endif()
+
 target_link_libraries(SplitSheetStudio
   PRIVATE
+    SplitSheetAssets
     juce::juce_audio_utils
     juce::juce_cryptography
     juce::juce_gui_extra

@@ -35,11 +35,17 @@
         { "name": "COOKIE_SECURE", "value": "true" },
         { "name": "TRUST_PROXY", "value": "true" },
         { "name": "ALLOW_PUBLIC_REGISTRATION", "value": "true" },
+        { "name": "SIGNER_LINK_TTL_HOURS", "value": "168" },
+        { "name": "AUTO_SIGNER_REMINDERS", "value": "true" },
+        { "name": "SIGNER_REMINDER_AFTER_HOURS", "value": "24" },
+        { "name": "SIGNER_REMINDER_INTERVAL_MINUTES", "value": "60" },
         { "name": "SES_REGION", "value": "us-east-1" },
         { "name": "FROM_EMAIL", "value": "no-reply@splitsheetstudio.com" },
         { "name": "REPLY_TO_EMAIL", "value": "blakmarigold@gmail.com" },
         { "name": "NOTIFY_EMAIL", "value": "blakmarigold@gmail.com" },
         { "name": "STRIPE_PLUGIN_PRICE_USD_CENTS", "value": "1000" },
+        { "name": "STRIPE_CREATOR_PRICE_ID", "value": "" },
+        { "name": "STRIPE_STUDIO_PRO_PRICE_ID", "value": "" },
         { "name": "PLUGIN_VERSION_LABEL", "value": "0.1.0" },
         { "name": "PLUGIN_DOWNLOAD_BUCKET", "value": "splitsheetstudio-production-pdfs" },
         { "name": "PLUGIN_DOWNLOAD_KEY", "value": "downloads/SplitSheetStudio-Setup-0.1.0.exe" }
@@ -53,7 +59,9 @@
         { "name": "ADMIN_PASS", "valueFrom": "<secrets-manager-admin-pass-arn>" },
         { "name": "OWNER_EMAIL", "valueFrom": "<secrets-manager-owner-email-arn>" },
         { "name": "OWNER_PASSWORD", "valueFrom": "<secrets-manager-owner-password-arn>" },
-        { "name": "OWNER_DISPLAY_NAME", "valueFrom": "<secrets-manager-owner-display-name-arn>" }
+        { "name": "OWNER_DISPLAY_NAME", "valueFrom": "<secrets-manager-owner-display-name-arn>" },
+        { "name": "STRIPE_SECRET_KEY", "valueFrom": "<secrets-manager-stripe-secret-key-arn>" },
+        { "name": "STRIPE_WEBHOOK_SECRET", "valueFrom": "<secrets-manager-stripe-webhook-secret-arn>" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

@@ -1,4 +1,4 @@
-# SplitSheet Studio Documentation Index
+﻿# Split Sheet Studio Documentation Index
 
 This repository is documented for both builders and reviewers.
 

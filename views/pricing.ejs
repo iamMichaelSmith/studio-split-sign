@@ -1,61 +1,48 @@
-<!doctype html>
-<html>
+﻿<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><%= pluginName %> Pricing | SplitSheet Studio</title>
-  <meta name="description" content="Buy the SplitSheet Studio VST3 plugin and connect your DAW workflow to hosted split-sheet accounts, delivery, and rights-ready documentation.">
-  <link rel="stylesheet" href="/style.css">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Split Sheet Studio VST3 Plugin | $10 Windows Installer</title>
+  <meta name="description" content="Get the Split Sheet Studio VST3 plugin for Windows and run composition splits, master ownership, remote signatures, and final PDF delivery from your DAW.">
+  <link rel="canonical" href="https://splitsheetstudio.com/pricing"><meta name="theme-color" content="#171311">
+  <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/premium.css">
 </head>
-<body>
-  <div class="wrap storefront-wrap">
-    <div class="storefront-hero card">
-      <div class="pill"><%= launchMode === "checkout" ? "Plugin Storefront" : "Plugin Prelaunch" %></div>
-      <h1><%= pluginName %></h1>
-      <p class="landing-subtitle">Run SplitSheet Studio inside your DAW with the same hosted account, validation, delivery, and recovery workflow as the browser app.</p>
-      <div class="storefront-price-row">
-        <div>
-          <div class="storefront-price"><%= priceLabel %></div>
-          <div class="small">Current version: <%= pluginVersionLabel %></div>
-        </div>
-        <form method="post" action="/buy/plugin" class="storefront-buy-form">
-          <button type="submit" <%= checkoutEnabled ? "" : "disabled" %>><%= checkoutEnabled ? "Buy Plugin" : "Checkout Unavailable" %></button>
-        </form>
+<body class="premium-site"><div class="premium-shell">
+  <%- include('partials/site-nav') %>
+  <main class="store-page">
+    <section class="store-hero premium-container">
+      <div><div class="eyebrow"><span class="eyebrow-dot"></span> Windows VST3 · Studio One tested</div><h1>Your split-sheet workflow,<br><span>inside the DAW.</span></h1><p class="hero-lede">Capture the song, contributors, percentages, signatures, and recipients without breaking the studio flow.</p><div class="compatibility-row"><span>WINDOWS 10/11</span><span>64-BIT VST3</span><span>VERSION <%= pluginVersionLabel %></span></div></div>
+      <aside class="purchase-card">
+        <div class="purchase-label"><%= launchMode === 'checkout' ? 'AVAILABLE NOW' : 'EARLY RELEASE' %></div><h2><%= pluginName %></h2><p>One-time Windows license</p><div class="purchase-price"><strong><%= priceLabel %></strong><span>USD</span></div>
+        <form method="post" action="/buy/plugin"><button class="premium-button premium-button-primary purchase-button" type="submit" <%= checkoutEnabled ? '' : 'disabled' %>><%= checkoutEnabled ? 'Buy and download →' : 'Checkout coming soon' %></button></form>
+        <% if (!checkoutEnabled) { %><a class="premium-button premium-button-ghost purchase-button" href="mailto:<%= supportEmail %>?subject=Split%20Sheet%20Studio%20plugin%20launch">Join the launch list</a><% } %>
+        <ul><li>VST3 plugin</li><li>Standalone Windows app</li><li>Hosted account connection</li><li>Installer updates for this release</li></ul>
+      </aside>
+    </section>
+    <% if (typeof error === 'string' && error) { %><div class="premium-container"><div class="premium-alert"><%= error %></div></div><% } %>
+    <section class="premium-section premium-container included-section">
+      <div class="section-heading">
+        <div><div class="section-kicker">Hosted app plans</div><h2>Start free, then upgrade when split sheets become part of your studio workflow.</h2></div>
+        <p>Paid plan checkout runs through Stripe. Create an account first, then upgrade from your account page.</p>
       </div>
-      <% if (!checkoutEnabled) { %>
-        <div class="card legal-note">
-          Payments are intentionally deferred for now. You can still create an account, test the hosted workflow, and validate the plugin against the live app.
-        </div>
-        <p><a href="<%= signupUrl %>">Create account</a> · <a href="mailto:<%= supportEmail %>?subject=SplitSheet%20Studio%20plugin%20launch">Join launch list</a></p>
-      <% } %>
-      <% if (typeof error === "string" && error) { %>
-        <div class="banner"><%= error %></div>
-      <% } %>
-    </div>
-
-    <div class="grid">
-      <div class="card">
-        <h3>What you get</h3>
-        <ul class="landing-list">
-          <li>VST3 workflow for fast session capture inside the DAW</li>
-          <li>Hosted sign-in, public account creation, and password recovery</li>
-          <li>Invite-link signatures or in-session signing</li>
-          <li>Durable PDF records and email delivery</li>
-        </ul>
+      <div class="feature-list-grid">
+        <% planOptions.forEach((plan) => { %>
+          <div>
+            <span><%= plan.priceLabel %></span>
+            <h3><%= plan.name %></h3>
+            <p><strong><%= plan.monthlySheetLimit %> completed split sheets/month</strong></p>
+            <p><%= plan.description %></p>
+            <% if (plan.monthlyPriceUsdCents > 0) { %>
+              <a class="premium-button premium-button-ghost" href="<%= signupUrl %>">Create account to upgrade</a>
+            <% } %>
+          </div>
+        <% }) %>
       </div>
-      <div class="card">
-        <h3>What you can do today</h3>
-        <ul class="landing-list">
-          <li>Create and verify an account</li>
-          <li>Test the hosted app on `app.splitsheetstudio.com`</li>
-          <li>Open the VST and sign in against the hosted API</li>
-          <li>Read the blog while checkout is being finalized</li>
-        </ul>
-        <p><a href="<%= appUrl %>">Open hosted app</a></p>
-        <p><a href="<%= blogUrl %>">Read the blog</a></p>
-        <p><a href="mailto:<%= supportEmail %>">Contact support</a></p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
+    </section>
+    <section class="premium-section premium-container included-section"><div class="section-heading"><div><div class="section-kicker">Included in the workflow</div><h2>Everything required to move from credits to signatures.</h2></div><p>The plugin uses the same secure hosted account and remote-signing engine as the browser app.</p></div><div class="feature-list-grid"><div><span>01</span><h3>Session capture</h3><p>Song metadata, contributor details, PRO and IPI information, writing and publishing shares.</p></div><div><span>02</span><h3>100% validation</h3><p>Hard percentage rules prevent incomplete composition or master ownership totals.</p></div><div><span>03</span><h3>Remote signing</h3><p>Email secure links to collaborators working in another studio, city, or state.</p></div><div><span>04</span><h3>Final delivery</h3><p>Complete the packet only after every contributor confirms and signs.</p></div></div></section>
+    <section class="premium-section requirements-section"><div class="premium-container requirements-grid"><div><div class="section-kicker">System requirements</div><h2>Simple installation. No background app required.</h2></div><ul class="premium-checks"><li><i>✓</i><span>Windows 10 or Windows 11, 64-bit</span></li><li><i>✓</i><span>VST3-compatible DAW; validated in Studio One</span></li><li><i>✓</i><span>Internet connection for account and delivery workflows</span></li><li><i>✓</i><span>Installs to the standard Windows VST3 directory</span></li></ul></div></section>
+    <section class="premium-section premium-container faq-section"><div class="section-kicker">Before you install</div><h2>Plugin questions, answered.</h2><div class="faq-grid"><article><h3>Does the standalone app need to stay open?</h3><p>No. The VST3 talks directly to the hosted Split Sheet Studio service.</p></article><article><h3>Can collaborators sign remotely?</h3><p>Yes. Send secure invitation links and automatically finalize after the last signature.</p></article><article><h3>Does it work outside Studio One?</h3><p>It is built as a standard VST3. Studio One is currently the validated host; broader DAW testing is planned.</p></article><article><h3>Is checkout live?</h3><p><%= checkoutEnabled ? 'Yes. Complete checkout to receive your protected download.' : 'Not yet. Join the launch list and use the hosted app while the signed release is finalized.' %></p></article></div></section>
+    <section class="final-cta premium-container"><div class="brand-mark brand-mark-cta" aria-hidden="true"><img class="brand-logo-img" src="/split-sheet-studio-logo.png" width="116" height="116" alt=""></div><h2>Rights clarity belongs in the session.</h2><p>Create your hosted account now, then use the same sign-in inside the plugin.</p><div class="hero-actions centered"><a class="premium-button premium-button-primary" href="<%= signupUrl %>">Create account →</a><a class="premium-button premium-button-ghost" href="<%= appUrl %>">Open web app</a></div></section>
+  </main>
+  <%- include('partials/site-footer') %>
+</div></body></html>

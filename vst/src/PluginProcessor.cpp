@@ -1,4 +1,4 @@
-#include "PluginProcessor.h"
+﻿#include "PluginProcessor.h"
 #include "PluginEditor.h"
 
 SplitSheetStudioProcessor::SplitSheetStudioProcessor()
@@ -7,7 +7,7 @@ SplitSheetStudioProcessor::SplitSheetStudioProcessor()
 {
 }
 
-const juce::String SplitSheetStudioProcessor::getName() const { return "SplitSheet Studio"; }
+const juce::String SplitSheetStudioProcessor::getName() const { return "Split Sheet Studio"; }
 void SplitSheetStudioProcessor::prepareToPlay(double, int) {}
 void SplitSheetStudioProcessor::releaseResources() {}
 

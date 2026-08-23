@@ -43,21 +43,25 @@
 
     <div class="card">
       <h3>Signer progress</h3>
-      <% timeline.forEach(function(row){ const pillClass = row.status === 'Signed' ? 'status-signed' : (row.status === 'Viewed' ? 'status-viewed' : (row.status === 'Invited' ? 'status-invited' : 'status-pending')); %>
+      <% timeline.forEach(function(row){ const pillClass = row.status === 'Signed' ? 'status-signed' : (row.status === 'Expired' ? 'status-expired' : (row.status === 'Viewed' ? 'status-viewed' : (row.status === 'Invited' ? 'status-invited' : 'status-pending'))); %>
         <div class="timeline-item">
           <div class="timeline-top">
             <div>
               <div><b><%= row.index %>. <%= row.legalName %></b></div>
               <div class="small timeline-meta"><%= row.role %> · <%= row.email %></div>
               <div class="small">Writer <%= row.writerShare %>% · Publisher <%= row.publisherShare %>%</div>
+              <% if (doc.payload.rightsScope === 'master' || doc.payload.rightsScope === 'composition-and-master') { %><div class="small">Master <%= row.masterShare %>%</div><% } %>
             </div>
             <div><span class="pill <%= pillClass %>"><%= row.status %></span></div>
           </div>
           <hr class="muted-rule" />
           <div class="small">Invite sent: <b><%= row.inviteSentAt || '—' %></b></div>
+          <div class="small">Invite delivery: <b><%= row.inviteEmailStatus %></b> · attempts <%= row.inviteCount %></div>
+          <div class="small">Secure link expires: <b><%= row.signerTokenExpiresAt || '—' %></b></div>
           <div class="small">Viewed: <b><%= row.viewedAt || '—' %></b></div>
           <div class="small">Reminder sent: <b><%= row.reminderSentAt || '—' %></b></div>
           <div class="small">Signed: <b><%= row.signedAt || '—' %></b></div>
+          <div class="small">Agreement accepted: <b><%= row.agreementAcceptedAt || '—' %></b></div>
           <% if (row.typedSignatureName) { %>
             <div class="small">Typed signature: <b><%= row.typedSignatureName %></b></div>
           <% } %>
@@ -66,6 +70,9 @@
               <input type="text" readonly value="<%= row.signerLink %>" id="link-<%= row.index %>">
               <button type="button" onclick="copySignerLink('link-<%= row.index %>', this)">Copy signer link</button>
             </div>
+          <% } %>
+          <% if (!row.signedAt) { %>
+            <form method="post" action="/admin/split/<%= doc.id %>/resend/<%= row.index %>" class="inline-actions"><button type="submit">Resend a new secure link</button></form>
           <% } %>
         </div>
       <% }) %>

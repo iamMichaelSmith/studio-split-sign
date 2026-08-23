@@ -36,7 +36,7 @@ async function main() {
   const databaseUrl = 'postgres://splitsheet:splitsheet@127.0.0.1:54329/splitsheet_dev?sslmode=disable';
   await waitForPostgres(databaseUrl);
 
-  const accountEmail = 'pg-smoke@example.com';
+  const accountEmail = `pg-smoke-${Date.now()}@example.com`;
   const accountPass = 'pg-smoke-pass-123';
   const child = spawn(process.execPath, ['server.js'], {
     env: {

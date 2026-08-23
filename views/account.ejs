@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Account | Split Sheet Studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="timeline-top">
+      <div>
+        <h1>Account</h1>
+        <p class="small">Signed in as <b><%= user.displayName %></b> · <%= user.email %></p>
+        <% if (billingNotice === "success") { %><p class="small"><b>Billing updated.</b> Your plan will refresh after Stripe confirms the subscription.</p><% } %>
+        <% if (billingNotice === "cancelled") { %><p class="small">Checkout was cancelled. Your current plan is unchanged.</p><% } %>
+      </div>
+      <form method="post" action="/logout"><button class="secondary-button" type="submit">Sign out</button></form>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="stat-label">Current plan</div>
+        <div class="stat-value"><%= usage.plan.name %></div>
+        <p class="small"><%= usage.plan.description %></p>
+        <% if (billingEnabled && user.stripeCustomerId) { %>
+          <form method="post" action="/account/billing/portal"><button class="secondary-button" type="submit">Manage billing</button></form>
+        <% } else { %>
+          <p><a href="<%= pricingUrl %>">View plan options</a></p>
+        <% } %>
+      </div>
+      <div class="card">
+        <div class="stat-label">Split sheets this month</div>
+        <div class="stat-value"><%= usage.used %>/<%= usage.limit %></div>
+        <p class="small"><%= usage.remaining %> remaining for <%= usage.window.label %>.</p>
+      </div>
+      <div class="card">
+        <div class="stat-label">Next action</div>
+        <div class="stat-value"><%= usage.canCreate ? "Ready" : "Limit hit" %></div>
+        <% if (usage.canCreate) { %>
+          <p><a href="<%= splitSheetUrl %>">Create split sheet</a></p>
+        <% } else { %>
+          <p class="small">Upgrade your plan before creating another split sheet.</p>
+        <% } %>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Available plans</h2>
+      <div class="grid">
+        <% planOptions.forEach((plan) => { %>
+          <div class="stat-card">
+            <div class="stat-label"><%= plan.priceLabel %></div>
+            <h3><%= plan.name %></h3>
+            <p class="small"><%= plan.monthlySheetLimit %> completed split sheets/month</p>
+            <p class="small"><%= plan.description %></p>
+            <% if (plan.key === currentPlan.key) { %>
+              <p class="small"><b>Current plan</b></p>
+            <% } else if (billingEnabled && plan.monthlyPriceUsdCents > 0) { %>
+              <form method="post" action="/account/billing/checkout">
+                <input type="hidden" name="planKey" value="<%= plan.key %>">
+                <button type="submit">Upgrade to <%= plan.name %></button>
+              </form>
+            <% } else if (plan.monthlyPriceUsdCents > 0) { %>
+              <p class="small">Stripe checkout not connected yet.</p>
+            <% } %>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Recent split sheets</h2>
+      <% if (!splitSheets.length) { %>
+        <p class="small">No split sheets yet.</p>
+      <% } %>
+      <% splitSheets.forEach((doc) => { %>
+        <div class="timeline-item">
+          <div class="timeline-top">
+            <div><b><%= doc.payload.songTitle || doc.id %></b><div class="small"><%= doc.status %> · <%= doc.createdAt %></div></div>
+            <div><a href="/split-sheet/pdf/<%= doc.id %>">PDF</a></div>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+</body>
+</html>

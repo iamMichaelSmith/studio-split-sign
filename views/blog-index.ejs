@@ -1,32 +1,18 @@
-<!doctype html>
-<html>
+﻿<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SplitSheet Studio Blog</title>
-  <meta name="description" content="SplitSheet Studio articles on split sheets, producer workflow, publishing admin, and sync licensing readiness.">
-  <link rel="stylesheet" href="/style.css">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Split Sheet Studio Blog | Music Rights and Split Sheets</title>
+  <meta name="description" content="Practical guidance on music split sheets, publishing administration, producer workflow, master ownership, and sync licensing readiness.">
+  <link rel="canonical" href="https://splitsheetstudio.com/blog"><meta name="theme-color" content="#171311">
+  <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/premium.css">
 </head>
-<body>
-  <div class="wrap blog-wrap">
-    <div class="card">
-      <div class="pill">Blog</div>
-      <h1>SplitSheet Studio Journal</h1>
-      <p class="landing-subtitle">Operational notes on split-sheet workflow, rights hygiene, release prep, and sync-readiness for real music teams.</p>
-      <p><a href="/pricing">Plugin pricing</a> · <a href="<%= appUrl %>">Open app</a> · <a href="<%= signupUrl %>">Create account</a></p>
-    </div>
-
-    <div class="blog-list">
-      <% posts.forEach((post) => { %>
-        <article class="card blog-card">
-          <div class="pill"><%= post.category %></div>
-          <h2><a href="/blog/<%= post.slug %>"><%= post.title %></a></h2>
-          <p><%= post.excerpt %></p>
-          <p class="small"><%= post.publishedAt %> · <%= post.readingMinutes %> min read</p>
-          <p><a href="/blog/<%= post.slug %>">Read article</a></p>
-        </article>
-      <% }) %>
-    </div>
-  </div>
-</body>
-</html>
+<body class="premium-site"><div class="premium-shell">
+  <%- include('partials/site-nav') %>
+  <main class="journal-page premium-container">
+    <section class="journal-hero"><div class="section-kicker">Blog</div><h1>Clearer rights.<br><span>Cleaner releases.</span></h1><p>Practical notes for artists, producers, songwriters, managers, and independent teams building music together.</p></section>
+    <section class="journal-grid"><% posts.forEach((post, index) => { %><article class="journal-card <%= index === 0 ? 'journal-featured' : '' %>"><div class="journal-index">0<%= index + 1 %></div><div class="pill"><%= post.category %></div><h2><a href="/blog/<%= post.slug %>"><%= post.title %></a></h2><p><%= post.excerpt %></p><div class="journal-meta"><span><%= post.publishedAt %></span><span><%= post.readingMinutes %> min read</span></div><a class="text-link" href="/blog/<%= post.slug %>">Read article →</a></article><% }) %></section>
+    <section class="journal-cta"><div><h2>Make the agreement part of the session.</h2><p>Use the hosted workflow or capture the split inside Studio One.</p></div><a class="premium-button premium-button-primary" href="<%= signupUrl %>">Create account →</a></section>
+  </main>
+  <%- include('partials/site-footer') %>
+</div></body></html>

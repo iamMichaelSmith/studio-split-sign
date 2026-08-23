@@ -1,6 +1,6 @@
-# SplitSheet Studio
+﻿# Split Sheet Studio
 
-`SplitSheet Studio` is a music-rights workflow platform for split sheets, signatures, delivery, and record retention.
+`Split Sheet Studio` is a music-rights workflow platform for split sheets, signatures, delivery, and record retention.
 
 It runs today as:
 - a public marketing surface at `https://splitsheetstudio.com`
@@ -21,7 +21,7 @@ Studios and writing rooms often leave a session with verbal agreement on ownersh
 
 That gap creates friction at the exact moment everyone wants to leave the room.
 
-`SplitSheet Studio` exists to remove that friction with a workflow that is:
+`Split Sheet Studio` exists to remove that friction with a workflow that is:
 - fast enough for the room
 - structured enough for records
 - flexible enough for browser and DAW use
@@ -49,14 +49,16 @@ These are the practical micro-apps or workflow surfaces that make up the system:
    - draft / finalize workflow
 
 3. **Signer portal**
-   - invite-link signing
-   - tokenized signer access
-   - final packet completion trigger
+   - mobile-friendly, no-account-required signing
+   - expiring and resendable secure links
+   - explicit per-contributor review confirmation
+   - final packet completion trigger only after every signature
 
 4. **Admin surface**
    - submission review
    - signer timeline visibility
    - reminder actions
+   - user plan management and monthly usage visibility
    - artifact access
 
 5. **JSON API**
@@ -81,12 +83,22 @@ These are the practical micro-apps or workflow surfaces that make up the system:
 ## What the system does
 - creates split sheets
 - validates writer and publisher percentages
+- supports composition, master recording, or combined ownership splits
 - supports in-session or invite-based signatures
-- tracks signer state (`invited`, `viewed`, `reminder sent`, `signed`)
+- tracks signer state (`invited`, `viewed`, `reminded`, `expired`, `agreed`, `signed`)
+- records invite and completion-email delivery status
+- locks remote split sheets only after every contributor agrees and signs
 - generates final PDFs
 - stores final packets durably
 - emails final results
 - exposes the same workflow to the web app and plugin
+
+## Blak Marigold visual system
+- bronze, copper, champagne, espresso, and warm ivory palette derived from the Blak Marigold studio brand
+- real brushed-bronze texture shared by the marketing site and embedded directly into the native VST binary
+- engraved panel geometry, restrained metallic highlights, and high-contrast form controls
+- consistent premium presentation across the public site, pricing, blog, standalone app, and Studio One plugin
+- keyboard focus, readable contrast, reduced-motion support, and responsive layouts remain part of the design system
 
 ## Current architecture
 
@@ -123,15 +135,27 @@ These are the practical micro-apps or workflow surfaces that make up the system:
    - captures signatures in-session, or
    - sends invite links to contributors
 5. Final signer completion generates the final PDF packet
-6. Final packet is uploaded to `S3`
-7. Transactional email sends through `SES`
-8. Admin and API clients can retrieve the resulting record state
+6. The server records agreement timestamps and the final audit checksum
+7. Final packet is uploaded to `S3`
+8. Transactional email sends the completed copy to every contributor through `SES`
+9. Admin and API clients can retrieve delivery and signer state
 
 ## Public-launch posture
 The hosted app, plugin login target, signup flow, password reset flow, invite workflow, blog, pricing/storefront surface, and request-level rate limiting are all in this repo now.
 
+### Plans and usage limits
+The app has an internal subscription model with Stripe subscription checkout hooks:
+
+| Plan | Price target | Monthly split-sheet limit | Intended user |
+| --- | --- | ---: | --- |
+| Free | `$0` | `3` | testing, first-time users, low-volume creators |
+| Creator | `$5/mo` | `25` | artists, producers, and songwriters who create split sheets regularly |
+| Studio Pro | `$20/mo` | `250` | studios, engineers, managers, and higher-volume teams |
+
+Limits are enforced when a user finalizes a split sheet. Drafts do not count. Admins can move users between plans manually from `/admin`. When `STRIPE_SECRET_KEY` is configured, paid users can start Creator or Studio Pro subscription checkout from `/account`, and Stripe webhooks update `users.plan_key`.
+
 What is still intentionally deferred:
-- live Stripe payment activation
+- live Stripe account keys, webhook secret, and Stripe Customer Portal configuration
 - final purchase-to-download automation in production
 - code signing for the Windows installer
 
@@ -159,6 +183,7 @@ That means the product can be validated publicly before live payments are turned
 
 ### AWS / operations
 - `deploy/aws/` -> provisioning, secret sync, task-definition rendering, and ECS deployment scripts
+- `deploy/proxmox/` -> local LXC deployment script and LAN runbook
 - `Dockerfile` -> hosted container runtime
 - `docker-compose.yml` -> local container path
 - `tests/` -> smoke coverage for local and PostgreSQL-backed flows
@@ -199,6 +224,11 @@ The current hosted runtime is verified through:
 - live pricing and blog routes
 - plugin sign-in and end-to-end split email delivery tests
 
+Local Proxmox copy:
+- LXC `103` / `split-sheet-studio`
+- LAN URL: `http://192.168.1.237:5050`
+- repeatable deploy: `powershell -ExecutionPolicy Bypass -File .\deploy\proxmox\deploy-to-lxc.ps1 -SyncLocalEnv`
+
 ## Remaining public-launch work
 The core hosted system is live, but these remain the main product-hardening items:
 - plugin installer final verification on a clean machine
@@ -224,7 +254,7 @@ The core hosted system is live, but these remain the main product-hardening item
 - `deploy/aws/README.md`
 
 ## Summary
-`SplitSheet Studio` is a studio paperwork system that moved from local-first prototype to hosted product foundation.
+`Split Sheet Studio` is a studio paperwork system that moved from local-first prototype to hosted product foundation.
 
 This repository now reflects the actual platform:
 - public domain

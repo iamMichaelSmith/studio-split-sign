@@ -1,22 +1,16 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><%= post.seoTitle %></title>
-  <meta name="description" content="<%= post.metaDescription %>">
-  <link rel="stylesheet" href="/style.css">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= post.seoTitle %></title><meta name="description" content="<%= post.metaDescription %>">
+  <link rel="canonical" href="https://splitsheetstudio.com/blog/<%= post.slug %>"><meta name="theme-color" content="#171311">
+  <meta property="og:type" content="article"><meta property="og:title" content="<%= post.seoTitle %>"><meta property="og:description" content="<%= post.metaDescription %>"><meta property="og:url" content="https://splitsheetstudio.com/blog/<%= post.slug %>">
+  <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="<%= post.seoTitle %>"><meta name="twitter:description" content="<%= post.metaDescription %>">
+  <script type="application/ld+json"><%- JSON.stringify(post.structuredData).replace(/</g, "\\u003c") %></script>
+  <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/premium.css">
 </head>
-<body>
-  <div class="wrap blog-wrap">
-    <article class="card blog-post-shell">
-      <div class="pill"><%= post.category %></div>
-      <h1><%= post.title %></h1>
-      <p class="small"><%= post.publishedAt %> · <%= post.readingMinutes %> min read · <%= post.wordCount %> words</p>
-      <div class="blog-post-body"><%- post.bodyHtml %></div>
-      <hr class="muted-rule">
-      <p><a href="<%= pricingUrl %>">Plugin pricing</a> · <a href="<%= appUrl %>">Open app</a> · <a href="<%= blogUrl %>">Back to blog</a></p>
-    </article>
-  </div>
-</body>
-</html>
+<body class="premium-site"><div class="premium-shell">
+  <%- include('partials/site-nav') %>
+  <main class="premium-container article-page"><a class="article-back" href="<%= blogUrl %>">← Blog</a><article class="premium-article"><header><div class="pill"><%= post.category %></div><h1><%= post.title %></h1><p><%= post.excerpt %></p><div class="journal-meta"><span><%= post.publishedAt %></span><span><%= post.readingMinutes %> min read</span><span><%= post.wordCount %> words</span></div></header><div class="blog-post-body"><%- post.bodyHtml %></div></article><section class="journal-cta"><div><h2>Ready to document the session?</h2><p>Create a split sheet, validate 100%, and send every signature link in one pass.</p></div><a class="premium-button premium-button-primary" href="<%= appUrl %>/split-sheet">Start a split sheet →</a></section></main>
+  <%- include('partials/site-footer') %>
+</div></body></html>

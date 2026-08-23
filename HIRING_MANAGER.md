@@ -1,7 +1,7 @@
-# Hiring Manager Snapshot
+﻿# Hiring Manager Snapshot
 
 ## Executive summary
-`SplitSheet Studio` is a rights-workflow product for music sessions. It captures split sheets, supports in-session or invite-based signatures, generates final packets, stores artifacts, and exposes the same workflow to both a hosted web app and a DAW plugin.
+`Split Sheet Studio` is a rights-workflow product for music sessions. It captures split sheets, supports in-session or invite-based signatures, generates final packets, stores artifacts, and exposes the same workflow to both a hosted web app and a DAW plugin.
 
 This repository is useful as a hiring artifact because it combines:
 - a real operations problem

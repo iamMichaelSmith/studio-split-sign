@@ -48,6 +48,10 @@ function mapUser(row) {
     email: row.email,
     displayName: row.display_name,
     status: row.status,
+    planKey: row.plan_key || "free",
+    planUpdatedAt: row.plan_updated_at || null,
+    stripeCustomerId: row.stripe_customer_id || null,
+    stripeSubscriptionId: row.stripe_subscription_id || null,
     emailVerifiedAt: row.email_verified_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -112,20 +116,60 @@ function createSqliteAdapter(db) {
   if (!userColumns.has("email_verified_at")) {
     db.exec(`ALTER TABLE users ADD COLUMN email_verified_at TEXT`);
   }
+  if (!userColumns.has("plan_key")) {
+    db.exec(`ALTER TABLE users ADD COLUMN plan_key TEXT`);
+  }
+  if (!userColumns.has("plan_updated_at")) {
+    db.exec(`ALTER TABLE users ADD COLUMN plan_updated_at TEXT`);
+  }
+  if (!userColumns.has("stripe_customer_id")) {
+    db.exec(`ALTER TABLE users ADD COLUMN stripe_customer_id TEXT`);
+  }
+  if (!userColumns.has("stripe_subscription_id")) {
+    db.exec(`ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT`);
+  }
 
   db.exec(`
     UPDATE users
     SET email_verified_at = COALESCE(email_verified_at, created_at)
-    WHERE email_verified_at IS NULL
+    WHERE email_verified_at IS NULL;
+
+    UPDATE users
+    SET plan_key = COALESCE(plan_key, 'free'),
+        plan_updated_at = COALESCE(plan_updated_at, updated_at, created_at)
+    WHERE plan_key IS NULL
   `);
 
   const insertUserStmt = db.prepare(`
-    INSERT INTO users (id, email, password_hash, display_name, status, email_verified_at, created_at, updated_at)
-    VALUES (@id, @email, @passwordHash, @displayName, 'active', @emailVerifiedAt, @createdAt, @updatedAt)
+    INSERT INTO users (
+      id, email, password_hash, display_name, status, plan_key, plan_updated_at,
+      email_verified_at, created_at, updated_at
+    )
+    VALUES (
+      @id, @email, @passwordHash, @displayName, 'active', @planKey, @planUpdatedAt,
+      @emailVerifiedAt, @createdAt, @updatedAt
+    )
   `);
   const userByEmailStmt = db.prepare(`SELECT * FROM users WHERE email = ?`);
   const userByIdStmt = db.prepare(`SELECT * FROM users WHERE id = ?`);
+  const listUsersStmt = db.prepare(`SELECT * FROM users ORDER BY created_at DESC`);
   const userCountStmt = db.prepare(`SELECT COUNT(*) AS count FROM users`);
+  const updateUserPlanStmt = db.prepare(`
+    UPDATE users
+    SET plan_key = @planKey,
+        plan_updated_at = @planUpdatedAt,
+        updated_at = @updatedAt
+    WHERE id = @id
+  `);
+  const updateUserBillingStmt = db.prepare(`
+    UPDATE users
+    SET plan_key = @planKey,
+        plan_updated_at = @planUpdatedAt,
+        stripe_customer_id = @stripeCustomerId,
+        stripe_subscription_id = @stripeSubscriptionId,
+        updated_at = @updatedAt
+    WHERE id = @id
+  `);
   const updateUserPasswordStmt = db.prepare(`
     UPDATE users
     SET password_hash = @passwordHash,
@@ -151,13 +195,13 @@ function createSqliteAdapter(db) {
     )
   `);
   const sessionByAccessHashStmt = db.prepare(`
-    SELECT s.*, u.email, u.display_name, u.status, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+    SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
     FROM auth_sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.access_token_hash = ?
   `);
   const sessionByRefreshHashStmt = db.prepare(`
-    SELECT s.*, u.email, u.display_name, u.status, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+    SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
     FROM auth_sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.refresh_token_hash = ?
@@ -183,7 +227,7 @@ function createSqliteAdapter(db) {
     VALUES (@id, @userId, @tokenHash, @expiresAt, @createdAt)
   `);
   const verificationByTokenHashStmt = db.prepare(`
-    SELECT t.*, u.email, u.display_name, u.status, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+    SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
     FROM email_verification_tokens t
     JOIN users u ON u.id = t.user_id
     WHERE t.token_hash = ?
@@ -197,7 +241,7 @@ function createSqliteAdapter(db) {
     VALUES (@id, @userId, @tokenHash, @expiresAt, @createdAt)
   `);
   const passwordResetByTokenHashStmt = db.prepare(`
-    SELECT t.*, u.email, u.display_name, u.status, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+    SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
     FROM password_reset_tokens t
     JOIN users u ON u.id = t.user_id
     WHERE t.token_hash = ?
@@ -221,12 +265,30 @@ function createSqliteAdapter(db) {
     async userById(id) {
       return userByIdStmt.get(id) || null;
     },
+    async listUsers() {
+      return listUsersStmt.all();
+    },
     async userCount() {
       return Number(userCountStmt.get().count || 0);
     },
     async insertUser(row) {
       insertUserStmt.run(row);
       return userByIdStmt.get(row.id);
+    },
+    async updateUserPlan({ id, planKey, planUpdatedAt, updatedAt }) {
+      updateUserPlanStmt.run({ id, planKey, planUpdatedAt, updatedAt });
+      return userByIdStmt.get(id) || null;
+    },
+    async updateUserBilling({ id, planKey, planUpdatedAt, stripeCustomerId, stripeSubscriptionId, updatedAt }) {
+      updateUserBillingStmt.run({
+        id,
+        planKey,
+        planUpdatedAt,
+        stripeCustomerId,
+        stripeSubscriptionId,
+        updatedAt
+      });
+      return userByIdStmt.get(id) || null;
     },
     async updateUserPassword({ id, passwordHash, updatedAt }) {
       updateUserPasswordStmt.run({ id, passwordHash, updatedAt });
@@ -295,6 +357,10 @@ function createPostgresAdapter(pool) {
       );
 
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_key TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_updated_at TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
 
       CREATE TABLE IF NOT EXISTS auth_sessions (
         id TEXT PRIMARY KEY,
@@ -337,6 +403,11 @@ function createPostgresAdapter(pool) {
       UPDATE users
       SET email_verified_at = COALESCE(email_verified_at, created_at)
       WHERE email_verified_at IS NULL;
+
+      UPDATE users
+      SET plan_key = COALESCE(plan_key, 'free'),
+          plan_updated_at = COALESCE(plan_updated_at, updated_at, created_at)
+      WHERE plan_key IS NULL;
     `);
   })();
 
@@ -361,6 +432,11 @@ function createPostgresAdapter(pool) {
       const result = await pool.query(`SELECT * FROM users WHERE id = $1`, [id]);
       return result.rows[0] || null;
     },
+    async listUsers() {
+      await ready;
+      const result = await pool.query(`SELECT * FROM users ORDER BY created_at DESC`);
+      return result.rows;
+    },
     async userCount() {
       await ready;
       const result = await pool.query(`SELECT COUNT(*)::int AS count FROM users`);
@@ -369,10 +445,42 @@ function createPostgresAdapter(pool) {
     async insertUser(row) {
       await ready;
       const result = await pool.query(`
-        INSERT INTO users (id, email, password_hash, display_name, status, email_verified_at, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, 'active', $5, $6, $7)
+        INSERT INTO users (
+          id, email, password_hash, display_name, status, plan_key, plan_updated_at,
+          email_verified_at, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9)
         RETURNING *
-      `, [row.id, row.email, row.passwordHash, row.displayName, row.emailVerifiedAt, row.createdAt, row.updatedAt]);
+      `, [
+        row.id, row.email, row.passwordHash, row.displayName, row.planKey, row.planUpdatedAt,
+        row.emailVerifiedAt, row.createdAt, row.updatedAt
+      ]);
+      return result.rows[0] || null;
+    },
+    async updateUserPlan({ id, planKey, planUpdatedAt, updatedAt }) {
+      await ready;
+      const result = await pool.query(`
+        UPDATE users
+        SET plan_key = $1,
+            plan_updated_at = $2,
+            updated_at = $3
+        WHERE id = $4
+        RETURNING *
+      `, [planKey, planUpdatedAt, updatedAt, id]);
+      return result.rows[0] || null;
+    },
+    async updateUserBilling({ id, planKey, planUpdatedAt, stripeCustomerId, stripeSubscriptionId, updatedAt }) {
+      await ready;
+      const result = await pool.query(`
+        UPDATE users
+        SET plan_key = $1,
+            plan_updated_at = $2,
+            stripe_customer_id = $3,
+            stripe_subscription_id = $4,
+            updated_at = $5
+        WHERE id = $6
+        RETURNING *
+      `, [planKey, planUpdatedAt, stripeCustomerId, stripeSubscriptionId, updatedAt, id]);
       return result.rows[0] || null;
     },
     async updateUserPassword({ id, passwordHash, updatedAt }) {
@@ -415,7 +523,7 @@ function createPostgresAdapter(pool) {
     async sessionByAccessHash(hash) {
       await ready;
       const result = await pool.query(`
-        SELECT s.*, u.email, u.display_name, u.status, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+        SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
         FROM auth_sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.access_token_hash = $1
@@ -425,7 +533,7 @@ function createPostgresAdapter(pool) {
     async sessionByRefreshHash(hash) {
       await ready;
       const result = await pool.query(`
-        SELECT s.*, u.email, u.display_name, u.status, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+        SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
         FROM auth_sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.refresh_token_hash = $1
@@ -470,7 +578,7 @@ function createPostgresAdapter(pool) {
     async verificationByTokenHash(hash) {
       await ready;
       const result = await pool.query(`
-        SELECT t.*, u.email, u.display_name, u.status, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+        SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
         FROM email_verification_tokens t
         JOIN users u ON u.id = t.user_id
         WHERE t.token_hash = $1
@@ -496,7 +604,7 @@ function createPostgresAdapter(pool) {
     async passwordResetByTokenHash(hash) {
       await ready;
       const result = await pool.query(`
-        SELECT t.*, u.email, u.display_name, u.status, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+        SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
         FROM password_reset_tokens t
         JOIN users u ON u.id = t.user_id
         WHERE t.token_hash = $1
@@ -536,7 +644,7 @@ function createAuthService({
     await adapter.cleanupExpiredTokens();
   }
 
-  async function createUserInternal({ email, password, displayName, emailVerifiedAt = null }) {
+  async function createUserInternal({ email, password, displayName, emailVerifiedAt = null, planKey = "free" }) {
     const normalizedEmail = normalizeEmail(email);
     const normalizedDisplayName = String(displayName || "").trim();
     const normalizedPassword = String(password || "");
@@ -560,6 +668,8 @@ function createAuthService({
       email: normalizedEmail,
       passwordHash: hashPassword(normalizedPassword),
       displayName: normalizedDisplayName,
+      planKey,
+      planUpdatedAt: timestamp,
       emailVerifiedAt,
       createdAt: timestamp,
       updatedAt: timestamp
@@ -634,10 +744,11 @@ function createAuthService({
     const email = normalizeEmail(bootstrapOwner?.email);
     const password = String(bootstrapOwner?.password || "");
     const displayName = String(bootstrapOwner?.displayName || "").trim() || "Owner";
+    const planKey = String(bootstrapOwner?.planKey || "studio_pro").trim() || "studio_pro";
 
     if (!email || !password) return;
     if ((await adapter.userCount()) > 0) return;
-    await createUserInternal({ email, password, displayName, emailVerifiedAt: nowIso() });
+    await createUserInternal({ email, password, displayName, emailVerifiedAt: nowIso(), planKey });
   })();
 
   async function registerUser({ email, password, displayName, ip, userAgent }) {
@@ -687,6 +798,33 @@ function createAuthService({
     async getUserByEmail(email) {
       await bootstrapReady;
       return mapUser(await adapter.userByEmail(normalizeEmail(email)));
+    },
+    async listUsers() {
+      await bootstrapReady;
+      const rows = await adapter.listUsers();
+      return rows.map(mapUser);
+    },
+    async updateUserPlan({ userId, planKey }) {
+      await bootstrapReady;
+      const timestamp = nowIso();
+      return mapUser(await adapter.updateUserPlan({
+        id: userId,
+        planKey,
+        planUpdatedAt: timestamp,
+        updatedAt: timestamp
+      }));
+    },
+    async updateUserBilling({ userId, planKey, stripeCustomerId = null, stripeSubscriptionId = null }) {
+      await bootstrapReady;
+      const timestamp = nowIso();
+      return mapUser(await adapter.updateUserBilling({
+        id: userId,
+        planKey,
+        planUpdatedAt: timestamp,
+        stripeCustomerId,
+        stripeSubscriptionId,
+        updatedAt: timestamp
+      }));
     },
     registerUser,
     async createSession({ email, password, ip, userAgent }) {
@@ -820,6 +958,10 @@ function createAuthService({
           email: row.email,
           displayName: row.display_name,
           status: row.status,
+          planKey: row.plan_key || "free",
+          planUpdatedAt: row.plan_updated_at || null,
+          stripeCustomerId: row.stripe_customer_id || null,
+          stripeSubscriptionId: row.stripe_subscription_id || null,
           emailVerifiedAt: row.email_verified_at || null,
           createdAt: row.user_created_at,
           updatedAt: row.user_updated_at
@@ -863,12 +1005,16 @@ function createAuthService({
       return {
         user: {
           id: row.user_id,
-          email: row.email,
-          displayName: row.display_name,
-          status: row.status,
-          emailVerifiedAt: row.email_verified_at || null,
-          createdAt: row.user_created_at,
-          updatedAt: row.user_updated_at
+        email: row.email,
+        displayName: row.display_name,
+        status: row.status,
+        planKey: row.plan_key || "free",
+        planUpdatedAt: row.plan_updated_at || null,
+        stripeCustomerId: row.stripe_customer_id || null,
+        stripeSubscriptionId: row.stripe_subscription_id || null,
+        emailVerifiedAt: row.email_verified_at || null,
+        createdAt: row.user_created_at,
+        updatedAt: row.user_updated_at
         },
         tokenType: "Bearer",
         accessToken: nextAccessToken,

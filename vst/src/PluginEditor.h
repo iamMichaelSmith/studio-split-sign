@@ -24,6 +24,7 @@ private:
     };
 
     class PaintedComponent;
+    class PremiumLookAndFeel;
     class SignaturePad;
 
     struct ContributorRow
@@ -76,6 +77,7 @@ private:
     void populateSignedInDefaults();
 
     SplitSheetStudioProcessor& processor;
+    std::unique_ptr<PremiumLookAndFeel> premiumLookAndFeel;
 
     juce::Label titleLabel;
     juce::Label subtitleLabel;

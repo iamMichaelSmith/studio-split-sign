@@ -1,1 +1,93 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Admin</title><link rel="stylesheet" href="/style.css"></head><body><div class="wrap"><h1>Submitted Documents</h1><div class="card"><% if(!docs.length){ %><p>No submissions yet.</p><% } %><% docs.forEach(d=>{ %><div style="border-bottom:1px solid #2a3345;padding:12px 0"><div><span class="pill"><%= d.type %></span> <b><%= d.id %></b> <span class="small"><%= d.createdAt %></span></div><div class="small" style="margin-top:4px;">Status: <b><%= d.status || 'completed' %></b> <% if (d.type === 'split-sheet' && d.signerStats) { %> | Signers: <b><%= d.signerStats.signed %>/<%= d.signerStats.total %></b> (pending <%= d.signerStats.pending %>)<% } %></div><div style="margin-top:6px;"><a href="/admin/doc/<%= d.id %>" target="_blank">view json</a> <% if (d.type === 'split-sheet') { %> - <a href="/admin/split/<%= d.id %>">open signer timeline</a> - <a href="/split-sheet/pdf/<%= d.id %>" target="_blank">download pdf</a> <% if ((d.signerStats && d.signerStats.pending > 0)) { %>- <form method="post" action="/admin/split/<%= d.id %>/remind" style="display:inline;"><button type="submit" style="width:auto;padding:6px 10px;">Send reminder to pending signers</button></form><% } %><% } %></div></div><% }) %></div></div></body></html>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin | Split Sheet Studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <h1>Admin Dashboard</h1>
+    <p class="small">Manage users, plan tiers, usage, signature status, and submitted split sheets.</p>
+
+    <% if (banner) { %>
+      <div class="banner"><%= banner %></div>
+    <% } %>
+
+    <div class="grid">
+      <div class="card">
+        <div class="stat-label">Users</div>
+        <div class="stat-value"><%= users.length %></div>
+      </div>
+      <div class="card">
+        <div class="stat-label">Split sheets</div>
+        <div class="stat-value"><%= docs.filter((doc) => doc.type === 'split-sheet').length %></div>
+      </div>
+      <div class="card">
+        <div class="stat-label">Pending signatures</div>
+        <div class="stat-value"><%= docs.filter((doc) => doc.type === 'split-sheet' && doc.status === 'pending-signatures').length %></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Users and Plans</h2>
+      <% if (!users.length) { %>
+        <p>No users yet.</p>
+      <% } %>
+      <% users.forEach((user) => { %>
+        <div class="timeline-item">
+          <div class="timeline-top">
+            <div>
+              <b><%= user.displayName %></b>
+              <div class="small"><%= user.email %> · <%= user.status %> · verified: <%= user.emailVerifiedAt ? 'yes' : 'no' %></div>
+              <div class="small"><%= user.usage.used %>/<%= user.usage.limit %> split sheets used in <%= user.usage.window.label %></div>
+            </div>
+            <form method="post" action="/admin/users/<%= user.id %>/plan" class="admin-plan-form">
+              <select name="planKey" aria-label="Plan for <%= user.email %>">
+                <% planOptions.forEach((plan) => { %>
+                  <option value="<%= plan.key %>" <%= user.planKey === plan.key ? 'selected' : '' %>><%= plan.name %> · <%= plan.monthlySheetLimit %>/mo</option>
+                <% }) %>
+              </select>
+              <button type="submit">Update plan</button>
+            </form>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+
+    <div class="card">
+      <h2>Submitted Documents</h2>
+      <% if (!docs.length) { %>
+        <p>No submissions yet.</p>
+      <% } %>
+      <% docs.forEach((doc) => { %>
+        <div class="timeline-item">
+          <div>
+            <span class="pill"><%= doc.type %></span>
+            <b><%= doc.payload?.songTitle || doc.id %></b>
+            <span class="small"><%= doc.createdAt %></span>
+          </div>
+          <div class="small" style="margin-top:4px;">
+            Status: <b><%= doc.status || 'completed' %></b>
+            <% if (doc.ownerEmail) { %> · Owner: <%= doc.ownerEmail %><% } %>
+            <% if (doc.type === 'split-sheet' && doc.signerStats) { %>
+              · Signers: <b><%= doc.signerStats.signed %>/<%= doc.signerStats.total %></b> pending <%= doc.signerStats.pending %>
+            <% } %>
+          </div>
+          <div class="inline-actions">
+            <a href="/admin/doc/<%= doc.id %>" target="_blank">View JSON</a>
+            <% if (doc.type === 'split-sheet') { %>
+              <a href="/admin/split/<%= doc.id %>">Signer timeline</a>
+              <a href="/split-sheet/pdf/<%= doc.id %>" target="_blank">Download PDF</a>
+              <% if (doc.signerStats && doc.signerStats.pending > 0) { %>
+                <form method="post" action="/admin/split/<%= doc.id %>/remind"><button type="submit">Send reminder</button></form>
+              <% } %>
+            <% } %>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+</body>
+</html>

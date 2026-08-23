@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in | Split Sheet Studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap auth-wrap">
+    <div class="auth-card card">
+      <h1>Sign in</h1>
+      <p class="small">Use the same Split Sheet Studio account for the web app and plugin.</p>
+      <% if (error) { %>
+        <div class="card legal-note"><%= error %></div>
+      <% } %>
+      <form method="post" action="/login">
+        <input type="hidden" name="next" value="<%= next %>">
+        <label>Email</label>
+        <input type="email" name="email" value="<%= values.email %>" required>
+        <label>Password</label>
+        <input type="password" name="password" required>
+        <button type="submit">Sign in</button>
+      </form>
+      <p class="small auth-links">
+        <a href="<%= signupUrl %>">Create account</a>
+        <a href="<%= forgotPasswordUrl %>">Forgot password</a>
+        <a href="mailto:<%= supportEmail %>">Support</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>

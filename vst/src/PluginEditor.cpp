@@ -1,22 +1,25 @@
-#include "PluginEditor.h"
+﻿#include "PluginEditor.h"
+#include <BinaryData.h>
 #include <array>
 #include <cmath>
 
 namespace
 {
-    const auto backgroundColour = juce::Colour::fromRGB(16, 18, 22);
-    const auto panelColour = juce::Colour::fromRGB(24, 28, 34);
-    const auto sectionColour = juce::Colour::fromRGB(18, 21, 26);
-    const auto cardColour = juce::Colour::fromRGB(10, 12, 16);
-    const auto fieldColour = juce::Colour::fromRGB(35, 41, 47);
-    const auto fieldOutlineColour = juce::Colour::fromRGB(70, 80, 88);
-    const auto accentColour = juce::Colour::fromRGB(212, 175, 55);
-    const auto successColour = juce::Colour::fromRGB(42, 120, 80);
-    const auto warningColour = juce::Colour::fromRGB(125, 95, 30);
-    const auto errorColour = juce::Colour::fromRGB(130, 54, 54);
-    const auto neutralColour = juce::Colour::fromRGB(59, 70, 79);
-    const auto subduedText = juce::Colour::fromRGB(188, 188, 188);
-    const auto placeholderColour = juce::Colour::fromRGB(122, 132, 140);
+    const auto backgroundColour = juce::Colour::fromRGB(27, 17, 12);
+    const auto panelColour = juce::Colour::fromRGB(74, 49, 35);
+    const auto sectionColour = juce::Colour::fromRGB(53, 35, 25);
+    const auto cardColour = juce::Colour::fromRGB(40, 25, 18);
+    const auto fieldColour = juce::Colour::fromRGB(70, 48, 36);
+    const auto fieldOutlineColour = juce::Colour::fromRGB(151, 101, 66);
+    const auto accentColour = juce::Colour::fromRGB(243, 189, 130);
+    const auto successColour = juce::Colour::fromRGB(71, 151, 105);
+    const auto warningColour = juce::Colour::fromRGB(145, 109, 44);
+    const auto errorColour = juce::Colour::fromRGB(145, 64, 58);
+    const auto neutralColour = juce::Colour::fromRGB(95, 65, 47);
+    const auto ivoryColour = juce::Colour::fromRGB(255, 242, 223);
+    const auto taupeColour = juce::Colour::fromRGB(201, 161, 127);
+    const auto subduedText = juce::Colour::fromRGB(229, 200, 170);
+    const auto placeholderColour = juce::Colour::fromRGB(184, 145, 115);
 
     juce::String todayIso()
     {
@@ -29,11 +32,11 @@ namespace
         editor.setColour(juce::TextEditor::backgroundColourId, fieldColour);
         editor.setColour(juce::TextEditor::outlineColourId, fieldOutlineColour);
         editor.setColour(juce::TextEditor::focusedOutlineColourId, accentColour);
-        editor.setColour(juce::TextEditor::textColourId, juce::Colours::white);
+        editor.setColour(juce::TextEditor::textColourId, ivoryColour);
         editor.setColour(juce::TextEditor::highlightedTextColourId, juce::Colours::black);
         editor.setColour(juce::TextEditor::highlightColourId, accentColour);
-        editor.setColour(juce::CaretComponent::caretColourId, juce::Colours::white);
-        editor.setIndents(10, multiline ? 10 : 8);
+        editor.setColour(juce::CaretComponent::caretColourId, accentColour);
+        editor.setIndents(12, multiline ? 11 : 8);
         editor.setMultiLine(multiline, true);
         editor.setReturnKeyStartsNewLine(multiline);
         editor.setScrollbarsShown(multiline);
@@ -46,13 +49,13 @@ namespace
         comboBox.setColour(juce::ComboBox::backgroundColourId, fieldColour);
         comboBox.setColour(juce::ComboBox::outlineColourId, fieldOutlineColour);
         comboBox.setColour(juce::ComboBox::focusedOutlineColourId, accentColour);
-        comboBox.setColour(juce::ComboBox::textColourId, juce::Colours::white);
-        comboBox.setColour(juce::ComboBox::arrowColourId, juce::Colours::white);
+        comboBox.setColour(juce::ComboBox::textColourId, ivoryColour);
+        comboBox.setColour(juce::ComboBox::arrowColourId, accentColour);
     }
 
     void styleButton(juce::TextButton& button,
-                     juce::Colour colour = juce::Colour::fromRGB(48, 58, 66),
-                     juce::Colour text = juce::Colours::white)
+                     juce::Colour colour = juce::Colour::fromRGB(54, 48, 42),
+                     juce::Colour text = ivoryColour)
     {
         button.setColour(juce::TextButton::buttonColourId, colour);
         button.setColour(juce::TextButton::buttonOnColourId, accentColour);
@@ -62,11 +65,11 @@ namespace
 
     void styleStepButton(juce::TextButton& button, bool active)
     {
-        styleButton(button, active ? accentColour : juce::Colour::fromRGB(41, 48, 54),
-                    active ? juce::Colours::black : juce::Colours::white);
+        styleButton(button, active ? accentColour : juce::Colour::fromRGB(47, 40, 35),
+                    active ? juce::Colour::fromRGB(54, 48, 42) : taupeColour);
     }
 
-    void styleLabel(juce::Label& label, float size = 14.0f, bool bold = true, juce::Colour colour = juce::Colour::fromRGB(230, 230, 230))
+    void styleLabel(juce::Label& label, float size = 14.0f, bool bold = true, juce::Colour colour = ivoryColour)
     {
         label.setColour(juce::Label::textColourId, colour);
         label.setFont(juce::FontOptions(size, bold ? juce::Font::bold : juce::Font::plain));
@@ -74,7 +77,7 @@ namespace
 
     void styleToggle(juce::ToggleButton& toggle)
     {
-        toggle.setColour(juce::ToggleButton::textColourId, juce::Colour::fromRGB(230, 230, 230));
+        toggle.setColour(juce::ToggleButton::textColourId, subduedText);
         toggle.setColour(juce::ToggleButton::tickColourId, accentColour);
         toggle.setColour(juce::ToggleButton::tickDisabledColourId, fieldOutlineColour);
     }
@@ -103,7 +106,151 @@ namespace
         const auto publisherText = publisherShareEditor.getText().trim();
         return publisherText.isNotEmpty() ? shareValue(publisherText) : shareValue(writerShareEditor.getText());
     }
+
+    void drawBrandMark(juce::Graphics& graphics, juce::Rectangle<float> area)
+    {
+        juce::ColourGradient markGradient(juce::Colour::fromRGB(72, 63, 54), area.getX(), area.getY(),
+                                          juce::Colour::fromRGB(18, 15, 14), area.getRight(), area.getBottom(), false);
+        graphics.setGradientFill(markGradient);
+        graphics.fillEllipse(area);
+        graphics.setColour(accentColour.withAlpha(0.7f));
+        graphics.drawEllipse(area.reduced(0.75f), 1.2f);
+        graphics.drawEllipse(area.reduced(7.0f), 0.8f);
+
+        juce::Path petals;
+        auto petal = area.reduced(11.0f);
+        auto horizontalPetal = petal.withSizeKeepingCentre(petal.getWidth(), petal.getHeight() * 0.48f);
+        auto verticalPetal = petal.withSizeKeepingCentre(petal.getWidth() * 0.48f, petal.getHeight());
+        petals.addEllipse(horizontalPetal);
+        petals.addEllipse(verticalPetal);
+        graphics.setColour(accentColour.withAlpha(0.13f));
+        graphics.fillPath(petals);
+        graphics.setColour(accentColour);
+        graphics.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+        graphics.drawFittedText("SS", area.toNearestInt(), juce::Justification::centred, 1);
+    }
 }
+
+class SplitSheetStudioEditor::PremiumLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    PremiumLookAndFeel()
+    {
+        setColour(juce::PopupMenu::backgroundColourId, juce::Colour::fromRGB(33, 28, 25));
+        setColour(juce::PopupMenu::textColourId, ivoryColour);
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, accentColour);
+        setColour(juce::PopupMenu::highlightedTextColourId, juce::Colour::fromRGB(54, 48, 42));
+        setColour(juce::ScrollBar::thumbColourId, taupeColour.withAlpha(0.56f));
+        setColour(juce::ScrollBar::trackColourId, juce::Colours::transparentBlack);
+    }
+
+    void drawButtonBackground(juce::Graphics& graphics,
+                              juce::Button& button,
+                              const juce::Colour& background,
+                              bool isHighlighted,
+                              bool isDown) override
+    {
+        auto bounds = button.getLocalBounds().toFloat().reduced(0.75f);
+        const auto highlightAmount = isHighlighted ? 0.08f : 0.0f;
+        const auto pressAmount = isDown ? 0.12f : 0.0f;
+        const auto topColour = (background == accentColour ? juce::Colour::fromRGB(255, 219, 177) : background.brighter(0.06f + highlightAmount)).darker(pressAmount);
+        const auto bottomColour = (background == accentColour ? juce::Colour::fromRGB(185, 111, 61) : background.darker(0.10f)).darker(pressAmount);
+        juce::ColourGradient buttonGradient(topColour, bounds.getCentreX(), bounds.getY(),
+                                            bottomColour, bounds.getCentreX(), bounds.getBottom(), false);
+        graphics.setGradientFill(buttonGradient);
+        graphics.fillRoundedRectangle(bounds, 6.0f);
+        graphics.setColour((background == accentColour ? accentColour.brighter(0.18f) : taupeColour.withAlpha(isHighlighted ? 0.72f : 0.34f)));
+        graphics.drawRoundedRectangle(bounds, 6.0f, 1.0f);
+
+        auto highlight = bounds.reduced(1.0f).removeFromTop(1.0f);
+        graphics.setColour(juce::Colours::white.withAlpha(isHighlighted ? 0.16f : 0.07f));
+        graphics.fillRect(highlight);
+    }
+
+    void drawButtonText(juce::Graphics& graphics,
+                        juce::TextButton& button,
+                        bool,
+                        bool) override
+    {
+        graphics.setFont(juce::FontOptions(12.5f, juce::Font::bold));
+        graphics.setColour(button.findColour(button.getToggleState()
+                                                 ? juce::TextButton::textColourOnId
+                                                 : juce::TextButton::textColourOffId)
+                               .withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.42f));
+        graphics.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(8, 2), juce::Justification::centred, 1);
+    }
+
+    void drawComboBox(juce::Graphics& graphics,
+                      int width,
+                      int height,
+                      bool,
+                      int,
+                      int,
+                      int,
+                      int,
+                      juce::ComboBox& box) override
+    {
+        auto bounds = juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width - 1), static_cast<float>(height - 1));
+        graphics.setColour(box.findColour(juce::ComboBox::backgroundColourId));
+        graphics.fillRoundedRectangle(bounds, 6.0f);
+        graphics.setColour(box.hasKeyboardFocus(true) ? accentColour : fieldOutlineColour);
+        graphics.drawRoundedRectangle(bounds, 6.0f, box.hasKeyboardFocus(true) ? 1.5f : 1.0f);
+
+        juce::Path arrow;
+        const auto centreX = static_cast<float>(width - 17);
+        const auto centreY = static_cast<float>(height) * 0.5f;
+        arrow.startNewSubPath(centreX - 4.0f, centreY - 2.0f);
+        arrow.lineTo(centreX, centreY + 2.0f);
+        arrow.lineTo(centreX + 4.0f, centreY - 2.0f);
+        graphics.setColour(accentColour);
+        graphics.strokePath(arrow, juce::PathStrokeType(1.6f));
+    }
+
+    void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override
+    {
+        label.setBounds(12, 1, box.getWidth() - 34, box.getHeight() - 2);
+        label.setFont(juce::FontOptions(12.5f));
+    }
+
+    void fillTextEditorBackground(juce::Graphics& graphics, int width, int height, juce::TextEditor& editor) override
+    {
+        graphics.setColour(editor.findColour(juce::TextEditor::backgroundColourId));
+        graphics.fillRoundedRectangle(juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)), 6.0f);
+    }
+
+    void drawTextEditorOutline(juce::Graphics& graphics, int width, int height, juce::TextEditor& editor) override
+    {
+        auto bounds = juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width - 1), static_cast<float>(height - 1));
+        graphics.setColour(editor.hasKeyboardFocus(true) ? accentColour : fieldOutlineColour);
+        graphics.drawRoundedRectangle(bounds, 6.0f, editor.hasKeyboardFocus(true) ? 1.5f : 1.0f);
+    }
+
+    void drawToggleButton(juce::Graphics& graphics,
+                          juce::ToggleButton& button,
+                          bool isHighlighted,
+                          bool) override
+    {
+        auto box = juce::Rectangle<float>(2.0f, (static_cast<float>(button.getHeight()) - 17.0f) * 0.5f, 17.0f, 17.0f);
+        graphics.setColour(button.getToggleState() ? accentColour : fieldColour);
+        graphics.fillRoundedRectangle(box, 4.0f);
+        graphics.setColour(button.getToggleState() ? accentColour.brighter(0.15f) : taupeColour.withAlpha(isHighlighted ? 0.8f : 0.42f));
+        graphics.drawRoundedRectangle(box, 4.0f, 1.0f);
+
+        if (button.getToggleState())
+        {
+            juce::Path tick;
+            tick.startNewSubPath(5.8f, box.getCentreY());
+            tick.lineTo(9.0f, box.getBottom() - 4.6f);
+            tick.lineTo(15.5f, box.getY() + 4.8f);
+            graphics.setColour(juce::Colour::fromRGB(54, 48, 42));
+            graphics.strokePath(tick, juce::PathStrokeType(1.9f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+
+        graphics.setColour(button.findColour(juce::ToggleButton::textColourId).withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.45f));
+        graphics.setFont(juce::FontOptions(12.5f));
+        graphics.drawFittedText(button.getButtonText(), button.getLocalBounds().withTrimmedLeft(29), juce::Justification::centredLeft, 2);
+    }
+};
 
 class SplitSheetStudioEditor::PaintedComponent final : public juce::Component
 {
@@ -241,6 +388,9 @@ private:
 SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     : juce::AudioProcessorEditor(&value), processor(value)
 {
+    premiumLookAndFeel = std::make_unique<PremiumLookAndFeel>();
+    setLookAndFeel(premiumLookAndFeel.get());
+
     contributorsCanvas = std::make_unique<PaintedComponent>();
     contributorsCanvas->onPaint = [this](juce::Graphics& graphics)
     {
@@ -248,7 +398,7 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
         {
             graphics.setColour(cardColour);
             graphics.fillRoundedRectangle(cardBounds.toFloat(), 10.0f);
-            graphics.setColour(juce::Colour::fromRGB(44, 48, 54));
+            graphics.setColour(taupeColour.withAlpha(0.24f));
             graphics.drawRoundedRectangle(cardBounds.toFloat(), 10.0f, 1.0f);
         }
     };
@@ -256,22 +406,23 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     contributorsViewport.setScrollBarsShown(true, false);
     contributorsViewport.setScrollBarThickness(10);
 
-    titleLabel.setText("SplitSheet Studio", juce::dontSendNotification);
+    titleLabel.setText("Split Sheet Studio", juce::dontSendNotification);
     titleLabel.setJustificationType(juce::Justification::centredLeft);
-    titleLabel.setFont(juce::FontOptions(24.0f, juce::Font::bold));
+    titleLabel.setColour(juce::Label::textColourId, ivoryColour);
+    titleLabel.setFont(juce::FontOptions(25.0f, juce::Font::bold));
 
-    subtitleLabel.setText("Match the full Split Sheet form inside your DAW session.", juce::dontSendNotification);
+    subtitleLabel.setText("Rights clarity for real studio sessions.  |  Powered by Blak Marigold", juce::dontSendNotification);
     subtitleLabel.setJustificationType(juce::Justification::centredLeft);
     subtitleLabel.setColour(juce::Label::textColourId, subduedText);
     subtitleLabel.setFont(juce::FontOptions(12.5f));
 
     statusLabel.setJustificationType(juce::Justification::centredLeft);
-    statusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(227, 227, 227));
+    statusLabel.setColour(juce::Label::textColourId, subduedText);
     statusLabel.setFont(juce::FontOptions(14.0f, juce::Font::plain));
 
-    statusBadgeLabel.setText("Status", juce::dontSendNotification);
+    statusBadgeLabel.setText("SYSTEM", juce::dontSendNotification);
     statusBadgeLabel.setJustificationType(juce::Justification::centred);
-    statusBadgeLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    statusBadgeLabel.setColour(juce::Label::textColourId, ivoryColour);
     statusBadgeLabel.setFont(juce::FontOptions(12.5f, juce::Font::bold));
     statusBadgeLabel.setOpaque(true);
 
@@ -279,7 +430,7 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     emailLabel.setText("Email", juce::dontSendNotification);
     passwordLabel.setText("Password", juce::dontSendNotification);
     welcomeLabel.setJustificationType(juce::Justification::centredLeft);
-    welcomeLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(227, 227, 227));
+    welcomeLabel.setColour(juce::Label::textColourId, ivoryColour);
     welcomeLabel.setFont(juce::FontOptions(15.0f, juce::Font::bold));
 
     songTitleLabel.setText("Song Title", juce::dontSendNotification);
@@ -364,13 +515,13 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
 
     styleButton(settingsButton);
     styleButton(readyButton);
-    styleButton(loginButton, accentColour, juce::Colours::black);
+    styleButton(loginButton, accentColour, panelColour);
     styleButton(createAccountButton);
     styleButton(forgotPasswordButton);
     styleButton(addContributorButton);
     styleButton(setEqualSplitsButton);
     styleButton(nextStepButton);
-    styleButton(submitButton, accentColour, juce::Colours::black);
+    styleButton(submitButton, accentColour, panelColour);
     styleButton(logoutButton);
     styleStepButton(songStepButton, true);
     styleStepButton(contributorsStepButton, false);
@@ -422,8 +573,18 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
 
     buildContributorRow();
 
-    updateStatus("Ready", neutralColour);
-    setSize(980, 760);
+    songStepButton.setButtonText("01  SONG");
+    contributorsStepButton.setButtonText("02  CONTRIBUTORS");
+    reviewStepButton.setButtonText("03  REVIEW & SEND");
+    settingsButton.setButtonText("Preferences");
+    loginButton.setButtonText("SIGN IN");
+    createAccountButton.setButtonText("CREATE ACCOUNT");
+    forgotPasswordButton.setButtonText("FORGOT PASSWORD?");
+    nextStepButton.setButtonText("Continue  >");
+    submitButton.setButtonText("Send Split Sheet  >");
+
+    updateStatus("Ready to connect", neutralColour);
+    setSize(1000, 760);
 
     restoreSessionIfNeeded();
     refreshViewState();
@@ -431,6 +592,7 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
 
 SplitSheetStudioEditor::~SplitSheetStudioEditor()
 {
+    setLookAndFeel(nullptr);
     settingsButton.removeListener(this);
     readyButton.removeListener(this);
     loginButton.removeListener(this);
@@ -457,34 +619,150 @@ void SplitSheetStudioEditor::paint(juce::Graphics& graphics)
     auto bounds = getLocalBounds().toFloat();
     graphics.fillAll(backgroundColour);
 
-    juce::ColourGradient gradient(panelColour, 0.0f, 0.0f,
-                                  juce::Colour::fromRGB(12, 14, 18), 0.0f, bounds.getBottom(),
+    if (!isAuthenticated())
+    {
+        juce::ColourGradient bronzeGradient(juce::Colour::fromRGB(102, 70, 51), bounds.getCentreX(), 0.0f,
+                                             juce::Colour::fromRGB(25, 15, 11), bounds.getCentreX(), bounds.getBottom(), false);
+        bronzeGradient.addColour(0.42, juce::Colour::fromRGB(68, 45, 33));
+        bronzeGradient.addColour(0.76, juce::Colour::fromRGB(40, 25, 18));
+        graphics.setGradientFill(bronzeGradient);
+        graphics.fillRoundedRectangle(bounds.reduced(10.0f), 16.0f);
+
+        const auto bronzeTexture = juce::ImageCache::getFromMemory(BinaryData::bronzetexture_png,
+                                                                   BinaryData::bronzetexture_pngSize);
+        if (bronzeTexture.isValid())
+        {
+            graphics.saveState();
+            graphics.setOpacity(0.16f);
+            graphics.drawImageWithin(bronzeTexture, 10, 10, getWidth() - 20, getHeight() - 20,
+                                     juce::RectanglePlacement::fillDestination);
+            graphics.restoreState();
+        }
+
+        graphics.setColour(accentColour.withAlpha(0.035f));
+        for (float y = 16.0f; y < bounds.getBottom() - 12.0f; y += 6.0f)
+            graphics.drawHorizontalLine(static_cast<int>(y), 12.0f, bounds.getRight() - 12.0f);
+
+        graphics.setColour(accentColour.withAlpha(0.24f));
+        juce::Path leftFacet;
+        leftFacet.startNewSubPath(12.0f, 150.0f);
+        leftFacet.lineTo(185.0f, 150.0f);
+        leftFacet.lineTo(245.0f, bounds.getBottom() - 16.0f);
+        graphics.strokePath(leftFacet, juce::PathStrokeType(1.0f));
+        juce::Path rightFacet;
+        rightFacet.startNewSubPath(bounds.getRight() - 12.0f, 150.0f);
+        rightFacet.lineTo(bounds.getRight() - 185.0f, 150.0f);
+        rightFacet.lineTo(bounds.getRight() - 245.0f, bounds.getBottom() - 16.0f);
+        graphics.strokePath(rightFacet, juce::PathStrokeType(1.0f));
+
+        graphics.setColour(taupeColour.withAlpha(0.48f));
+        graphics.drawRoundedRectangle(bounds.reduced(10.0f), 16.0f, 1.0f);
+        auto topAccent = bounds.reduced(10.0f).removeFromTop(4.0f);
+        juce::ColourGradient accentGradient(juce::Colour::fromRGB(255, 221, 178), topAccent.getX(), topAccent.getY(),
+                                             juce::Colour::fromRGB(185, 111, 61), topAccent.getRight(), topAccent.getY(), false);
+        graphics.setGradientFill(accentGradient);
+        graphics.fillRoundedRectangle(topAccent, 3.0f);
+
+        auto markArea = juce::Rectangle<float>(0.0f, 0.0f, 70.0f, 70.0f).withCentre(juce::Point<float>(bounds.getCentreX(), 54.0f));
+        drawBrandMark(graphics, markArea);
+        graphics.setColour(ivoryColour);
+        graphics.setFont(juce::FontOptions(21.0f, juce::Font::bold));
+        graphics.drawFittedText("S P L I T S H E E T   S T U D I O", juce::Rectangle<int>(130, 94, getWidth() - 260, 28), juce::Justification::centred, 1);
+        graphics.setColour(subduedText);
+        graphics.setFont(juce::FontOptions(10.0f, juce::Font::plain));
+        graphics.drawFittedText("RIGHTS CLARITY FOR REAL STUDIO SESSIONS", juce::Rectangle<int>(220, 124, getWidth() - 440, 18), juce::Justification::centred, 1);
+        graphics.setColour(accentColour);
+        graphics.setFont(juce::FontOptions(8.5f, juce::Font::bold));
+        graphics.drawFittedText("POWERED BY BLAK MARIGOLD", juce::Rectangle<int>(300, 143, getWidth() - 600, 16), juce::Justification::centred, 1);
+
+        auto loginCard = juce::Rectangle<int>(0, 0, 520, 440).withCentre(juce::Point<int>(getWidth() / 2, 390));
+        juce::ColourGradient cardGradient(juce::Colour::fromRGB(105, 76, 58), static_cast<float>(loginCard.getX()), static_cast<float>(loginCard.getY()),
+                                          juce::Colour::fromRGB(52, 36, 28), static_cast<float>(loginCard.getRight()), static_cast<float>(loginCard.getBottom()), false);
+        graphics.setGradientFill(cardGradient);
+        graphics.fillRoundedRectangle(loginCard.toFloat(), 14.0f);
+        graphics.setColour(juce::Colour::fromRGB(255, 200, 143).withAlpha(0.68f));
+        graphics.drawRoundedRectangle(loginCard.toFloat(), 14.0f, 1.0f);
+        graphics.setColour(juce::Colours::black.withAlpha(0.32f));
+        graphics.drawRoundedRectangle(loginCard.toFloat().translated(0.0f, 4.0f), 14.0f, 4.0f);
+
+        graphics.setColour(ivoryColour);
+        graphics.setFont(juce::FontOptions(15.0f, juce::Font::bold));
+        graphics.drawFittedText("S I G N   I N", juce::Rectangle<int>(loginCard.getX() + 32, loginCard.getY() + 22, loginCard.getWidth() - 64, 22), juce::Justification::centred, 1);
+        graphics.setColour(accentColour.withAlpha(0.5f));
+        graphics.drawHorizontalLine(loginCard.getY() + 54, static_cast<float>(loginCard.getX() + 42), static_cast<float>(loginCard.getRight() - 42));
+        graphics.drawHorizontalLine(loginCard.getY() + 301, static_cast<float>(loginCard.getX() + 38), static_cast<float>(getWidth() / 2 - 22));
+        graphics.drawHorizontalLine(loginCard.getY() + 301, static_cast<float>(getWidth() / 2 + 22), static_cast<float>(loginCard.getRight() - 38));
+        graphics.setColour(ivoryColour.withAlpha(0.86f));
+        graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+        graphics.drawFittedText("OR", juce::Rectangle<int>(getWidth() / 2 - 18, loginCard.getY() + 292, 36, 18), juce::Justification::centred, 1);
+        graphics.setColour(accentColour.withAlpha(0.85f));
+        graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
+        graphics.drawFittedText("BLAK MARIGOLD STUDIO  |  SESSION RIGHTS SYSTEM",
+                                juce::Rectangle<int>(loginCard.getX() + 30, loginCard.getBottom() - 25, loginCard.getWidth() - 60, 14),
+                                juce::Justification::centred, 1);
+        return;
+    }
+
+    juce::ColourGradient gradient(panelColour, bounds.getX(), bounds.getY(),
+                                  juce::Colour::fromRGB(25, 15, 11), bounds.getRight(), bounds.getBottom(),
                                   false);
     graphics.setGradientFill(gradient);
-    graphics.fillRoundedRectangle(bounds.reduced(14.0f), 18.0f);
+    graphics.fillRoundedRectangle(bounds.reduced(10.0f), 16.0f);
 
-    graphics.setColour(accentColour.withAlpha(0.95f));
-    graphics.drawRoundedRectangle(bounds.reduced(14.0f), 18.0f, 1.6f);
+    graphics.setColour(taupeColour.withAlpha(0.42f));
+    graphics.drawRoundedRectangle(bounds.reduced(10.0f), 16.0f, 1.0f);
 
-    auto topAccent = bounds.reduced(14.0f).removeFromTop(8.0f);
-    graphics.fillRoundedRectangle(topAccent.removeFromLeft(250.0f), 4.0f);
+    auto topAccent = bounds.reduced(10.0f).removeFromTop(5.0f);
+    graphics.setColour(accentColour);
+    graphics.fillRoundedRectangle(topAccent.removeFromLeft(318.0f), 3.0f);
 
-    if (isAuthenticated())
-    {
-        auto contentArea = getLocalBounds().reduced(24);
-        contentArea.removeFromTop(164 + (settingsVisible ? 68 : 0));
-        contentArea.removeFromBottom(58);
-        graphics.setColour(sectionColour.withAlpha(0.88f));
-        graphics.fillRoundedRectangle(contentArea.toFloat(), 14.0f);
-        graphics.setColour(juce::Colour::fromRGB(44, 48, 54));
-        graphics.drawRoundedRectangle(contentArea.toFloat(), 14.0f, 1.0f);
-    }
+    drawBrandMark(graphics, juce::Rectangle<float>(26.0f, 23.0f, 44.0f, 44.0f));
+    graphics.setColour(taupeColour.withAlpha(0.7f));
+    graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
+    graphics.drawFittedText("BLAK MARIGOLD STUDIO  |  SESSION RIGHTS SYSTEM",
+                            juce::Rectangle<int>(getWidth() - 330, 26, 300, 14),
+                            juce::Justification::centredRight, 1);
+    graphics.setColour(taupeColour.withAlpha(0.18f));
+    graphics.drawHorizontalLine(80, 24.0f, static_cast<float>(getWidth() - 24));
+
+    auto contentArea = getLocalBounds().reduced(24);
+    contentArea.removeFromTop(168 + (settingsVisible ? 68 : 0));
+    contentArea.removeFromBottom(58);
+    graphics.setColour(sectionColour.withAlpha(0.88f));
+    graphics.fillRoundedRectangle(contentArea.toFloat(), 14.0f);
+    graphics.setColour(taupeColour.withAlpha(0.22f));
+    graphics.drawRoundedRectangle(contentArea.toFloat(), 14.0f, 1.0f);
 }
 
 void SplitSheetStudioEditor::resized()
 {
+    if (!isAuthenticated())
+    {
+        auto loginCard = juce::Rectangle<int>(0, 0, 520, 440).withCentre(juce::Point<int>(getWidth() / 2, 390));
+        auto loginArea = loginCard.reduced(32);
+        loginArea.removeFromTop(58);
+
+        emailLabel.setBounds(loginArea.removeFromTop(18));
+        loginArea.removeFromTop(4);
+        emailEditor.setBounds(loginArea.removeFromTop(38));
+        loginArea.removeFromTop(12);
+
+        passwordLabel.setBounds(loginArea.removeFromTop(18));
+        loginArea.removeFromTop(4);
+        passwordEditor.setBounds(loginArea.removeFromTop(38));
+        loginArea.removeFromTop(16);
+
+        loginButton.setBounds(loginArea.removeFromTop(46));
+        loginArea.removeFromTop(34);
+        createAccountButton.setBounds(loginArea.removeFromTop(38));
+        loginArea.removeFromTop(8);
+        forgotPasswordButton.setBounds(loginArea.removeFromTop(38));
+        return;
+    }
+
     auto area = getLocalBounds().reduced(24);
-    auto header = area.removeFromTop(54);
+    auto header = area.removeFromTop(58);
+    header.removeFromLeft(58);
     titleLabel.setBounds(header.removeFromTop(28));
     subtitleLabel.setBounds(header.removeFromTop(18));
     area.removeFromTop(8);
@@ -509,35 +787,12 @@ void SplitSheetStudioEditor::resized()
         area.removeFromTop(10);
     }
 
-    if (!isAuthenticated())
-    {
-        auto loginArea = area.removeFromTop(270);
-        loginArea = loginArea.withSizeKeepingCentre(420, 270);
-
-        emailLabel.setBounds(loginArea.removeFromTop(20));
-        loginArea.removeFromTop(4);
-        emailEditor.setBounds(loginArea.removeFromTop(32));
-        loginArea.removeFromTop(10);
-
-        passwordLabel.setBounds(loginArea.removeFromTop(20));
-        loginArea.removeFromTop(4);
-        passwordEditor.setBounds(loginArea.removeFromTop(32));
-        loginArea.removeFromTop(18);
-
-        loginButton.setBounds(loginArea.removeFromTop(42).removeFromLeft(180));
-        loginArea.removeFromTop(12);
-        createAccountButton.setBounds(loginArea.removeFromTop(36));
-        loginArea.removeFromTop(8);
-        forgotPasswordButton.setBounds(loginArea.removeFromTop(36));
-        return;
-    }
-
-    auto tabRow = area.removeFromTop(32);
-    songStepButton.setBounds(tabRow.removeFromLeft(120));
+    auto tabRow = area.removeFromTop(34);
+    songStepButton.setBounds(tabRow.removeFromLeft(130));
     tabRow.removeFromLeft(8);
-    contributorsStepButton.setBounds(tabRow.removeFromLeft(150));
+    contributorsStepButton.setBounds(tabRow.removeFromLeft(178));
     tabRow.removeFromLeft(8);
-    reviewStepButton.setBounds(tabRow.removeFromLeft(180));
+    reviewStepButton.setBounds(tabRow.removeFromLeft(190));
     area.removeFromTop(12);
 
     welcomeLabel.setBounds(area.removeFromTop(24));
@@ -602,7 +857,7 @@ void SplitSheetStudioEditor::resized()
 
             notesLabel.setBounds(contentArea.removeFromTop(20));
             contentArea.removeFromTop(4);
-            notesEditor.setBounds(contentArea.removeFromTop(140));
+            notesEditor.setBounds(contentArea.removeFromTop(104));
             break;
         }
 
@@ -914,10 +1169,18 @@ void SplitSheetStudioEditor::removeContributorRow(int index)
 void SplitSheetStudioEditor::refreshViewState()
 {
     const auto authed = isAuthenticated();
+    const auto targetHeight = authed ? 760 : 650;
+    if (getWidth() != 1000 || getHeight() != targetHeight)
+        setSize(1000, targetHeight);
 
-    baseUrlLabel.setVisible(settingsVisible);
-    baseUrlEditor.setVisible(settingsVisible);
-    readyButton.setVisible(settingsVisible);
+    titleLabel.setVisible(authed);
+    subtitleLabel.setVisible(authed);
+    statusBadgeLabel.setVisible(authed);
+    statusLabel.setVisible(authed);
+    settingsButton.setVisible(authed);
+    baseUrlLabel.setVisible(authed && settingsVisible);
+    baseUrlEditor.setVisible(authed && settingsVisible);
+    readyButton.setVisible(authed && settingsVisible);
 
     emailLabel.setVisible(!authed);
     emailEditor.setVisible(!authed);
@@ -1171,7 +1434,7 @@ void SplitSheetStudioEditor::setBusy(bool busy)
 void SplitSheetStudioEditor::toggleSettings()
 {
     settingsVisible = !settingsVisible;
-    settingsButton.setButtonText(settingsVisible ? "Hide Settings" : "Connection Settings");
+    settingsButton.setButtonText(settingsVisible ? "Hide Preferences" : "Preferences");
     refreshViewState();
 }
 
@@ -1200,7 +1463,7 @@ void SplitSheetStudioEditor::updateContributorTitles()
 
 void SplitSheetStudioEditor::refreshContributorCanvas()
 {
-    totalsLabel.setText("Writer total: " + formatPercent(writerTotal()) + "   •   Publisher total: " + formatPercent(publisherTotal()),
+    totalsLabel.setText("Writer total: " + formatPercent(writerTotal()) + "   |   Publisher total: " + formatPercent(publisherTotal()),
                         juce::dontSendNotification);
 
     if (!contributorsViewport.isVisible())
