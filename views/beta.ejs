@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Split Sheet Studio Public Beta | VST3 Plugin Download</title>
+  <meta name="description" content="Download the Split Sheet Studio Windows VST3 beta, install it in Studio One, and test the remote split-sheet signature workflow.">
+  <link rel="canonical" href="https://splitsheetstudio.com/beta"><meta name="theme-color" content="#171311">
+  <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/premium.css">
+</head>
+<body class="premium-site"><div class="premium-shell">
+  <%- include('partials/site-nav') %>
+  <main class="store-page">
+    <section class="store-hero premium-container">
+      <div>
+        <div class="eyebrow"><span class="eyebrow-dot"></span> Public beta · Windows VST3 · Version <%= pluginVersionLabel %></div>
+        <h1>Test Split Sheet Studio<br><span>inside your DAW.</span></h1>
+        <p class="hero-lede">Install the beta, sign in with your hosted account, create a split sheet, send remote signature links, and confirm the final PDF delivery.</p>
+        <div class="hero-actions">
+          <a class="premium-button premium-button-primary" href="<%= installerUrl %>">Download Windows installer →</a>
+          <a class="premium-button premium-button-ghost" href="<%= appUrl %>/signup">Create account</a>
+        </div>
+      </div>
+      <aside class="purchase-card">
+        <div class="purchase-label">BETA STATUS</div>
+        <h2>Unsigned test build</h2>
+        <p>Ready for Windows beta testing. Not yet code-signed for broad commercial distribution.</p>
+        <ul>
+          <li>Installs VST3 to the standard Windows folder</li>
+          <li>Installs standalone app for quick testing</li>
+          <li>Connects to <%= appUrl %></li>
+          <li>Checks for updates on plugin open</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section class="premium-section premium-container included-section">
+      <div class="section-heading">
+        <div><div class="section-kicker">Install checklist</div><h2>Run this exact sequence for a clean Studio One test.</h2></div>
+        <p>Close Studio One before installing because DAWs can lock the VST file while it is loaded.</p>
+      </div>
+      <div class="feature-list-grid">
+        <div><span>01</span><h3>Download</h3><p>Use the Windows installer link on this page. If Windows SmartScreen appears, choose “More info” only if you trust this beta source.</p></div>
+        <div><span>02</span><h3>Install</h3><p>Run the installer. It places the plugin in <code>C:\Program Files\Common Files\VST3</code> and adds the standalone app.</p></div>
+        <div><span>03</span><h3>Rescan</h3><p>Open Studio One, rescan plugins if needed, then search for “Split Sheet Studio” under VST3 effects.</p></div>
+        <div><span>04</span><h3>Test</h3><p>Sign in, create a two-person split, send invite links, sign both links, and confirm both final emails arrive.</p></div>
+      </div>
+    </section>
+
+    <section class="premium-section requirements-section">
+      <div class="premium-container requirements-grid">
+        <div><div class="section-kicker">Beta QA targets</div><h2>What to confirm before public launch.</h2></div>
+        <ul class="premium-checks">
+          <li><i>✓</i><span>Plugin opens in Studio One without the standalone app running</span></li>
+          <li><i>✓</i><span>Login, create account, forgot password, and update buttons are visible</span></li>
+          <li><i>✓</i><span>Writer and publisher totals must equal 100%</span></li>
+          <li><i>✓</i><span>Remote collaborator links finalize only after every party signs</span></li>
+          <li><i>✓</i><span>Completed email includes PDF download and revised split-sheet link</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="premium-section premium-container faq-section">
+      <div class="section-kicker">Known beta limits</div>
+      <h2>What is intentionally not final yet.</h2>
+      <div class="faq-grid">
+        <article><h3>Is the installer signed?</h3><p>No. This beta installer is unsigned. Code signing is the required next step before selling to the public.</p></article>
+        <article><h3>Is Stripe required?</h3><p>No. Stripe can stay disabled while the beta is free and focused on workflow testing.</p></article>
+        <article><h3>Do plugin updates auto-install?</h3><p>No. The plugin checks for updates and opens the download. The user closes the DAW and runs the installer.</p></article>
+        <article><h3>Where do I report issues?</h3><p>Email <a href="mailto:<%= supportEmail %>"><%= supportEmail %></a> with your DAW, Windows version, and what happened.</p></article>
+      </div>
+    </section>
+  </main>
+  <%- include('partials/site-footer') %>
+</div></body></html>

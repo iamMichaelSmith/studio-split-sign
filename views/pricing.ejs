@@ -15,7 +15,7 @@
       <aside class="purchase-card">
         <div class="purchase-label"><%= launchMode === 'checkout' ? 'AVAILABLE NOW' : 'EARLY RELEASE' %></div><h2><%= pluginName %></h2><p>One-time Windows license</p><div class="purchase-price"><strong><%= priceLabel %></strong><span>USD</span></div>
         <form method="post" action="/buy/plugin"><button class="premium-button premium-button-primary purchase-button" type="submit" <%= checkoutEnabled ? '' : 'disabled' %>><%= checkoutEnabled ? 'Buy and download →' : 'Checkout coming soon' %></button></form>
-        <% if (!checkoutEnabled) { %><a class="premium-button premium-button-ghost purchase-button" href="mailto:<%= supportEmail %>?subject=Split%20Sheet%20Studio%20plugin%20launch">Join the launch list</a><% } %>
+        <% if (!checkoutEnabled) { %><a class="premium-button premium-button-ghost purchase-button" href="/beta">Download free beta</a><a class="premium-button premium-button-ghost purchase-button" href="mailto:<%= supportEmail %>?subject=Split%20Sheet%20Studio%20plugin%20launch">Join the launch list</a><% } %>
         <ul><li>VST3 plugin</li><li>Standalone Windows app</li><li>Hosted account connection</li><li>Installer updates for this release</li></ul>
       </aside>
     </section>

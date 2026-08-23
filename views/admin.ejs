@@ -28,6 +28,14 @@
         <div class="stat-label">Pending signatures</div>
         <div class="stat-value"><%= docs.filter((doc) => doc.type === 'split-sheet' && doc.status === 'pending-signatures').length %></div>
       </div>
+      <div class="card">
+        <div class="stat-label">Completed</div>
+        <div class="stat-value"><%= docs.filter((doc) => doc.type === 'split-sheet' && doc.status === 'completed').length %></div>
+      </div>
+      <div class="card">
+        <div class="stat-label">Email failures</div>
+        <div class="stat-value"><%= docs.filter((doc) => doc.type === 'split-sheet' && doc.payload?.completionEmailDelivery && !doc.payload.completionEmailDelivery.ok).length %></div>
+      </div>
     </div>
 
     <div class="card">
@@ -42,6 +50,7 @@
               <b><%= user.displayName %></b>
               <div class="small"><%= user.email %> · <%= user.status %> · verified: <%= user.emailVerifiedAt ? 'yes' : 'no' %></div>
               <div class="small"><%= user.usage.used %>/<%= user.usage.limit %> split sheets used in <%= user.usage.window.label %></div>
+              <div class="inline-actions"><a href="/admin/users/<%= user.id %>">Open user detail</a></div>
             </div>
             <form method="post" action="/admin/users/<%= user.id %>/plan" class="admin-plan-form">
               <select name="planKey" aria-label="Plan for <%= user.email %>">
@@ -71,8 +80,13 @@
           <div class="small" style="margin-top:4px;">
             Status: <b><%= doc.status || 'completed' %></b>
             <% if (doc.ownerEmail) { %> · Owner: <%= doc.ownerEmail %><% } %>
+            <% if (doc.payload?.version) { %> · Version: v<%= doc.payload.version %><% } %>
+            <% if (doc.payload?.revisionOfId) { %> · Revision of: <%= doc.payload.revisionOfId %><% } %>
             <% if (doc.type === 'split-sheet' && doc.signerStats) { %>
               · Signers: <b><%= doc.signerStats.signed %>/<%= doc.signerStats.total %></b> pending <%= doc.signerStats.pending %>
+            <% } %>
+            <% if (doc.payload?.completionEmailDelivery) { %>
+              · Final email: <b><%= doc.payload.completionEmailDelivery.ok ? 'sent' : 'failed' %></b>
             <% } %>
           </div>
           <div class="inline-actions">
@@ -82,6 +96,9 @@
               <a href="/split-sheet/pdf/<%= doc.id %>" target="_blank">Download PDF</a>
               <% if (doc.signerStats && doc.signerStats.pending > 0) { %>
                 <form method="post" action="/admin/split/<%= doc.id %>/remind"><button type="submit">Send reminder</button></form>
+              <% } %>
+              <% if (doc.status === 'completed') { %>
+                <form method="post" action="/admin/split/<%= doc.id %>/resend-final"><button type="submit">Resend final packet</button></form>
               <% } %>
             <% } %>
           </div>

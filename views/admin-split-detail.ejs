@@ -19,6 +19,15 @@
       <p><b>Status:</b> <span class="pill <%= doc.status === 'completed' ? 'status-signed' : 'status-viewed' %>"><%= doc.status %></span></p>
       <p><b>Created:</b> <%= doc.createdAt %></p>
       <p><b>Updated:</b> <%= doc.updatedAt || doc.createdAt %></p>
+      <% if (doc.payload.revisionOfId) { %>
+        <p><b>Revision of:</b> <a href="/admin/split/<%= doc.payload.revisionOfId %>"><%= doc.payload.revisionOfId %></a> <% if (doc.payload.revisionOfVersion) { %>(v<%= doc.payload.revisionOfVersion %>)<% } %></p>
+      <% } %>
+      <% if (doc.payload.completionEmailDelivery) { %>
+        <p><b>Final email:</b> <%= doc.payload.completionEmailDelivery.ok ? 'sent' : 'failed' %><% if (doc.payload.completionEmailDelivery.reason) { %> · <%= doc.payload.completionEmailDelivery.reason %><% } %></p>
+      <% } %>
+      <% if (doc.payload.lastCompletionEmailResentAt) { %>
+        <p class="small">Last final-packet resend: <%= doc.payload.lastCompletionEmailResentAt %></p>
+      <% } %>
       <% if (doc.lastReminderRun) { %>
         <p class="small">Last reminder run: <%= doc.lastReminderRun.at %> · sent <%= doc.lastReminderRun.sent %></p>
       <% } %>
@@ -33,6 +42,11 @@
       <div class="inline-actions">
         <a href="/split-sheet/pdf/<%= doc.id %>" target="_blank">Download PDF</a>
         <a href="/admin/doc/<%= doc.id %>" target="_blank">View JSON</a>
+        <% if (doc.status === 'completed') { %>
+          <form method="post" action="/admin/split/<%= doc.id %>/resend-final" style="display:inline;">
+            <button type="submit">Resend final packet</button>
+          </form>
+        <% } %>
         <% if (signerStats.pending > 0) { %>
           <form method="post" action="/admin/split/<%= doc.id %>/remind" style="display:inline;">
             <button type="submit">Send reminder to pending signers</button>
@@ -40,6 +54,17 @@
         <% } %>
       </div>
     </div>
+
+    <% if (revisionUrl) { %>
+      <div class="card">
+        <h3>Revision request link</h3>
+        <p class="small">Requester-only link. It reloads this split as a new version, clears signatures, and requires every contributor to sign again.</p>
+        <div class="copy-field">
+          <input type="text" readonly value="<%= revisionUrl %>" id="revision-link">
+          <button type="button" onclick="copySignerLink('revision-link', this)">Copy revision link</button>
+        </div>
+      </div>
+    <% } %>
 
     <div class="card">
       <h3>Signer progress</h3>

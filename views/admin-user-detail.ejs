@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>User Detail | Split Sheet Studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="timeline-top">
+      <div>
+        <h1>User Detail</h1>
+        <p class="small"><%= user.displayName %> · <%= user.email %></p>
+      </div>
+      <p><a href="/admin">Back to admin</a></p>
+    </div>
+
+    <% if (banner) { %>
+      <div class="banner"><%= banner %></div>
+    <% } %>
+
+    <div class="grid">
+      <div class="card">
+        <div class="stat-label">Plan</div>
+        <div class="stat-value"><%= usage.plan.name %></div>
+        <p class="small"><%= usage.used %>/<%= usage.limit %> split sheets used in <%= usage.window.label %></p>
+      </div>
+      <div class="card">
+        <div class="stat-label">Status</div>
+        <div class="stat-value"><%= user.status %></div>
+        <p class="small">Verified: <%= user.emailVerifiedAt ? 'yes' : 'no' %></p>
+      </div>
+      <div class="card">
+        <div class="stat-label">Created</div>
+        <div class="stat-value" style="font-size:18px;"><%= user.createdAt || '—' %></div>
+        <p class="small">Updated: <%= user.updatedAt || '—' %></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Plan control</h2>
+      <form method="post" action="/admin/users/<%= user.id %>/plan" class="admin-plan-form">
+        <select name="planKey" aria-label="Plan for <%= user.email %>">
+          <% planOptions.forEach((plan) => { %>
+            <option value="<%= plan.key %>" <%= user.planKey === plan.key ? 'selected' : '' %>><%= plan.name %> · <%= plan.monthlySheetLimit %>/mo</option>
+          <% }) %>
+        </select>
+        <button type="submit">Update plan</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>User split sheets</h2>
+      <% if (!splitSheets.length) { %>
+        <p class="small">No split sheets for this user yet.</p>
+      <% } %>
+      <% splitSheets.forEach((doc) => { %>
+        <% const songName = doc.payload?.songTitle || "Untitled song"; %>
+        <div class="timeline-item">
+          <div class="timeline-top">
+            <div>
+              <b><%= songName %></b>
+              <div class="small">
+                <%= doc.status %> · v<%= doc.payload?.version || 1 %> · <%= doc.createdAt %> · ID <%= doc.id %>
+                <% if (doc.payload?.revisionOfId) { %> · revision of <%= doc.payload.revisionOfId %><% } %>
+              </div>
+              <div class="small">Signers: <%= doc.signerStats.signed %>/<%= doc.signerStats.total %> · pending <%= doc.signerStats.pending %></div>
+            </div>
+            <div class="inline-actions">
+              <a href="/admin/split/<%= doc.id %>">Timeline</a>
+              <a href="/split-sheet/pdf/<%= doc.id %>" target="_blank">PDF</a>
+            </div>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+</body>
+</html>

@@ -17,6 +17,7 @@ This repository is documented for both builders and reviewers.
 - `docs/ops.md` -> operational notes
 - `docs/security.md` -> security posture and hardening path
 - `docs/release-checklist.md` -> release checklist
+- `docs/public-beta-release.md` -> public beta installer and support runbook
 
 ## QA and workflow walkthroughs
 - `docs/qa-checklist.md` -> fast confidence checks

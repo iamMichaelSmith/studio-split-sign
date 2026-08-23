@@ -76,7 +76,7 @@ const stripePluginPriceUsdCents = Number(process.env.STRIPE_PLUGIN_PRICE_USD_CEN
 const stripePluginProductSku = process.env.STRIPE_PLUGIN_PRODUCT_SKU || "splitsheet-studio-vst3";
 const stripePluginProductName = process.env.STRIPE_PLUGIN_PRODUCT_NAME || "Split Sheet Studio VST3 Plugin";
 const stripePluginProductDescription = process.env.STRIPE_PLUGIN_PRODUCT_DESCRIPTION || "Compact split-sheet workflow inside your DAW with hosted account, email delivery, and signed session records.";
-const pluginVersionLabel = process.env.PLUGIN_VERSION_LABEL || "0.1.0";
+const pluginVersionLabel = process.env.PLUGIN_VERSION_LABEL || "0.1.1";
 const pluginLatestVersionLabel = process.env.PLUGIN_LATEST_VERSION_LABEL || pluginVersionLabel;
 const pluginMinimumSupportedVersion = process.env.PLUGIN_MINIMUM_SUPPORTED_VERSION || "";
 const pluginReleaseNotesUrl = process.env.PLUGIN_RELEASE_NOTES_URL || `${baseUrl}/pricing`;
@@ -1383,6 +1383,46 @@ function revisionUrlFor(doc) {
   return `${baseUrl}/split-sheet/revise/${doc.id}/${token}`;
 }
 
+async function sendCompletedSplitSheetPacket(doc, { title = "Split Sheet Completed", subjectPrefix = "Completed Split Sheet", auditType = "completion-email-sent" } = {}) {
+  if (!doc || doc.type !== "split-sheet") {
+    throw new Error("A split-sheet document is required to send the completed packet.");
+  }
+  ensureRevisionToken(doc);
+  const contributors = doc.payload?.contributors || [];
+  const recipients = uniq([
+    process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com",
+    ...contributors.map((contributor) => contributor.email),
+    ...(doc.payload?.recipientEmails || [])
+  ]);
+  const finalPdf = splitPdfPath(doc.id);
+  if (!fs.existsSync(finalPdf)) {
+    const { auditChecksum } = await generateFinalSplitPdf(doc);
+    doc.payload.auditChecksum = auditChecksum;
+  }
+  const emailResult = await sendEmail({
+    subject: `${subjectPrefix} - ${doc.payload.songTitle} (v${doc.payload.version})`,
+    to: recipients,
+    html: completionEmailHtml({
+      title,
+      id: doc.id,
+      songLabel: `Song: ${doc.payload.songTitle} (v${doc.payload.version})`,
+      downloadUrl: `${baseUrl}/split-sheet/pdf/${doc.id}`,
+      recipients,
+      revisionUrl: revisionUrlFor(doc),
+      splitHtml: splitSummaryHtml(doc.payload?.contributors || [], doc.payload?.rightsScope)
+    }),
+    attachments: fs.existsSync(finalPdf) ? [{ filename: path.basename(finalPdf), path: finalPdf }] : []
+  });
+  doc.payload.completionEmailDelivery = emailResult;
+  if (auditType === "completion-email-resent") {
+    doc.payload.lastCompletionEmailResentAt = nowIso();
+  }
+  appendAuditEvent(doc, { type: auditType, deliveryStatus: emailResult.ok ? "sent" : "failed" });
+  doc.updatedAt = nowIso();
+  await saveSubmissionRow(doc);
+  return { emailResult, recipients };
+}
+
 function refreshSignerToken(contributor) {
   contributor.signerToken = nanoid(22);
   contributor.signerTokenExpiresAt = hoursFromNow(signerLinkTtlHours);
@@ -1685,25 +1725,10 @@ async function createSplitSheetSubmission(input, req) {
     saved.payload.auditChecksum = auditChecksum;
     saved.updatedAt = nowIso();
     await saveSubmissionRow(saved);
-
-    const finalPdf = splitPdfPath(saved.id);
-    emailResult = await sendEmail({
-      subject: `Split Sheet Complete - ${payload.songTitle} (v${payload.version})`,
-      to: recipients,
-      html: completionEmailHtml({
-        title: "Split Sheet Completed",
-        id: saved.id,
-        songLabel: `Song: ${payload.songTitle} (v${payload.version})`,
-        downloadUrl: `${baseUrl}/split-sheet/pdf/${saved.id}`,
-        recipients,
-        revisionUrl: revisionUrlFor(saved),
-        splitHtml: splitSummaryHtml(payload.contributors || [], payload.rightsScope)
-      }),
-      attachments: fs.existsSync(finalPdf) ? [{ filename: path.basename(finalPdf), path: finalPdf }] : []
-    });
-    saved.payload.completionEmailDelivery = emailResult;
-    appendAuditEvent(saved, { type: "completion-email-sent", deliveryStatus: emailResult.ok ? "sent" : "failed" });
-    await saveSubmissionRow(saved);
+    ({ emailResult } = await sendCompletedSplitSheetPacket(saved, {
+      title: "Split Sheet Completed",
+      subjectPrefix: "Split Sheet Complete"
+    }));
   }
 
   return { saved, payload, collectByInvite, emailResult };
@@ -1870,6 +1895,15 @@ app.get("/pricing", publicPageLimiter, (req, res) => {
     planOptions: Object.values(PLAN_DEFINITIONS),
     checkoutEnabled: stripeEnabled,
     launchMode: stripeEnabled ? "checkout" : "prelaunch"
+  });
+});
+app.get("/beta", publicPageLimiter, (req, res) => {
+  return res.render("beta", {
+    ...publicNavModel(),
+    pluginVersionLabel,
+    installerUrl: `${baseUrl}/downloads/plugin/latest`,
+    appHealthUrl: `${baseUrl}/health`,
+    apiReadyUrl: `${baseUrl}/api/ready`
   });
 });
 app.post("/buy/plugin", publicPageLimiter, async (req, res) => {
@@ -3004,28 +3038,10 @@ app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) =
     const { auditChecksum } = await generateFinalSplitPdf(doc);
     doc.payload.auditChecksum = auditChecksum;
 
-    const recipients = uniq([
-      process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com",
-      ...contributors.map((c) => c.email),
-      ...(doc.payload?.recipientEmails || [])
-    ]);
-    const finalPdf = splitPdfPath(doc.id);
-    emailResult = await sendEmail({
-      subject: `Completed Split Sheet - ${doc.payload.songTitle} (v${doc.payload.version})`,
-      to: recipients,
-      html: completionEmailHtml({
-        title: "All Signatures Completed",
-        id: doc.id,
-        songLabel: `Song: ${doc.payload.songTitle} (v${doc.payload.version})`,
-        downloadUrl: `${baseUrl}/split-sheet/pdf/${doc.id}`,
-        recipients,
-        revisionUrl: revisionUrlFor(doc),
-        splitHtml: splitSummaryHtml(doc.payload?.contributors || [], doc.payload?.rightsScope)
-      }),
-      attachments: fs.existsSync(finalPdf) ? [{ filename: path.basename(finalPdf), path: finalPdf }] : []
-    });
-    doc.payload.completionEmailDelivery = emailResult;
-    appendAuditEvent(doc, { type: "completion-email-sent", deliveryStatus: emailResult.ok ? "sent" : "failed" });
+    ({ emailResult } = await sendCompletedSplitSheetPacket(doc, {
+      title: "All Signatures Completed",
+      subjectPrefix: "Completed Split Sheet"
+    }));
   }
 
   doc.updatedAt = nowIso();
@@ -3123,7 +3139,34 @@ app.post("/admin/users/:id/plan", adminLimiter, requireAdmin, async (req, res) =
   const banner = updated
     ? `${updated.email} moved to ${PLAN_DEFINITIONS[planKey].name}.`
     : "User not found.";
-  res.redirect(`/admin?banner=${encodeURIComponent(banner)}`);
+  const returnPath = String(req.get("referer") || "").includes(`/admin/users/${req.params.id}`)
+    ? `/admin/users/${req.params.id}`
+    : "/admin";
+  res.redirect(`${returnPath}?banner=${encodeURIComponent(banner)}`);
+});
+
+app.get("/admin/users/:id", adminLimiter, requireAdmin, async (req, res) => {
+  const user = await authService.getUserById(req.params.id);
+  if (!user) return res.status(404).send("Not found");
+  const splitSheets = (await listUserSplitSheets(user)).map((doc) => {
+    const contributors = doc.payload?.contributors || [];
+    const signedCount = contributors.filter((contributor) => contributor.signedAt).length;
+    return {
+      ...doc,
+      signerStats: {
+        total: contributors.length,
+        signed: signedCount,
+        pending: Math.max(0, contributors.length - signedCount)
+      }
+    };
+  });
+  res.render("admin-user-detail", {
+    user,
+    usage: await usageSummaryForUser(user),
+    splitSheets,
+    planOptions: Object.values(PLAN_DEFINITIONS),
+    banner: req.query.banner || ""
+  });
 });
 
 app.get("/admin/split/:id", adminLimiter, requireAdmin, async (req, res) => {
@@ -3144,7 +3187,13 @@ app.get("/admin/split/:id", adminLimiter, requireAdmin, async (req, res) => {
     pending: timeline.filter((row) => !row.signedAt).length
   };
 
-  res.render("admin-split-detail", { doc, timeline, signerStats, banner: req.query.banner || "" });
+  res.render("admin-split-detail", {
+    doc,
+    timeline,
+    signerStats,
+    revisionUrl: doc.status === "completed" ? revisionUrlFor(doc) : null,
+    banner: req.query.banner || ""
+  });
 });
 
 app.post("/admin/split/:id/remind", adminLimiter, requireAdmin, async (req, res) => {
@@ -3174,6 +3223,23 @@ app.post("/admin/split/:id/resend/:index", adminLimiter, requireAdmin, async (re
   doc.updatedAt = nowIso();
   await saveSubmissionRow(doc);
   const banner = result.ok ? `A new secure link was sent to ${contributor.email}.` : `Resend failed: ${result.reason}`;
+  res.redirect(`/admin/split/${doc.id}?banner=${encodeURIComponent(banner)}`);
+});
+
+app.post("/admin/split/:id/resend-final", adminLimiter, requireAdmin, async (req, res) => {
+  const doc = await loadSubmission(req.params.id);
+  if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
+  if (doc.status !== "completed") {
+    return res.redirect(`/admin/split/${doc.id}?banner=${encodeURIComponent("Only completed split sheets can resend the final packet.")}`);
+  }
+  const { emailResult, recipients } = await sendCompletedSplitSheetPacket(doc, {
+    title: "Completed Split Sheet Copy",
+    subjectPrefix: "Completed Split Sheet Copy",
+    auditType: "completion-email-resent"
+  });
+  const banner = emailResult.ok
+    ? `Final packet resent to ${recipients.length} recipient(s).`
+    : `Final packet resend failed: ${emailResult.reason || "unknown_error"}`;
   res.redirect(`/admin/split/${doc.id}?banner=${encodeURIComponent(banner)}`);
 });
 

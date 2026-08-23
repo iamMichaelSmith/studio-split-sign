@@ -175,7 +175,7 @@ Completed split sheets remain immutable as signed PDF records. If a split needs 
 - `services/storefront-service.js` -> plugin purchase records and gated download tracking
 - `content/blog-posts.js` -> blog content source
 - `content/legal-pages.js` -> public terms, privacy, refund, E-SIGN consent, and disclaimer content
-- `views/` -> landing, app, auth, signer, success, admin, pricing, and blog templates
+- `views/` -> landing, app, auth, signer, success, admin, pricing, beta, and blog templates
 - `public/` -> shared browser styling and assets
 
 ### Plugin
@@ -234,6 +234,7 @@ The current hosted runtime is verified through:
 - `https://app.splitsheetstudio.com/health`
 - `https://app.splitsheetstudio.com/api/ready`
 - live pricing and blog routes
+- beta installer page at `https://splitsheetstudio.com/beta`
 - public legal routes under `https://splitsheetstudio.com/legal/...`
 - plugin sign-in and end-to-end split email delivery tests
 
@@ -262,6 +263,8 @@ The core hosted system is live, but these remain the main product-hardening item
 - `docs/api.md`
 - `docs/deployment.md`
 - `docs/public-launch.md`
+- `docs/public-beta-release.md`
+- `docs/qa-checklist.md`
 - `docs/release-checklist.md`
 - `docs/repo-tour.md`
 - `deploy/aws/README.md`
