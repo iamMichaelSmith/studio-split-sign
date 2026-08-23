@@ -6,7 +6,18 @@
   <button type="button" class="step-tab" data-step-btn="3">3 Review and Submit</button>
 </div>
 
+<% if (typeof revisionSource !== 'undefined' && revisionSource) { %>
+  <div class="card legal-note">
+    <h3>Revised split-sheet request</h3>
+    <p>This starts a new version for <b><%= revisionSource.songTitle %></b>. The previous completed PDF remains preserved, and every contributor must sign this revised version before it becomes final.</p>
+  </div>
+<% } %>
+
 <form method="post" action="/split-sheet" id="splitForm" autocomplete="on">
+  <% if (typeof revisionSource !== 'undefined' && revisionSource) { %>
+    <input type="hidden" name="revisionOfId" value="<%= revisionSource.id %>">
+    <input type="hidden" name="revisionOfVersion" value="<%= revisionSource.version %>">
+  <% } %>
   <section class="step-panel" data-step="1">
     <div class="card">
       <div class="row">
@@ -86,6 +97,7 @@
 <script>
 const DRAFT_KEY = 'splitSheetDraft.v1';
 const pads = new Map();
+const SERVER_PREFILL = <%- JSON.stringify(typeof prefill !== 'undefined' ? prefill : null).replace(/</g, '\\u003c') %>;
 
 function saveDraft(){
   const fields = Array.from(document.querySelectorAll('#splitForm input, #splitForm textarea, #splitForm select'));
@@ -187,6 +199,41 @@ function add(prefill){
   idx++;
   updateRightsFields();
   updateTotals();
+}
+
+function setNamedValue(name, value){
+  const node = document.querySelector(`[name="${name}"]`);
+  if(node) node.value = value || '';
+}
+
+function applyServerPrefill(prefill){
+  if(!prefill) return false;
+  localStorage.removeItem(DRAFT_KEY);
+  ['songTitle','alternateTitle','date','sessionLocation','iswc','isrc','notes'].forEach((name) => {
+    setNamedValue(name, prefill[name]);
+  });
+  const rights = document.getElementById('rightsScope');
+  if(rights) rights.value = prefill.rightsScope || 'composition';
+  const supersedes = document.querySelector('[name="supersedesPrevious"]');
+  if(supersedes) supersedes.checked = true;
+  const collect = document.getElementById('collectByInvite');
+  if(collect) collect.checked = true;
+  const allAgree = document.getElementById('allAgree');
+  if(allAgree) allAgree.checked = false;
+
+  c.innerHTML = '';
+  idx = 0;
+  pads.clear();
+  const contributors = Array.isArray(prefill.contributors) && prefill.contributors.length ? prefill.contributors : [{}];
+  contributors.forEach((contributor) => add({
+    ...contributor,
+    typedSignatureName: '',
+    signatureData: ''
+  }));
+  updateRightsFields();
+  updateTotals();
+  renderReview();
+  return true;
 }
 
 function getVals(name){ return Array.from(document.querySelectorAll(`[name="${name}"]`)).map(i=>i.value); }
@@ -340,8 +387,10 @@ document.getElementById('splitForm').addEventListener('submit', () => {
   localStorage.removeItem(DRAFT_KEY);
 });
 
-add();
-restoreDraft();
+if(!applyServerPrefill(SERVER_PREFILL)){
+  add();
+  restoreDraft();
+}
 updateRightsFields();
 updateTotals();
 </script></body></html>

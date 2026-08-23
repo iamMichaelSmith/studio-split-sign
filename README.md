@@ -156,11 +156,13 @@ Limits are enforced when a user finalizes a split sheet. Drafts do not count. Ad
 
 What is still intentionally deferred:
 - live Stripe account keys, webhook secret, and Stripe Customer Portal configuration
-- final purchase-to-download automation in production
 - code signing for the Windows installer
 - attorney review of public legal templates
 
 That means the product can be validated publicly before live payments are turned on.
+
+### Revisions after completion
+Completed split sheets remain immutable as signed PDF records. If a split needs to change later, the final completion email includes a requester-only revision link. The requester signs in, reloads the previous song and contributor data, adjusts the split, and sends a new version to every contributor. The revised split is not final until all contributors sign again.
 
 ## Repository structure
 
@@ -206,9 +208,14 @@ The plugin is already wired to the hosted app by default:
 - startup update check: `/api/plugin/update?currentVersion=...`
 - latest version is controlled by `PLUGIN_LATEST_VERSION_LABEL`
 - forced upgrade floor is controlled by `PLUGIN_MINIMUM_SUPPORTED_VERSION`
+- update download URL: `https://app.splitsheetstudio.com/downloads/plugin/latest`
+- public installer artifact storage: S3 key `downloads/SplitSheetStudio-Setup-0.1.1.exe`
 
 Current installer output:
-- `vst\dist\SplitSheetStudio-Setup-0.1.0.exe`
+- `vst\dist\SplitSheetStudio-Setup-0.1.1.exe`
+
+Current VST release:
+- `0.1.1` adds the Blak Marigold logo to the plugin UI and preserves the hosted update-check path for older installs.
 
 ## Deployment status
 The public cloud path is no longer theoretical.

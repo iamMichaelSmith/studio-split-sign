@@ -4,7 +4,7 @@
 #include <cmath>
 
 #ifndef SPLIT_SHEET_STUDIO_VERSION
-#define SPLIT_SHEET_STUDIO_VERSION "0.1.0"
+#define SPLIT_SHEET_STUDIO_VERSION "0.1.1"
 #endif
 
 namespace
@@ -120,19 +120,25 @@ namespace
         graphics.fillEllipse(area);
         graphics.setColour(accentColour.withAlpha(0.7f));
         graphics.drawEllipse(area.reduced(0.75f), 1.2f);
-        graphics.drawEllipse(area.reduced(7.0f), 0.8f);
 
-        juce::Path petals;
-        auto petal = area.reduced(11.0f);
-        auto horizontalPetal = petal.withSizeKeepingCentre(petal.getWidth(), petal.getHeight() * 0.48f);
-        auto verticalPetal = petal.withSizeKeepingCentre(petal.getWidth() * 0.48f, petal.getHeight());
-        petals.addEllipse(horizontalPetal);
-        petals.addEllipse(verticalPetal);
-        graphics.setColour(accentColour.withAlpha(0.13f));
-        graphics.fillPath(petals);
+        const auto logo = juce::ImageCache::getFromMemory(BinaryData::marigoldlogo_png,
+                                                          BinaryData::marigoldlogo_pngSize);
+        if (logo.isValid())
+        {
+            auto logoArea = area.reduced(area.getWidth() * 0.12f);
+            graphics.drawImageWithin(logo,
+                                     static_cast<int>(logoArea.getX()),
+                                     static_cast<int>(logoArea.getY()),
+                                     static_cast<int>(logoArea.getWidth()),
+                                     static_cast<int>(logoArea.getHeight()),
+                                     juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize,
+                                     false);
+            return;
+        }
+
         graphics.setColour(accentColour);
         graphics.setFont(juce::FontOptions(10.5f, juce::Font::bold));
-        graphics.drawFittedText("SS", area.toNearestInt(), juce::Justification::centred, 1);
+        graphics.drawFittedText("BM", area.toNearestInt(), juce::Justification::centred, 1);
     }
 }
 

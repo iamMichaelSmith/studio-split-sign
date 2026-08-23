@@ -46,13 +46,13 @@
         { "name": "STRIPE_PLUGIN_PRICE_USD_CENTS", "value": "1000" },
         { "name": "STRIPE_CREATOR_PRICE_ID", "value": "" },
         { "name": "STRIPE_STUDIO_PRO_PRICE_ID", "value": "" },
-        { "name": "PLUGIN_VERSION_LABEL", "value": "0.1.0" },
-        { "name": "PLUGIN_LATEST_VERSION_LABEL", "value": "0.1.0" },
+        { "name": "PLUGIN_VERSION_LABEL", "value": "0.1.1" },
+        { "name": "PLUGIN_LATEST_VERSION_LABEL", "value": "0.1.1" },
         { "name": "PLUGIN_MINIMUM_SUPPORTED_VERSION", "value": "" },
         { "name": "PLUGIN_RELEASE_NOTES_URL", "value": "https://splitsheetstudio.com/pricing" },
         { "name": "PLUGIN_DOWNLOAD_URL", "value": "" },
         { "name": "PLUGIN_DOWNLOAD_BUCKET", "value": "splitsheetstudio-production-pdfs" },
-        { "name": "PLUGIN_DOWNLOAD_KEY", "value": "downloads/SplitSheetStudio-Setup-0.1.0.exe" }
+        { "name": "PLUGIN_DOWNLOAD_KEY", "value": "downloads/SplitSheetStudio-Setup-0.1.1.exe" }
       ],
       "secrets": [
         { "name": "DATABASE_URL", "valueFrom": "<secrets-manager-database-url-arn>" },

@@ -7,9 +7,9 @@ param(
   [string]$RepositoryName = "splitsheetstudio-staging",
   [string]$ImageTag = "latest",
   [string]$BucketName,
-  [string]$PluginDownloadKey = "downloads/SplitSheetStudio-Setup-0.1.0.exe",
+  [string]$PluginDownloadKey = "downloads/SplitSheetStudio-Setup-0.1.1.exe",
   [string]$StripePluginPriceUsdCents = "1000",
-  [string]$PluginVersionLabel = "0.1.0",
+  [string]$PluginVersionLabel = "0.1.1",
   [string]$LogGroupName = "/ecs/splitsheetstudio-staging",
   [string]$TaskExecutionRoleArn,
   [string]$TaskRoleArn,
@@ -74,8 +74,9 @@ $replacements = @{
   '{ "name": "COOKIE_SECURE", "value": "true" }' = "{ `"name`": `"COOKIE_SECURE`", `"value`": `"$CookieSecure`" }"
   "splitsheetstudio-production-pdfs" = $BucketName
   '{ "name": "STRIPE_PLUGIN_PRICE_USD_CENTS", "value": "1000" }' = "{ `"name`": `"STRIPE_PLUGIN_PRICE_USD_CENTS`", `"value`": `"$StripePluginPriceUsdCents`" }"
-  '{ "name": "PLUGIN_VERSION_LABEL", "value": "0.1.0" }' = "{ `"name`": `"PLUGIN_VERSION_LABEL`", `"value`": `"$PluginVersionLabel`" }"
-  '{ "name": "PLUGIN_DOWNLOAD_KEY", "value": "downloads/SplitSheetStudio-Setup-0.1.0.exe" }' = "{ `"name`": `"PLUGIN_DOWNLOAD_KEY`", `"value`": `"$PluginDownloadKey`" }"
+  '{ "name": "PLUGIN_VERSION_LABEL", "value": "0.1.1" }' = "{ `"name`": `"PLUGIN_VERSION_LABEL`", `"value`": `"$PluginVersionLabel`" }"
+  '{ "name": "PLUGIN_LATEST_VERSION_LABEL", "value": "0.1.1" }' = "{ `"name`": `"PLUGIN_LATEST_VERSION_LABEL`", `"value`": `"$PluginVersionLabel`" }"
+  '{ "name": "PLUGIN_DOWNLOAD_KEY", "value": "downloads/SplitSheetStudio-Setup-0.1.1.exe" }' = "{ `"name`": `"PLUGIN_DOWNLOAD_KEY`", `"value`": `"$PluginDownloadKey`" }"
   "splitsheetstudio:latest" = "$RepositoryName`:$ImageTag"
   "/ecs/splitsheetstudio" = $LogGroupName
   "arn:aws:iam::<account-id>:role/ecsTaskExecutionRole" = $TaskExecutionRoleArn

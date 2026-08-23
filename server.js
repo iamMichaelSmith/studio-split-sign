@@ -1350,7 +1350,12 @@ function splitSummaryHtml(contributors = [], rightsScope = "composition") {
     </table>`;
 }
 
-function completionEmailHtml({ title, id, songLabel, downloadUrl, recipients, splitHtml = "" }) {
+function completionEmailHtml({ title, id, songLabel, downloadUrl, recipients, splitHtml = "", revisionUrl = "" }) {
+  const revisionBlock = revisionUrl
+    ? `<p style="margin:16px 0 8px"><b>Need to change the split later?</b></p>
+    <p style="margin:0 0 12px">Use the revision link to create a new version. The original completed PDF stays preserved, and every contributor must review and sign the revised split before it becomes final.</p>
+    <p style="margin:0 0 12px"><a href="${revisionUrl}" style="display:inline-block;background:#111;color:#f4c76b;border:1px solid #b8860b;padding:10px 14px;border-radius:8px;text-decoration:none;font-weight:bold;">Request revised split sheet</a></p>`
+    : "";
   return `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111">
     <h2 style="margin:0 0 8px">${title}</h2>
     <p style="margin:0 0 10px">Submission ID: <b>${id}</b></p>
@@ -1358,10 +1363,24 @@ function completionEmailHtml({ title, id, songLabel, downloadUrl, recipients, sp
     ${splitHtml || ""}
     <p style="margin:12px 0 12px">Your agreement is complete and attached to this email for your records.</p>
     <p style="margin:0 0 12px"><a href="${downloadUrl}">Download agreement packet</a></p>
+    ${revisionBlock}
     <p style="margin:0 0 12px"><b>Recipients:</b> ${recipients.join(", ")}</p>
     <hr style="border:none;border-top:1px solid #ddd;margin:14px 0" />
     <p style="margin:0">Blak Marigold Studio<br/>blakmarigold.com<br/>512-593-1267</p>
   </div>`;
+}
+
+function ensureRevisionToken(doc) {
+  doc.payload = doc.payload || {};
+  if (!doc.payload.revisionToken) {
+    doc.payload.revisionToken = nanoid(22);
+  }
+  return doc.payload.revisionToken;
+}
+
+function revisionUrlFor(doc) {
+  const token = ensureRevisionToken(doc);
+  return `${baseUrl}/split-sheet/revise/${doc.id}/${token}`;
 }
 
 function refreshSignerToken(contributor) {
@@ -1559,6 +1578,38 @@ function canAccessSplitSheet(doc, user) {
   return false;
 }
 
+function revisionPrefillFromDoc(doc) {
+  const payload = doc?.payload || {};
+  return {
+    songTitle: payload.songTitle || "",
+    alternateTitle: payload.alternateTitle || "",
+    rightsScope: normalizeRightsScope(payload.rightsScope),
+    date: payload.date || "",
+    sessionLocation: payload.sessionLocation || "",
+    iswc: payload.iswc || "",
+    isrc: payload.isrc || "",
+    notes: payload.notes || "",
+    supersedesPrevious: true,
+    collectSignaturesByInvite: true,
+    contributors: (payload.contributors || []).map((contributor) => ({
+      legalName: contributor.legalName || "",
+      role: contributor.role || "",
+      address: contributor.address || "",
+      phone: contributor.phone || "",
+      email: contributor.email || "",
+      pro: contributor.pro || "",
+      ipi: contributor.ipi || "",
+      publisherName: contributor.publisherName || "",
+      publisherIpi: contributor.publisherIpi || "",
+      writerShare: contributor.writerShare || "",
+      publisherShare: contributor.publisherShare || "",
+      masterShare: contributor.masterShare || "",
+      typedSignatureName: "",
+      signatureData: ""
+    }))
+  };
+}
+
 async function createSplitSheetSubmission(input, req) {
   await requireAvailableSplitSheetUsage(req.apiUser);
 
@@ -1579,6 +1630,18 @@ async function createSplitSheetSubmission(input, req) {
     signerLinkExpiresAt: () => hoursFromNow(signerLinkTtlHours),
     nowIso
   });
+  payload.revisionToken = nanoid(22);
+  if (input.revisionOfId) {
+    payload.revisionOfId = String(input.revisionOfId || "").trim();
+    payload.revisionOfVersion = Number(input.revisionOfVersion || 0) || null;
+    payload.supersedesPrevious = true;
+    payload.auditTrail.push({
+      type: "revision-created",
+      at: nowIso(),
+      revisionOfId: payload.revisionOfId,
+      revisionOfVersion: payload.revisionOfVersion
+    });
+  }
   const saved = draft
     ? await saveSubmissionRow({
       ...draft,
@@ -1605,7 +1668,7 @@ async function createSplitSheetSubmission(input, req) {
     const proposalEmailResult = await sendEmail({
       subject: `Split Sheet Created - ${payload.songTitle} (v${payload.version})`,
       to: recipients,
-      html: `<h2>Split Sheet Created</h2><p>ID: ${escapeHtml(saved.id)}</p><p>Song: ${escapeHtml(payload.songTitle)}</p><p>Rights covered: ${escapeHtml(rightsScopeLabel(payload.rightsScope))}</p><p>Version: ${payload.version}</p><p>Status: Pending signatures</p><p>Every contributor must review, agree, and sign before the final packet is generated.</p><p><a href="${baseUrl}/split-sheet/pdf/${saved.id}">Download Current PDF Summary</a></p><p><b>Recipients:</b> ${recipients.map(escapeHtml).join(", ")}</p>`
+      html: `<h2>Split Sheet Created</h2><p>ID: ${escapeHtml(saved.id)}</p><p>Song: ${escapeHtml(payload.songTitle)}</p><p>Rights covered: ${escapeHtml(rightsScopeLabel(payload.rightsScope))}</p><p>Version: ${payload.version}</p>${payload.revisionOfId ? `<p><b>Revision:</b> This is a revised request for submission ${escapeHtml(payload.revisionOfId)}. The previous completed PDF remains preserved until this version is fully signed.</p>` : ""}<p>Status: Pending signatures</p><p>Every contributor must review, agree, and sign before the final packet is generated.</p><p><a href="${baseUrl}/split-sheet/pdf/${saved.id}">Download Current PDF Summary</a></p><p><b>Recipients:</b> ${recipients.map(escapeHtml).join(", ")}</p>`
     });
     saved.payload.proposalEmailDelivery = proposalEmailResult;
     appendAuditEvent(saved, { type: "proposal-email-sent", deliveryStatus: proposalEmailResult.ok ? "sent" : "failed" });
@@ -1633,6 +1696,7 @@ async function createSplitSheetSubmission(input, req) {
         songLabel: `Song: ${payload.songTitle} (v${payload.version})`,
         downloadUrl: `${baseUrl}/split-sheet/pdf/${saved.id}`,
         recipients,
+        revisionUrl: revisionUrlFor(saved),
         splitHtml: splitSummaryHtml(payload.contributors || [], payload.rightsScope)
       }),
       attachments: fs.existsSync(finalPdf) ? [{ filename: path.basename(finalPdf), path: finalPdf }] : []
@@ -2031,6 +2095,9 @@ app.post("/api/stripe/webhook", async (req, res) => {
     return res.status(400).json({ ok: false, error: "stripe_webhook_failed" });
   }
 });
+app.get("/downloads/plugin/latest", pluginDownloadLimiter, async (req, res) => {
+  return sendPluginInstaller(res);
+});
 app.get("/downloads/plugin/:purchaseId", pluginDownloadLimiter, async (req, res) => {
   const purchaseId = String(req.params.purchaseId || "").trim();
   const token = String(req.query.token || "").trim();
@@ -2120,7 +2187,7 @@ app.get("/api/plugin/update", publicPageLimiter, (req, res) => {
     minimumSupportedVersion: pluginMinimumSupportedVersion || null,
     updateAvailable,
     updateRequired,
-    downloadUrl: pluginDownloadUrl || `${baseUrl}/pricing`,
+    downloadUrl: pluginDownloadUrl || `${baseUrl}/downloads/plugin/latest`,
     releaseNotesUrl: pluginReleaseNotesUrl,
     message: updateAvailable
       ? `Split Sheet Studio ${latestVersion} is available.`
@@ -2772,7 +2839,39 @@ app.post("/api/split-sheets/:id/signers/:index/resend", requireApiAuth, splitFin
 });
 app.get("/split-sheet", splitSheetPublicLimiter, requireWebAuth, async (req, res) => {
   const usage = await usageSummaryForUser(req.webUser);
-  return res.render("split-sheet", { error: null, user: req.webUser, usage });
+  return res.render("split-sheet", { error: null, user: req.webUser, usage, prefill: null, revisionSource: null });
+});
+
+app.get("/split-sheet/revise/:id/:token", splitSheetPublicLimiter, requireWebAuth, async (req, res) => {
+  const doc = await loadSubmission(req.params.id);
+  if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
+  if (!canAccessSplitSheet(doc, req.webUser)) {
+    return res.status(403).render("auth-message", {
+      title: "Revision restricted",
+      message: "Only the split-sheet requester can create a revised version from this link.",
+      details: "Ask the original requester to sign in and start the revised split-sheet request.",
+      actionHref: "/account",
+      actionLabel: "Go to account",
+      debugLink: null,
+      supportEmail
+    });
+  }
+  const expectedToken = doc.payload?.revisionToken || "";
+  if (!expectedToken || expectedToken !== req.params.token) {
+    return res.status(404).send("Invalid revision link");
+  }
+  const usage = await usageSummaryForUser(req.webUser);
+  return res.render("split-sheet", {
+    error: null,
+    user: req.webUser,
+    usage,
+    prefill: revisionPrefillFromDoc(doc),
+    revisionSource: {
+      id: doc.id,
+      version: doc.payload?.version || 1,
+      songTitle: doc.payload?.songTitle || "Untitled split sheet"
+    }
+  });
 });
 
 app.post("/split-sheet", splitSheetSubmitLimiter, requireWebAuth, async (req, res) => {
@@ -2792,13 +2891,13 @@ app.post("/split-sheet", splitSheetSubmitLimiter, requireWebAuth, async (req, re
   } catch (error) {
     const usage = await usageSummaryForUser(req.webUser);
     if (error instanceof ApiAuthError) {
-      return res.status(error.statusCode).render("split-sheet", { error: error.message, user: req.webUser, usage });
+      return res.status(error.statusCode).render("split-sheet", { error: error.message, user: req.webUser, usage, prefill: null, revisionSource: null });
     }
     if (error instanceof SplitSheetValidationError) {
-      return res.status(error.statusCode).render("split-sheet", { error: error.message, user: req.webUser, usage });
+      return res.status(error.statusCode).render("split-sheet", { error: error.message, user: req.webUser, usage, prefill: null, revisionSource: null });
     }
     console.error(error);
-    res.status(500).render("split-sheet", { error: "Unexpected server error while saving split sheet.", user: req.webUser, usage });
+    res.status(500).render("split-sheet", { error: "Unexpected server error while saving split sheet.", user: req.webUser, usage, prefill: null, revisionSource: null });
   }
 });
 
@@ -2920,6 +3019,7 @@ app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) =
         songLabel: `Song: ${doc.payload.songTitle} (v${doc.payload.version})`,
         downloadUrl: `${baseUrl}/split-sheet/pdf/${doc.id}`,
         recipients,
+        revisionUrl: revisionUrlFor(doc),
         splitHtml: splitSummaryHtml(doc.payload?.contributors || [], doc.payload?.rightsScope)
       }),
       attachments: fs.existsSync(finalPdf) ? [{ filename: path.basename(finalPdf), path: finalPdf }] : []

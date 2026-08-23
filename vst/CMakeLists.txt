@@ -1,6 +1,6 @@
 ﻿cmake_minimum_required(VERSION 3.22)
 
-project(SplitSheetStudioVST VERSION 0.1.0)
+project(SplitSheetStudioVST VERSION 0.1.1)
 
 include(FetchContent)
 
@@ -15,6 +15,7 @@ FetchContent_MakeAvailable(JUCE)
 juce_add_binary_data(SplitSheetAssets
   SOURCES
     ../public/bronze-texture.png
+    assets/marigoldlogo.png
 )
 
 juce_add_plugin(SplitSheetStudio

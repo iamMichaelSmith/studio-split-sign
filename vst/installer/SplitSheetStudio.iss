@@ -3,7 +3,7 @@
 #define MyAppURL "https://splitsheetstudio.com"
 #define MyAppSupportURL "https://app.splitsheetstudio.com"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.0"
+  #define MyAppVersion "0.1.1"
 #endif
 #ifndef StandaloneSource
   #error "StandaloneSource must be provided to the compiler."
