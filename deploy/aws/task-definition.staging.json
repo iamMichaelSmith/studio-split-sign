@@ -11,7 +11,7 @@
   "containerDefinitions": [
     {
       "name": "splitsheetstudio-staging",
-      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20260823-legal-update-v1",
+      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20260823-metallic-account-v1",
       "essential": true,
       "portMappings": [
         {

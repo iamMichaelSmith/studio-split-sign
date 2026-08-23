@@ -26,7 +26,7 @@
         <% if (billingEnabled && user.stripeCustomerId) { %>
           <form method="post" action="/account/billing/portal"><button class="secondary-button" type="submit">Manage billing</button></form>
         <% } else { %>
-          <p><a href="<%= pricingUrl %>">View plan options</a></p>
+          <p><a class="button-link button-link-secondary" href="#available-plans">View plan options</a></p>
         <% } %>
       </div>
       <div class="card">
@@ -45,7 +45,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div id="available-plans" class="card">
       <h2>Available plans</h2>
       <div class="grid">
         <% planOptions.forEach((plan) => { %>
@@ -55,14 +55,17 @@
             <p class="small"><%= plan.monthlySheetLimit %> completed split sheets/month</p>
             <p class="small"><%= plan.description %></p>
             <% if (plan.key === currentPlan.key) { %>
-              <p class="small"><b>Current plan</b></p>
+              <p class="plan-badge">Current plan</p>
             <% } else if (billingEnabled && plan.monthlyPriceUsdCents > 0) { %>
               <form method="post" action="/account/billing/checkout">
                 <input type="hidden" name="planKey" value="<%= plan.key %>">
                 <button type="submit">Upgrade to <%= plan.name %></button>
               </form>
             <% } else if (plan.monthlyPriceUsdCents > 0) { %>
-              <p class="small">Stripe checkout not connected yet.</p>
+              <a class="button-link" href="<%= pricingUrl %>">Upgrade to <%= plan.name %></a>
+              <p class="small">Checkout is not connected yet. This button will route to Stripe when billing is enabled.</p>
+            <% } else { %>
+              <a class="button-link button-link-secondary" href="<%= splitSheetUrl %>">Start free</a>
             <% } %>
           </div>
         <% }) %>
@@ -75,9 +78,14 @@
         <p class="small">No split sheets yet.</p>
       <% } %>
       <% splitSheets.forEach((doc) => { %>
+        <% const songName = (doc.payload && (doc.payload.songTitle || doc.payload.title || doc.payload.song || doc.payload.workTitle)) || "Untitled song"; %>
         <div class="timeline-item">
           <div class="timeline-top">
-            <div><b><%= doc.payload.songTitle || doc.id %></b><div class="small"><%= doc.status %> · <%= doc.createdAt %></div></div>
+            <div>
+              <div class="stat-label">Song name</div>
+              <b><%= songName %></b>
+              <div class="small"><%= doc.status %> · <%= doc.createdAt %> · ID <%= doc.id %></div>
+            </div>
             <div><a href="/split-sheet/pdf/<%= doc.id %>">PDF</a></div>
           </div>
         </div>
