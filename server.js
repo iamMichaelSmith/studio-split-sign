@@ -16,6 +16,7 @@ const { RedisStore } = require("connect-redis");
 const { RedisStore: RateLimitRedisStore } = require("rate-limit-redis");
 const { createClient } = require("redis");
 const { nanoid } = require("nanoid");
+const { createRemoteJWKSet, jwtVerify } = require("jose");
 const { createAuthService, ApiAuthError } = require("./services/auth-service");
 const { createDatabaseService } = require("./services/database-service");
 const { createStorefrontService } = require("./services/storefront-service");
@@ -87,6 +88,30 @@ const signerLinkTtlHours = Math.max(1, Number(process.env.SIGNER_LINK_TTL_HOURS 
 const signerReminderAfterHours = Math.max(1, Number(process.env.SIGNER_REMINDER_AFTER_HOURS || 24));
 const signerReminderIntervalMinutes = Math.max(5, Number(process.env.SIGNER_REMINDER_INTERVAL_MINUTES || 60));
 const automaticSignerReminders = String(process.env.AUTO_SIGNER_REMINDERS || "false").toLowerCase() === "true";
+const oauthProviderConfigs = {
+  google: {
+    label: "Google",
+    clientId: String(process.env.GOOGLE_CLIENT_ID || "").trim(),
+    clientSecret: String(process.env.GOOGLE_CLIENT_SECRET || "").trim(),
+    authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.googleapis.com/token",
+    jwksUrl: "https://www.googleapis.com/oauth2/v3/certs",
+    issuer: "https://accounts.google.com",
+    scope: "openid email profile"
+  },
+  apple: {
+    label: "Apple",
+    clientId: String(process.env.APPLE_CLIENT_ID || "").trim(),
+    clientSecret: String(process.env.APPLE_CLIENT_SECRET || "").trim(),
+    authUrl: "https://appleid.apple.com/auth/authorize",
+    tokenUrl: "https://appleid.apple.com/auth/token",
+    jwksUrl: "https://appleid.apple.com/auth/keys",
+    issuer: "https://appleid.apple.com",
+    scope: "openid email name",
+    responseMode: "form_post"
+  }
+};
+const oauthJwks = {};
 
 fs.mkdirSync(submissionsDir, { recursive: true });
 fs.mkdirSync(pdfDir, { recursive: true });
@@ -162,6 +187,7 @@ app.use(session({
 }));
 
 function nowIso() { return new Date().toISOString(); }
+function randomToken(size = 32) { return crypto.randomBytes(size).toString("hex"); }
 function uniq(arr) { return [...new Set(arr.filter(Boolean))]; }
 function hoursFromNow(hours) { return new Date(Date.now() + (hours * 60 * 60 * 1000)).toISOString(); }
 function isPast(value) { const time = new Date(value || 0).getTime(); return Number.isFinite(time) && time > 0 && time <= Date.now(); }
@@ -1447,6 +1473,76 @@ function safeRedirectPath(value, fallback = "/account") {
   return candidate;
 }
 
+function oauthRedirectUri(providerKey) {
+  return `${baseUrl}/auth/${providerKey}/callback`;
+}
+
+function oauthUiProviders() {
+  return Object.entries(oauthProviderConfigs).map(([key, config]) => ({
+    key,
+    label: config.label,
+    enabled: Boolean(config.clientId && config.clientSecret)
+  }));
+}
+
+function oauthProvider(key) {
+  const provider = oauthProviderConfigs[key];
+  if (!provider || !provider.clientId || !provider.clientSecret) {
+    throw new ApiAuthError(`${provider?.label || "This"} sign-in is not configured yet.`, 503);
+  }
+  return provider;
+}
+
+function oauthError(res, error, next = "/account") {
+  const message = error instanceof ApiAuthError ? error.message : "Social sign-in failed. Try again or use email and password.";
+  return res.status(error.statusCode || 400).render("auth-message", {
+    title: "Sign-in unavailable",
+    message,
+    details: "Google and Apple sign-in require provider credentials before they can be used in production.",
+    actionHref: `/login?next=${encodeURIComponent(next)}`,
+    actionLabel: "Back to sign in",
+    debugLink: null,
+    supportEmail
+  });
+}
+
+async function exchangeOAuthCode(providerKey, code) {
+  const provider = oauthProvider(providerKey);
+  const tokenResponse = await fetch(provider.tokenUrl, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: provider.clientId,
+      client_secret: provider.clientSecret,
+      code,
+      grant_type: "authorization_code",
+      redirect_uri: oauthRedirectUri(providerKey)
+    })
+  });
+  const tokenBody = await tokenResponse.json().catch(() => ({}));
+  if (!tokenResponse.ok || !tokenBody.id_token) {
+    throw new ApiAuthError(`${provider.label} did not complete sign-in.`, 401);
+  }
+
+  oauthJwks[providerKey] = oauthJwks[providerKey] || createRemoteJWKSet(new URL(provider.jwksUrl));
+  const { payload } = await jwtVerify(tokenBody.id_token, oauthJwks[providerKey], {
+    issuer: provider.issuer,
+    audience: provider.clientId
+  });
+  const email = String(payload.email || "").trim().toLowerCase();
+  if (!email) {
+    throw new ApiAuthError(`${provider.label} did not return an email address.`, 400);
+  }
+  if (payload.email_verified === false || payload.email_verified === "false") {
+    throw new ApiAuthError(`${provider.label} has not verified this email address.`, 403);
+  }
+  return {
+    email,
+    displayName: String(payload.name || "").trim() || email.split("@")[0],
+    emailVerifiedAt: nowIso()
+  };
+}
+
 function requireWebAuth(req, res, next) {
   if (req.webUser) {
     req.apiUser = req.webUser;
@@ -1683,7 +1779,7 @@ const signerSubmitLimiter = createRateLimiter({
   keyGenerator: (req) => `signer-submit:${String(req.params.id || "")}:${String(req.params.token || "")}:${clientIpKey(req)}`
 });
 
-app.use(["/split-sheet", "/account", "/login", "/logout", "/admin", "/signup", "/forgot-password", "/reset-password", "/verify-email"], ensureAppHost);
+app.use(["/split-sheet", "/account", "/login", "/logout", "/admin", "/signup", "/forgot-password", "/reset-password", "/verify-email", "/auth"], ensureAppHost);
 app.use(attachWebUser);
 
 app.get("/", publicPageLimiter, (req, res) => {
@@ -2219,6 +2315,7 @@ app.get("/login", publicPageLimiter, (req, res) => res.render("auth-login", {
   next: safeRedirectPath(req.query.next, "/account"),
   signupUrl: `${baseUrl}/signup`,
   forgotPasswordUrl: `${baseUrl}/forgot-password`,
+  oauthProviders: oauthUiProviders(),
   supportEmail
 }));
 app.post("/login", loginLimiter, async (req, res) => {
@@ -2240,6 +2337,7 @@ app.post("/login", loginLimiter, async (req, res) => {
         next,
         signupUrl: `${baseUrl}/signup`,
         forgotPasswordUrl: `${baseUrl}/forgot-password`,
+        oauthProviders: oauthUiProviders(),
         supportEmail
       });
     }
@@ -2250,10 +2348,74 @@ app.post("/login", loginLimiter, async (req, res) => {
       next,
       signupUrl: `${baseUrl}/signup`,
       forgotPasswordUrl: `${baseUrl}/forgot-password`,
+      oauthProviders: oauthUiProviders(),
       supportEmail
     });
   }
 });
+app.get("/auth/:provider", publicPageLimiter, (req, res) => {
+  const providerKey = String(req.params.provider || "").toLowerCase();
+  const next = safeRedirectPath(req.query.next, "/account");
+  try {
+    const provider = oauthProvider(providerKey);
+    const state = randomToken(24);
+    req.session.oauth = {
+      provider: providerKey,
+      state,
+      next,
+      createdAt: nowIso()
+    };
+    const authUrl = new URL(provider.authUrl);
+    authUrl.searchParams.set("client_id", provider.clientId);
+    authUrl.searchParams.set("redirect_uri", oauthRedirectUri(providerKey));
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("scope", provider.scope);
+    authUrl.searchParams.set("state", state);
+    authUrl.searchParams.set("prompt", "select_account");
+    if (provider.responseMode) {
+      authUrl.searchParams.set("response_mode", provider.responseMode);
+    }
+    return res.redirect(authUrl.toString());
+  } catch (error) {
+    return oauthError(res, error, next);
+  }
+});
+async function handleOAuthCallback(req, res) {
+  const providerKey = String(req.params.provider || "").toLowerCase();
+  const code = String(req.query.code || req.body.code || "").trim();
+  const state = String(req.query.state || req.body.state || "").trim();
+  const stored = req.session.oauth || {};
+  const next = safeRedirectPath(stored.next, "/account");
+
+  try {
+    if (!code || !state || stored.provider !== providerKey || stored.state !== state) {
+      throw new ApiAuthError("Sign-in state expired. Please try again.", 400);
+    }
+    delete req.session.oauth;
+    const providerProfile = await exchangeOAuthCode(providerKey, code);
+    if (providerKey === "apple" && req.body.user) {
+      try {
+        const appleUser = JSON.parse(String(req.body.user || "{}"));
+        const appleName = [appleUser?.name?.firstName, appleUser?.name?.lastName].filter(Boolean).join(" ").trim();
+        if (appleName) providerProfile.displayName = appleName;
+      } catch {}
+    }
+    const existing = await authService.getUserByEmail(providerProfile.email);
+    if (!existing && !allowPublicRegistration && await authService.userCount() > 0) {
+      throw new ApiAuthError("Public registration is disabled right now.", 403);
+    }
+    const user = await authService.findOrCreateProviderUser(providerProfile);
+    req.session.userId = user.id;
+    clearLoginFailures(req);
+    return res.redirect(next);
+  } catch (error) {
+    delete req.session.oauth;
+    console.error("OAuth callback failed:", error.message || error);
+    return oauthError(res, error, next);
+  }
+}
+app.get("/auth/:provider/callback", publicPageLimiter, handleOAuthCallback);
+app.post("/auth/:provider/callback", publicPageLimiter, handleOAuthCallback);
 app.post("/logout", requireWebAuth, (req, res) => {
   req.session.destroy(() => res.redirect("/login"));
 });
@@ -2279,6 +2441,7 @@ app.get("/signup", publicPageLimiter, (req, res) => res.render("auth-signup", {
   values: { displayName: "", email: "" },
   allowPublicRegistration,
   baseUrl,
+  oauthProviders: oauthUiProviders(),
   supportEmail
 }));
 app.post("/signup", registerLimiter, async (req, res) => {
@@ -2291,6 +2454,7 @@ app.post("/signup", registerLimiter, async (req, res) => {
       },
       allowPublicRegistration,
       baseUrl,
+      oauthProviders: oauthUiProviders(),
       supportEmail
     });
   }
@@ -2327,6 +2491,7 @@ app.post("/signup", registerLimiter, async (req, res) => {
         },
         allowPublicRegistration,
         baseUrl,
+        oauthProviders: oauthUiProviders(),
         supportEmail
       });
     }
@@ -2339,6 +2504,7 @@ app.post("/signup", registerLimiter, async (req, res) => {
       },
       allowPublicRegistration,
       baseUrl,
+      oauthProviders: oauthUiProviders(),
       supportEmail
     });
   }

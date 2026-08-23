@@ -678,6 +678,36 @@ function createAuthService({
     return mapUser(inserted);
   }
 
+  async function findOrCreateProviderUser({ email, displayName, emailVerifiedAt = nowIso() }) {
+    await bootstrapReady;
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedDisplayName = String(displayName || "").trim() || normalizedEmail.split("@")[0] || "Split Sheet Studio User";
+
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      throw new ApiAuthError("The sign-in provider did not return a valid email address.", 400);
+    }
+
+    const existing = await adapter.userByEmail(normalizedEmail);
+    if (existing) {
+      if (!existing.email_verified_at && emailVerifiedAt) {
+        return mapUser(await adapter.markUserVerified({
+          id: existing.id,
+          emailVerifiedAt,
+          updatedAt: nowIso()
+        }));
+      }
+      return mapUser(existing);
+    }
+
+    return createUserInternal({
+      email: normalizedEmail,
+      password: randomToken(32),
+      displayName: normalizedDisplayName,
+      emailVerifiedAt,
+      planKey: "free"
+    });
+  }
+
   async function issueTokensForUser({ userId, ip, userAgent }) {
     await bootstrapReady;
     await cleanupState();
@@ -798,6 +828,9 @@ function createAuthService({
     async getUserByEmail(email) {
       await bootstrapReady;
       return mapUser(await adapter.userByEmail(normalizeEmail(email)));
+    },
+    async findOrCreateProviderUser({ email, displayName, emailVerifiedAt }) {
+      return findOrCreateProviderUser({ email, displayName, emailVerifiedAt });
     },
     async listUsers() {
       await bootstrapReady;

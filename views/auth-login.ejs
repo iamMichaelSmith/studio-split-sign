@@ -14,6 +14,18 @@
       <% if (error) { %>
         <div class="card legal-note"><%= error %></div>
       <% } %>
+      <% if (typeof oauthProviders !== "undefined" && oauthProviders.length) { %>
+        <div class="oauth-stack">
+          <% oauthProviders.forEach((provider) => { %>
+            <% if (provider.enabled) { %>
+              <a class="oauth-button" href="/auth/<%= provider.key %>?next=<%= encodeURIComponent(next) %>">Continue with <%= provider.label %></a>
+            <% } else { %>
+              <button class="oauth-button oauth-button-disabled" type="button" disabled><%= provider.label %> sign-in coming soon</button>
+            <% } %>
+          <% }) %>
+        </div>
+        <div class="auth-divider"><span>or</span></div>
+      <% } %>
       <form method="post" action="/login">
         <input type="hidden" name="next" value="<%= next %>">
         <label>Email</label>
@@ -23,7 +35,7 @@
         <button type="submit">Sign in</button>
       </form>
       <p class="small auth-links">
-        <a href="<%= signupUrl %>">Create account</a>
+        <a href="<%= signupUrl %>">Create account with email</a>
         <a href="<%= forgotPasswordUrl %>">Forgot password</a>
         <a href="mailto:<%= supportEmail %>">Support</a>
       </p>
