@@ -1,282 +1,304 @@
-﻿# Split Sheet Studio
+# Split Sheet Studio
 
-`Split Sheet Studio` is a music-rights workflow platform for split sheets, signatures, delivery, and record retention.
+Split Sheet Studio is a full-stack music-rights product for creating split sheets, collecting signatures, validating ownership percentages, delivering final PDF records, and exposing the same workflow through both a hosted web app and a native Windows VST3 / standalone client.
 
-It runs today as:
-- a public marketing surface at `https://splitsheetstudio.com`
-- a hosted app at `https://app.splitsheetstudio.com`
-- a signer flow for invite-based completion
-- an admin review surface
-- a JSON API for external clients
-- a JUCE-based standalone / `VST3` plugin for DAW use
+<p align="center">
+  <img src="docs/assets/website-home-preview.png" alt="Split Sheet Studio website" width="1200">
+</p>
 
-This repository is the full product workspace: web app, API, plugin client, AWS deployment scripts, tests, and operator-facing documentation.
+## Product Snapshot
 
-## Why this project exists
-Studios and writing rooms often leave a session with verbal agreement on ownership but no clean operational path to:
-- capture splits immediately
-- collect signatures fast
-- send copies to contributors
-- preserve a final record
+- Public site: `https://splitsheetstudio.com`
+- Hosted app: `https://app.splitsheetstudio.com`
+- Main workflow: split-sheet capture, invite-based signatures, final PDF generation, email delivery, revision links, admin review
+- Native client: JUCE-based Windows standalone app and Windows VST3 plugin
+- Current public packaging: Windows beta installer with hosted update metadata
 
-That gap creates friction at the exact moment everyone wants to leave the room.
+## What This Repo Demonstrates
 
-`Split Sheet Studio` exists to remove that friction with a workflow that is:
-- fast enough for the room
-- structured enough for records
-- flexible enough for browser and DAW use
+This repository is positioned as an employer-facing systems project, not only a prototype. It shows:
 
-## Live product surfaces
+- product design around a real music-industry workflow problem
+- full-stack application delivery from UI through persistence and cloud deployment
+- native desktop / plugin integration against the same hosted backend
+- operational thinking around legal surfaces, audit history, rate limiting, email delivery, and release packaging
+- content and growth work through landing pages, pricing pages, blog infrastructure, and onboarding flows
 
-### Public-facing surfaces
-- `https://splitsheetstudio.com` -> landing / product entry
-- `https://www.splitsheetstudio.com` -> landing alias
-- `https://app.splitsheetstudio.com` -> hosted app
-- `https://staging.splitsheetstudio.com` -> staging alias
+## The Problem
 
-### Runtime surfaces inside the product
-These are the practical micro-apps or workflow surfaces that make up the system:
+Music sessions often end with verbal ownership agreements but no reliable operational record. That creates downstream problems for artists, producers, writers, engineers, managers, publishers, sync teams, and release managers.
 
-1. **Marketing landing**
-   - explains the product
-   - routes users into the hosted app
-   - now includes plugin pricing entry and blog access
+Split Sheet Studio closes that gap by turning end-of-session rights capture into a structured workflow that can happen:
 
-2. **Hosted app**
-   - account registration and login
-   - email verification and password reset
-   - split-sheet creation
-   - draft / finalize workflow
+- in the browser
+- inside the DAW on Windows
+- remotely through secure contributor email links
 
-3. **Signer portal**
-   - mobile-friendly, no-account-required signing
-   - expiring and resendable secure links
-   - explicit per-contributor review confirmation
-   - final packet completion trigger only after every signature
+## Screens
 
-4. **Admin surface**
-   - submission review
-   - signer timeline visibility
-   - reminder actions
-   - user plan management and monthly usage visibility
-   - artifact access
+### Hosted Website
 
-5. **JSON API**
-   - auth endpoints
-   - draft / finalize endpoints
-   - status endpoints for external clients
+<p>
+  <img src="docs/assets/website-home-preview.png" alt="Hosted website preview" width="1200">
+</p>
 
-6. **DAW plugin**
-   - JUCE standalone / `VST3` client
-   - compact session-first UI
-   - hosted API login and submission flow
+### Plugin Login
 
-7. **Plugin storefront**
-   - hosted pricing page
-   - Stripe-ready Checkout session flow
-   - gated installer delivery path
+<p>
+  <img src="docs/assets/plugin-login.png" alt="Plugin login" width="1100">
+</p>
 
-8. **Content layer**
-   - product blog for search visibility
-   - educational articles around split sheets and sync-readiness
+### Plugin Song Screen
 
-## What the system does
-- creates split sheets
-- validates writer and publisher percentages
-- supports composition, master recording, or combined ownership splits
-- supports in-session or invite-based signatures
-- tracks signer state (`invited`, `viewed`, `reminded`, `expired`, `agreed`, `signed`)
-- records invite and completion-email delivery status
-- locks remote split sheets only after every contributor agrees and signs
-- generates final PDFs
-- stores final packets durably
-- emails final results
-- exposes the same workflow to the web app and plugin
+<p>
+  <img src="docs/assets/plugin-song-speakeasy-crop.png" alt="Plugin song details in the Speakeasy skin" width="1100">
+</p>
 
-## Blak Marigold visual system
-- bronze, copper, champagne, espresso, and warm ivory palette derived from the Blak Marigold studio brand
-- real brushed-bronze texture shared by the marketing site and embedded directly into the native VST binary
-- engraved panel geometry, restrained metallic highlights, and high-contrast form controls
-- consistent premium presentation across the public site, pricing, blog, standalone app, and Studio One plugin
-- keyboard focus, readable contrast, reduced-motion support, and responsive layouts remain part of the design system
+### Plugin Contributors Screen
 
-## Current architecture
+<p>
+  <img src="docs/assets/plugin-contributors-denim-crop.png" alt="Plugin contributors and signatures in the Denim skin" width="1100">
+</p>
 
-### Application stack
+### Plugin Review And Send Screen
+
+<p>
+  <img src="docs/assets/plugin-review-bronze-crop.png" alt="Plugin review and send in the Bronze skin" width="1100">
+</p>
+
+## Core Workflow
+
+1. A user signs in through the hosted app or Windows plugin.
+2. The user creates a split sheet with song metadata, rights scope, contributor details, ownership percentages, and recipients.
+3. The server validates ownership totals and required legal fields.
+4. The workflow either captures signatures in-session or sends secure invite links to remote contributors.
+5. Each contributor reviews the same split data, agrees, and signs.
+6. After the last required signature, the server generates the final PDF packet, records audit metadata, and emails the completed record to the selected recipients.
+7. If a completed split needs changes later, the requester uses a revision link to start a new version while the prior signed record remains preserved.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[Marketing Site<br/>splitsheetstudio.com] --> B[Hosted App<br/>app.splitsheetstudio.com]
+    C[Windows Standalone App] --> B
+    D[Windows VST3 Plugin] --> B
+    E[Remote Contributor Signer Portal] --> B
+
+    B --> F[Express / Node.js Runtime]
+    F --> G[Auth Service]
+    F --> H[Split Sheet Validation]
+    F --> I[Submission Lifecycle]
+    F --> J[Storefront / Billing Hooks]
+    F --> K[Contact & Consent Service]
+
+    I --> L[(PostgreSQL / SQLite)]
+    I --> M[PDF Generation]
+    M --> N[(S3 Final Artifacts)]
+    I --> O[SES Email Delivery]
+
+    F --> P[Admin Surface]
+    F --> Q[JSON API]
+    F --> R[Plugin Update Endpoint]
+```
+
+## Stack
+
+### Application
+
 - `Node.js`
 - `Express`
 - `EJS`
 - `PDFKit`
 - `Nodemailer`
-- `Redis` session store support
-- `SQLite` for local-first development
-- `PostgreSQL` for hosted runtime
-- `JUCE` for the plugin / standalone app
+- `SQLite` for local-first and test workflows
+- `PostgreSQL` for hosted persistence
+- `Redis` session / rate-limit store support
+- `Stripe` integration hooks for plan checkout
+- `JOSE` for OAuth token verification groundwork
 
-### AWS services currently used
-- `Route 53` for domain registration and DNS
-- `ACM` for TLS certificates
-- `Application Load Balancer` for HTTPS termination and redirects
-- `ECR` for container images
-- `ECS Fargate` for the hosted Node runtime
-- `RDS PostgreSQL` for hosted persistence
-- `ElastiCache Redis` for shared session state
-- `S3` for final PDF storage
-- `SES` for transactional email delivery
-- `Secrets Manager` for runtime secrets
-- `CloudWatch Logs` for container logs
-- `IAM` for task execution and runtime permissions
+### Native Client
 
-## System flow
-1. User signs in through the hosted app or plugin
-2. User creates a split sheet
-3. Server validates domain rules and persists the draft or final record
-4. Workflow either:
-   - captures signatures in-session, or
-   - sends invite links to contributors
-5. Final signer completion generates the final PDF packet
-6. The server records agreement timestamps and the final audit checksum
-7. Final packet is uploaded to `S3`
-8. Transactional email sends the completed copy to every contributor through `SES`
-9. Admin and API clients can retrieve delivery and signer state
+- `JUCE`
+- Windows `VST3`
+- Windows standalone desktop build
+- hosted API client for auth, split submission, and update checks
+- embedded texture-based skin system with Bronze, Paper Thin, Denim, Soft, Speakeasy, and Plush themes
 
-## Public-launch posture
-The hosted app, plugin login target, signup flow, password reset flow, invite workflow, blog, legal pages, pricing/storefront surface, plugin update metadata, and request-level rate limiting are all in this repo now.
+### Infrastructure
 
-### Plans and usage limits
-The app has an internal subscription model with Stripe subscription checkout hooks:
+- `AWS Route 53`
+- `AWS Certificate Manager`
+- `Application Load Balancer`
+- `Amazon ECS Fargate`
+- `Amazon ECR`
+- `Amazon RDS for PostgreSQL`
+- `Amazon ElastiCache for Redis`
+- `Amazon S3`
+- `Amazon SES`
+- `AWS Secrets Manager`
+- `Amazon CloudWatch Logs`
+- `IAM`
 
-| Plan | Price target | Monthly split-sheet limit | Intended user |
-| --- | --- | ---: | --- |
-| Free | `$0` | `3` | testing, first-time users, low-volume creators |
-| Creator | `$5/mo` | `25` | artists, producers, and songwriters who create split sheets regularly |
-| Studio Pro | `$20/mo` | `250` | studios, engineers, managers, and higher-volume teams |
+### Local / Edge Deployment Paths
 
-Limits are enforced when a user finalizes a split sheet. Drafts do not count. Admins can move users between plans manually from `/admin`. When `STRIPE_SECRET_KEY` is configured, paid users can start Creator or Studio Pro subscription checkout from `/account`, and Stripe webhooks update `users.plan_key`.
+- local Node development runtime
+- Docker-based local execution path
+- Proxmox LXC deployment scripts for private LAN hosting
 
-What is still intentionally deferred:
-- live Stripe account keys, webhook secret, and Stripe Customer Portal configuration
-- code signing for the Windows installer
-- attorney review of public legal templates
+## Key Technical Capabilities
 
-That means the product can be validated publicly before live payments are turned on.
+- split-sheet creation with composition, master, or combined rights scope
+- writer, publisher, and master percentage validation
+- secure invite-based signature collection
+- finalization only after all required contributors sign
+- PDF generation and durable artifact storage
+- completion email delivery to contributor and recipient lists
+- requester-only revision link flow that creates a new version without overwriting the prior signed record
+- plan-aware account usage and upgrade surfaces
+- plugin update metadata endpoint and Windows download flow
+- admin surface for reviewing signer status, revision lineage, reminder activity, and delivery state
+- marketing opt-in and transactional-vs-marketing contact capture boundaries
 
-### Revisions after completion
-Completed split sheets remain immutable as signed PDF records. If a split needs to change later, the final completion email includes a requester-only revision link. The requester signs in, reloads the previous song and contributor data, adjusts the split, and sends a new version to every contributor. The revised split is not final until all contributors sign again.
+## Repository Map
 
-## Repository structure
+### Core Product
 
-### Core app
-- `server.js` -> Express entry point, routing, runtime orchestration
-- `services/auth-service.js` -> registration, verification, reset, login, refresh, ownership
-- `services/database-service.js` -> SQLite / PostgreSQL provider selection
-- `services/submission-service.js` -> submission lifecycle and persistence
-- `services/split-sheet-service.js` -> split-sheet rules and payload shaping
-- `services/storefront-service.js` -> plugin purchase records and gated download tracking
-- `content/blog-posts.js` -> blog content source
-- `content/legal-pages.js` -> public terms, privacy, refund, E-SIGN consent, and disclaimer content
-- `views/` -> landing, app, auth, signer, success, admin, pricing, beta, and blog templates
-- `public/` -> shared browser styling and assets
+- [`server.js`](./server.js) - Express runtime, routing, auth/session setup, API endpoints, delivery, signer workflow, plugin update metadata
+- [`services/auth-service.js`](./services/auth-service.js) - registration, login, verification, password reset, session token flows
+- [`services/split-sheet-service.js`](./services/split-sheet-service.js) - payload normalization and rights validation
+- [`services/submission-service.js`](./services/submission-service.js) - submission persistence and versioning
+- [`services/plan-service.js`](./services/plan-service.js) - plan definitions and usage summaries
+- [`services/contact-service.js`](./services/contact-service.js) - consent-aware contact collection and email preference state
+- [`services/storefront-service.js`](./services/storefront-service.js) - plugin purchase and gated download support
+
+### Web UI And Content
+
+- [`views/`](./views/) - landing, pricing, account, auth, signer, admin, legal, beta, and blog templates
+- [`public/`](./public/) - styles, product assets, and landing/plugin imagery
+- [`content/blog-posts.js`](./content/blog-posts.js) - SEO blog data source
+- [`content/legal-pages.js`](./content/legal-pages.js) - terms, privacy, refunds, e-sign, and disclaimer content
 
 ### Plugin
-- `vst/` -> JUCE-based plugin workspace
-- `vst/src/ApiClient.*` -> hosted API transport
-- `vst/src/PluginEditor.*` -> compact DAW workflow UI
-- `vst/src/PluginProcessor.*` -> plugin processor shell
-- `vst/installer/` -> Windows installer packaging
 
-### AWS / operations
-- `deploy/aws/` -> provisioning, secret sync, task-definition rendering, and ECS deployment scripts
-- `deploy/proxmox/` -> local LXC deployment script and LAN runbook
-- `Dockerfile` -> hosted container runtime
-- `docker-compose.yml` -> local container path
-- `tests/` -> smoke coverage for local and PostgreSQL-backed flows
+- [`vst/src/PluginEditor.cpp`](./vst/src/PluginEditor.cpp) - main Windows plugin and standalone UI workflow
+- [`vst/src/PluginProcessor.cpp`](./vst/src/PluginProcessor.cpp) - plugin processor state and persistence
+- [`vst/src/ApiClient.cpp`](./vst/src/ApiClient.cpp) - hosted auth, split submission, and update check transport
+- [`vst/installer/`](./vst/installer/) - Windows installer packaging
 
-## Local development
+### Deployment And Operations
+
+- [`Dockerfile`](./Dockerfile) - hosted container runtime
+- [`docker-compose.yml`](./docker-compose.yml) - local container path
+- [`deploy/aws/`](./deploy/aws/) - ECS deployment scripts and task definition rendering
+- [`deploy/proxmox/`](./deploy/proxmox/) - Proxmox deployment path
+- [`docs/`](./docs/) - release, QA, deployment, beta, security, launch, and automation docs
+
+## Authentication And Access
+
+Current production-ready auth in the app:
+
+- email/password registration and login
+- email verification
+- password reset
+- account session management
+- plugin login against the hosted app
+
+Groundwork exists for:
+
+- Google OAuth
+- Apple OAuth
+
+Those provider flows still need live production credentials and consent-screen configuration before they are launch-ready.
+
+## Billing And Plans
+
+The app already contains internal plan definitions and Stripe-ready upgrade hooks:
+
+| Plan | Price | Limit | Intended Use |
+| --- | --- | ---: | --- |
+| Free | `$0` | `3` split sheets / month | testing and low-volume creators |
+| Creator | `$5/mo` | `25` split sheets / month | independent artists, producers, and writers |
+| Studio Pro | `$20/mo` | `250` split sheets / month | studios, engineers, and higher-volume teams |
+
+Stripe can be connected later without changing the plan model already built into the account and pricing surfaces.
+
+## Delivery And Audit Model
+
+Important behavioral details already implemented:
+
+- split-sheet drafts are separate from submitted split sheets
+- secure signer tokens expire and can be reissued
+- contributors must explicitly agree before signature submission
+- finalization happens only after every required signer completes the workflow
+- completion emails include a revision path for the original requester
+- completed records remain immutable; revisions create a new version instead of altering the signed source
+
+## Testing
+
+Local smoke coverage exercises the main system path end to end:
+
+- app health and ready endpoints
+- signup, verification, login, refresh, logout, password reset
+- split validation
+- draft creation and update
+- invite-based split creation
+- secure signer flow
+- final PDF generation
+- revision-link flow
+- account usage / limit enforcement
+- plugin update metadata endpoint
+
+Run locally:
+
 ```powershell
-cd C:\Users\BlakM\OneDrive\Documents\Split Sheet App\repo
+cd "C:\Users\BlakM\OneDrive\Documents\Split Sheet App\repo"
+npm install
+npm test
+```
+
+## Local Development
+
+```powershell
+cd "C:\Users\BlakM\OneDrive\Documents\Split Sheet App\repo"
 npm install
 npm run dev
 ```
 
-Local dev URL:
+Default local URL:
+
 - `http://localhost:5050`
 
-## Plugin status
-The plugin is already wired to the hosted app by default:
-- default API target: `https://app.splitsheetstudio.com`
-- startup update check: `/api/plugin/update?currentVersion=...`
-- latest version is controlled by `PLUGIN_LATEST_VERSION_LABEL`
-- forced upgrade floor is controlled by `PLUGIN_MINIMUM_SUPPORTED_VERSION`
-- update download URL: `https://app.splitsheetstudio.com/downloads/plugin/latest`
-- public installer artifact storage: S3 key `downloads/SplitSheetStudio-Setup-0.1.1.exe`
+## Current Release Position
 
-Current installer output:
-- `vst\dist\SplitSheetStudio-Setup-0.1.1.exe`
+As of Monday, August 24, 2026, the product is materially beyond prototype stage:
 
-Current VST release:
-- `0.1.1` adds the Blak Marigold logo to the plugin UI and preserves the hosted update-check path for older installs.
+- hosted site is live
+- hosted app is live
+- blog and legal surfaces are live
+- Windows standalone app works
+- Windows VST3 plugin works
+- split-sheet email delivery works
+- revision flow exists
+- update metadata exists
+- admin review surface exists
 
-## Deployment status
-The public cloud path is no longer theoretical.
+Still pending before a polished commercial release:
 
-This repo has already been moved to a live AWS stack with:
-- public DNS
-- HTTPS
-- hosted app
-- hosted plugin target
-- managed Postgres
-- shared sessions
-- durable PDF storage
-- SES transactional email foundation
+- live Stripe configuration
+- production Google / Apple auth credentials
+- signed Windows binaries and installer
+- a public Mac build path if AU or macOS support becomes a release target
+- deeper monitoring / alerting beyond current logs and runtime checks
 
-The current hosted runtime is verified through:
-- `https://app.splitsheetstudio.com/health`
-- `https://app.splitsheetstudio.com/api/ready`
-- live pricing and blog routes
-- beta installer page at `https://splitsheetstudio.com/beta`
-- public legal routes under `https://splitsheetstudio.com/legal/...`
-- plugin sign-in and end-to-end split email delivery tests
+## Documentation
 
-Local Proxmox copy:
-- LXC `103` / `split-sheet-studio`
-- LAN URL: `http://192.168.1.237:5050`
-- repeatable deploy: `powershell -ExecutionPolicy Bypass -File .\deploy\proxmox\deploy-to-lxc.ps1 -SyncLocalEnv`
-
-## Remaining public-launch work
-The core hosted system is live, but these remain the main product-hardening items:
-- plugin installer final verification on a clean machine
-- code signing for installer / binaries
-- attorney review of privacy policy / terms / commercial packaging
-- live Stripe keys and webhook secret
-- purchase-to-download fulfillment with live Stripe enabled
-- alerting / uptime monitoring beyond base CloudWatch logs
-
-## Fast links
-- Product entry: `https://splitsheetstudio.com`
-- Hosted app: `https://app.splitsheetstudio.com`
-- Health: `https://app.splitsheetstudio.com/health`
-- Ready: `https://app.splitsheetstudio.com/api/ready`
-
-## Documentation map
-- `docs/architecture.md`
-- `docs/api.md`
-- `docs/deployment.md`
-- `docs/public-launch.md`
-- `docs/public-beta-release.md`
-- `docs/qa-checklist.md`
-- `docs/release-checklist.md`
-- `docs/repo-tour.md`
-- `deploy/aws/README.md`
+- [`docs/public-launch.md`](./docs/public-launch.md)
+- [`docs/public-beta-release.md`](./docs/public-beta-release.md)
+- [`docs/qa-checklist.md`](./docs/qa-checklist.md)
+- [`docs/release-checklist.md`](./docs/release-checklist.md)
+- [`docs/email-automation.md`](./docs/email-automation.md)
 
 ## Summary
-`Split Sheet Studio` is a studio paperwork system that moved from local-first prototype to hosted product foundation.
 
-This repository now reflects the actual platform:
-- public domain
-- hosted app
-- AWS-backed runtime
-- plugin client
-- operational scripts
-- content/blog surfaces
-- product documentation
+Split Sheet Studio is a productized rights-workflow system for music sessions. This repo demonstrates full-stack web engineering, cloud deployment, native plugin integration, document generation, workflow automation, operational thinking, and product packaging around a real vertical problem.
