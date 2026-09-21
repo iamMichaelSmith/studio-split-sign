@@ -2,7 +2,7 @@
   [string]$ProxmoxHost = "proxmox-host",
   [int]$Vmid = 103,
   [string]$RemoteAppDir = "/opt/split-sheet-studio",
-  [string]$LegacyAppDir = "/opt/studio-split-sign",
+  [string]$LegacyAppDir = "/opt/split-sheet-studio-legacy",
   [string]$PublicBaseUrl = "http://192.168.1.237:5050",
   [switch]$SyncLocalEnv
 )

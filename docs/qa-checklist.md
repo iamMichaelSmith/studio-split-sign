@@ -1,7 +1,7 @@
 # QA Checklist
 
 ## Goal
-Use this checklist to validate the phase-one split-sign workflow quickly and consistently.
+Use this checklist to validate the phase-one Split Sheet Studio signature workflow quickly and consistently.
 
 ## Pre-check
 - [ ] `npm install` completed
