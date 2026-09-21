@@ -1,4 +1,4 @@
-const updatedLabel = "August 23, 2026";
+const updatedLabel = "September 13, 2026";
 
 const commonNotice = [
   "These pages are operating templates for Split Sheet Studio. They are written to be conservative and clear, but they are not legal advice.",
@@ -112,6 +112,7 @@ const legalPages = {
         body: [
           "We collect account information such as name, email address, password hash, verification status, plan level, and authentication session data.",
           "We collect split-sheet workflow information that users submit, including song metadata, contributor names, roles, emails, addresses, phone numbers, PRO details, IPI numbers, publisher details, ownership percentages, typed signatures, drawn signatures, recipient selections, notes, timestamps, and audit events.",
+          "We maintain a contact record when someone creates an account, is named as a contributor, signs a split sheet, or voluntarily joins an email list. The record may include email, display name, source, consent status, consent timestamp, IP-related request data, user agent, and unsubscribe status.",
           "We collect technical information such as IP-related request data, user agent, rate-limit events, server logs, plugin version checks, download events, and error data."
         ]
       },
@@ -119,7 +120,8 @@ const legalPages = {
         heading: "How we use information",
         body: [
           "We use information to provide the hosted app, plugin API, account access, signature links, final PDFs, email delivery, support, fraud prevention, rate limiting, security, debugging, updates, and service improvement.",
-          "We may use aggregated or de-identified operational data to understand reliability, feature usage, and product performance."
+          "We may use aggregated or de-identified operational data to understand reliability, feature usage, and product performance.",
+          "We send educational or promotional email only after an explicit optional opt-in. Being added as a contributor, receiving a signature request, signing a split sheet, or creating an account does not by itself require marketing consent."
         ]
       },
       {
@@ -161,7 +163,8 @@ const legalPages = {
         heading: "Your choices",
         body: [
           "You can update account information, control recipient selections, avoid optional fields, request support, and choose whether to submit split-sheet information.",
-          "If marketing email is added later, unsubscribe controls will be provided for marketing messages. Transactional messages related to accounts, signatures, purchases, and security may still be sent."
+          "Marketing choices are optional. Each marketing contact has an unsubscribe preference, and unsubscribing does not prevent transactional messages related to accounts, split-sheet invitations, signatures, purchases, security, or completed records.",
+          "A later transactional event does not automatically resubscribe an unsubscribed contact. A new explicit opt-in is required."
         ]
       },
       {
@@ -184,29 +187,30 @@ const legalPages = {
     description: "Refund rules for Split Sheet Studio plans, plugin downloads, and digital products.",
     sections: [
       {
-        heading: "Digital product position",
+        heading: "No-refund policy",
         body: [
-          "The Split Sheet Studio plugin, hosted account access, and related downloads are digital products and services. Once software, protected downloads, account access, or usage benefits are delivered, refunds may be limited."
+          "All Split Sheet Studio subscriptions, hosted account access, plugin access, standalone app access, protected downloads, and digital services are non-refundable except where a refund is required by law.",
+          "By purchasing or subscribing, you understand that access to digital services and software begins immediately and that payments are final."
         ]
       },
       {
         heading: "Subscription plans",
         body: [
-          "When paid subscriptions are enabled, you may cancel future renewal through the billing portal or support. Cancellation stops future billing but does not automatically refund prior paid periods unless required by law or approved by support.",
-          "If a subscription charge was accidental, duplicated, or caused by a verified billing error, contact support promptly."
+          "You may cancel future renewal through the billing portal or support. Cancellation stops future billing at the end of the current billing period but does not refund the current or prior paid period except where required by law.",
+          "If you believe a charge was duplicated or caused by a verified billing error, contact support promptly so the account and payment record can be reviewed."
         ]
       },
       {
-        heading: "Plugin purchases",
+        heading: "Plugin and software access",
         body: [
-          "Plugin purchase refunds may be denied after a download token, installer, license benefit, or protected download has been delivered, unless required by law.",
-          "If the installer cannot be downloaded or the delivered build is materially defective on a supported Windows/VST3 setup, contact support so we can troubleshoot, replace the download, or evaluate a refund."
+          "The Windows VST3 plugin and standalone Windows app are included with paid packages during launch. Access to those digital downloads and software benefits is non-refundable except where required by law.",
+          "If the installer cannot be downloaded or the delivered build is materially defective on a supported Windows/VST3 setup, contact support so we can troubleshoot or replace access."
         ]
       },
       {
-        heading: "No refund for user data mistakes",
+        heading: "No refunds for workflow or user data issues",
         body: [
-          "Refunds are not guaranteed for incorrect split percentages, incorrect recipient emails, contributor disputes, publishing disagreements, duplicate submissions, missed sync licensing opportunities, DAW/user configuration problems outside supported requirements, or failure to review information before submission."
+          "Refunds are not provided for incorrect split percentages, incorrect recipient emails, contributor disputes, publishing disagreements, duplicate submissions, missed sync licensing opportunities, DAW/user configuration problems outside supported requirements, or failure to review information before submission."
         ]
       },
       {

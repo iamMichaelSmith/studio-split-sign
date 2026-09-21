@@ -2,7 +2,7 @@
   [string]$BuildDir = ".\build",
   [string]$Configuration = "Release",
   [string]$OutputDir = ".\dist",
-  [string]$Version = "0.1.1",
+  [string]$Version = "0.1.2",
   [string]$CertificateThumbprint = $env:SPLITSHEET_SIGNING_CERT_THUMBPRINT,
   [string]$PfxPath = $env:SPLITSHEET_SIGNING_PFX_PATH,
   [string]$PfxPassword = $env:SPLITSHEET_SIGNING_PFX_PASSWORD,

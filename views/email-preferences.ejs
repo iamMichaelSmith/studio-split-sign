@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Email preferences | Split Sheet Studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap auth-wrap">
+    <div class="auth-card card">
+      <h1>Email preferences</h1>
+      <% if (updated || contact.marketingStatus === 'unsubscribed') { %>
+        <p>You are unsubscribed from Split Sheet Studio marketing emails.</p>
+        <p class="small">Transactional messages needed to complete split sheets may still be sent when you participate in a session.</p>
+      <% } else { %>
+        <p>Marketing status for <b><%= contact.email %></b>: <%= contact.marketingStatus %>.</p>
+        <form method="post" action="/email-preferences/<%= contact.unsubscribeToken %>/unsubscribe">
+          <button type="submit">Unsubscribe from marketing</button>
+        </form>
+      <% } %>
+      <p class="small auth-links"><a href="/">Return home</a><a href="/legal/privacy">Privacy Policy</a></p>
+    </div>
+  </div>
+</body>
+</html>

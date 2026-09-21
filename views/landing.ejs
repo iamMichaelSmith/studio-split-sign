@@ -4,12 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Split Sheet Studio | Music Split Sheets Inside Your DAW</title>
-  <meta name="description" content="Create music split sheets, validate composition and master ownership, collect remote signatures, and deliver final PDF records from the web or a VST3 plugin.">
+  <meta name="description" content="Create music split sheets, validate composition and master ownership, collect remote signatures, and deliver final PDF records from the web or a native DAW plugin.">
   <link rel="canonical" href="https://splitsheetstudio.com/">
   <meta property="og:title" content="Split Sheet Studio | Lock the split. Keep the momentum.">
-  <meta property="og:description" content="A studio-first split sheet workflow for artists, producers, songwriters, and managers—available on the web and inside Studio One.">
+  <meta property="og:description" content="A studio-first split sheet workflow for artists, producers, songwriters, and managers—available on the web and as a Windows VST3 plugin and standalone app.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://splitsheetstudio.com/">
+  <meta property="og:image" content="<%= socialImageUrl %>">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Split Sheet Studio | Lock the split. Keep the momentum.">
+  <meta name="twitter:description" content="Create music split sheets, validate ownership, collect remote signatures, and deliver final PDF records from the web or Windows VST3 plugin.">
+  <meta name="twitter:image" content="<%= socialImageUrl %>">
   <meta name="theme-color" content="#171311">
   <link rel="preload" as="image" href="/vst-contributors.png" fetchpriority="high">
   <link rel="stylesheet" href="/style.css">
@@ -22,7 +27,7 @@
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Windows 10, Windows 11",
     "description": "Music split sheet software for composition and master ownership, remote signatures, and final PDF delivery.",
-    "offers": { "@type": "Offer", "price": "10.00", "priceCurrency": "USD", "availability": "https://schema.org/<%= stripeEnabled ? 'InStock' : 'PreOrder' %>" },
+    "offers": { "@type": "AggregateOffer", "lowPrice": "0.00", "highPrice": "19.00", "offerCount": "3", "priceCurrency": "USD", "availability": "https://schema.org/<%= stripeEnabled ? 'InStock' : 'PreOrder' %>" },
     "brand": { "@type": "Brand", "name": "Blak Marigold Studio" }
   }
   </script>
@@ -38,31 +43,67 @@
           <p class="hero-lede">Capture composition and master ownership, collect every signature, and deliver the final record before the session turns into an email chase.</p>
           <div class="hero-actions">
             <a class="premium-button premium-button-primary" href="<%= signupUrl %>">Create a free account <span aria-hidden="true">→</span></a>
-            <a class="premium-button premium-button-ghost" href="#plugin">Explore the VST3</a>
+            <a class="premium-button premium-button-ghost" href="#plugin">Explore the plugin</a>
           </div>
           <div class="hero-proof" aria-label="Product highlights"><span>✓ Built in a working studio</span><span>✓ Remote or in-session signing</span><span>✓ Final PDF for every signer</span></div>
         </div>
-        <div class="hero-product hero-vst-preview" aria-label="Split Sheet Studio VST3 contributor screen">
+        <div class="hero-product hero-vst-preview" aria-label="Split Sheet Studio plugin contributor screen">
           <div class="vst-hero-window">
-            <img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio VST3 contributor and signature workflow" fetchpriority="high">
+            <img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio plugin contributor and signature workflow" fetchpriority="high">
           </div>
-          <div class="vst-preview-caption"><span>REAL VST3 INTERFACE</span><strong>Studio One tested</strong></div>
+          <div class="vst-preview-caption"><span>NATIVE PLUGIN INTERFACE</span><strong>Windows VST3 · Standalone app</strong></div>
           <div class="product-glow"></div>
         </div>
       </section>
 
-      <section class="proof-strip" aria-label="Core capabilities"><div class="premium-container proof-grid"><div><strong>100%</strong><span>Hard split validation</span></div><div><strong>2</strong><span>Signature workflows</span></div><div><strong>1</strong><span>Locked final packet</span></div><div><strong>VST3</strong><span>Validated in Studio One</span></div></div></section>
+      <section class="proof-strip" aria-label="Core capabilities"><div class="premium-container proof-grid"><div><strong>100%</strong><span>Hard split validation</span></div><div><strong>2</strong><span>Signature workflows</span></div><div><strong>1</strong><span>Locked final packet</span></div><div><strong>VST3</strong><span>Windows plugin + standalone</span></div></div></section>
+
+      <section class="premium-section reputation-section" aria-labelledby="reputation-title">
+        <div class="premium-container reputation-heading">
+          <div><div class="section-kicker">Sample launch feedback</div><h2 id="reputation-title">The kind of relief creators remember.</h2></div>
+          <p>Preview testimonial copy for launch. Replace these with verified customer reviews as real users send them in.</p>
+        </div>
+        <div class="review-marquee" aria-label="Sample creator and studio feedback">
+          <div class="review-track">
+            <article class="review-card"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>Best service of my life. I recommend it 10 out of 10 for any studio that wants the paperwork finished before people leave.</blockquote><p>Maze Music Group</p><small>Studio team</small></article>
+            <article class="review-card review-card-long"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>I am glad this exists. If I do not document the split, my music can end up anywhere in the world and I may not be able to track the artists I collaborated with later.</blockquote><p>Shawnie Beats</p><small>Producer</small></article>
+            <article class="review-card"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>This makes the last five minutes of a session feel organized instead of awkward.</blockquote><p>North Loop Studios</p><small>Recording studio</small></article>
+            <article class="review-card review-card-long"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>The remote signature link is the part I care about. Everybody is not always in the same room, but the record still needs to be complete before release week.</blockquote><p>Talia Rose</p><small>Independent artist</small></article>
+            <article class="review-card"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>Finally, split sheets feel like part of the session instead of a separate admin day.</blockquote><p>KJ The Engineer</p><small>Mix engineer</small></article>
+            <article class="review-card review-card-long"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>I need clean credits, percentages, and emails before I pitch songs for sync. This gives me one place to collect the details before the trail gets cold.</blockquote><p>Bright Room Publishing</p><small>Catalog admin</small></article>
+            <article class="review-card"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>The 100% validation catches mistakes before the PDF goes out. That alone saves conversations.</blockquote><p>Riverline Music</p><small>Producer collective</small></article>
+            <article class="review-card review-card-long"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>Artists understand it quickly. Managers get a clean PDF. Studios get a repeatable closeout process. That is the exact combination we needed.</blockquote><p>Session Desk Co.</p><small>Studio manager</small></article>
+            <article class="review-card"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>Best service of my life. I recommend it 10 out of 10 for any studio that wants the paperwork finished before people leave.</blockquote><p>Maze Music Group</p><small>Studio team</small></article>
+            <article class="review-card review-card-long"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>I am glad this exists. If I do not document the split, my music can end up anywhere in the world and I may not be able to track the artists I collaborated with later.</blockquote><p>Shawnie Beats</p><small>Producer</small></article>
+            <article class="review-card"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>This makes the last five minutes of a session feel organized instead of awkward.</blockquote><p>North Loop Studios</p><small>Recording studio</small></article>
+            <article class="review-card review-card-long"><div class="review-stars" aria-label="Sample rating: 5 out of 5"><span></span><span></span><span></span><span></span><span></span></div><blockquote>The remote signature link is the part I care about. Everybody is not always in the same room, but the record still needs to be complete before release week.</blockquote><p>Talia Rose</p><small>Independent artist</small></article>
+          </div>
+        </div>
+      </section>
 
       <section class="vst-screen-showcase" aria-labelledby="vst-screen-showcase-title">
         <div class="premium-container vst-screen-showcase-heading">
           <div><div class="section-kicker">The complete plugin workflow</div><h2 id="vst-screen-showcase-title">One session. Three focused steps.</h2></div>
           <p>Move from song details to contributors, signatures, review, and delivery without breaking the creative flow.</p>
         </div>
-        <div class="vst-screen-banner" aria-label="Split Sheet Studio VST3 interface screens">
-          <figure class="vst-screen-card vst-screen-card-left"><img src="/vst-song.png" width="1600" height="1214" alt="Split Sheet Studio VST3 song information screen" loading="lazy"><figcaption>01 · Song</figcaption></figure>
-          <figure class="vst-screen-card vst-screen-card-center"><img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio VST3 contributors, ownership splits, and signature screen" loading="lazy"><figcaption>02 · Contributors</figcaption></figure>
-          <figure class="vst-screen-card vst-screen-card-right"><img src="/vst-review-send.png" width="1600" height="1214" alt="Split Sheet Studio VST3 review, confirmations, recipients, and delivery screen" loading="lazy"><figcaption>03 · Review &amp; Send</figcaption></figure>
+        <div class="vst-screen-banner" aria-label="Split Sheet Studio plugin interface screens">
+          <figure class="vst-screen-card vst-screen-card-left"><img src="/vst-song.png" width="1600" height="1214" alt="Split Sheet Studio plugin song information screen" loading="lazy"><figcaption>01 · Song</figcaption></figure>
+          <figure class="vst-screen-card vst-screen-card-center"><img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio plugin contributors, ownership splits, and signature screen" loading="lazy"><figcaption>02 · Contributors</figcaption></figure>
+          <figure class="vst-screen-card vst-screen-card-right"><img src="/vst-review-send.png" width="1600" height="1214" alt="Split Sheet Studio plugin review, confirmations, recipients, and delivery screen" loading="lazy"><figcaption>03 · Review &amp; Send</figcaption></figure>
         </div>
+      </section>
+
+      <section class="premium-section skin-showcase" aria-labelledby="skin-showcase-title">
+        <div class="premium-container skin-showcase-heading">
+          <div><div class="section-kicker">A workspace that feels like yours</div><h2 id="skin-showcase-title">Change the mood.<br>Keep the workflow.</h2></div>
+          <p>Switch between premium visual skins without changing how the split sheet works. Your selection is remembered the next time the plugin opens.</p>
+        </div>
+        <div class="skin-stage" aria-label="Denim, Speakeasy, and Plush Split Sheet Studio skins">
+          <figure class="skin-card skin-card-denim"><div class="skin-card-screen"><img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio interface with Denim skin" loading="lazy"><span class="skin-texture"></span></div><figcaption><strong>Denim</strong><span>Studio utility</span></figcaption></figure>
+          <figure class="skin-card skin-card-speakeasy"><div class="skin-card-screen"><img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio interface with Speakeasy skin" loading="lazy"><span class="skin-texture"></span></div><figcaption><strong>Speakeasy</strong><span>After-hours luxury</span></figcaption></figure>
+          <figure class="skin-card skin-card-plush"><div class="skin-card-screen"><img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio interface with Plush skin" loading="lazy"><span class="skin-texture"></span></div><figcaption><strong>Plush</strong><span>Soft-room focus</span></figcaption></figure>
+        </div>
+        <p class="skin-showcase-note">Also includes Bronze, Paper Thin, and Soft.</p>
       </section>
 
       <section id="product" class="premium-section premium-container statement-section">
@@ -85,15 +126,17 @@
       </div></section>
 
       <section id="plugin" class="premium-section premium-container plugin-showcase">
-        <div class="plugin-showcase-copy"><div class="section-kicker">Inside your DAW</div><h2>Finish the paperwork where the music was made.</h2><p>The Windows VST3 connects to the same hosted account as the web app. Open it in Studio One, capture the session, and send signature links without leaving the project.</p><div class="compatibility-row"><span>WINDOWS 10/11</span><span>VST3</span><span>STUDIO ONE TESTED</span></div><a class="premium-button premium-button-primary" href="<%= pricingUrl %>">Get the plugin — <%= pluginPriceLabel %></a></div>
+        <div class="plugin-showcase-copy"><div class="section-kicker">Inside your DAW</div><h2>Finish the paperwork where the music was made.</h2><p>The Windows VST3 connects to the same hosted account as the web app. The standalone Windows app uses the same workflow and does not need to stay open while the plugin runs.</p><div class="compatibility-row"><span>WINDOWS VST3</span><span>64-BIT WINDOWS DAWS</span><span>STANDALONE APP</span></div><div class="hero-actions"><a class="premium-button premium-button-primary" href="/beta#windows-beta">Download Windows beta</a></div></div>
         <div class="studio-quote"><div class="quote-mark">“</div><blockquote>The best split-sheet workflow is the one artists will actually finish before everyone leaves.</blockquote><p>Built by Blak Marigold Studio<br><span>Manor / Austin, Texas</span></p></div>
       </section>
 
       <section class="premium-section remote-section"><div class="premium-container remote-grid"><div class="remote-visual"><div class="city-node"><i></i><strong>Studio A</strong><small>Producer signed</small></div><div class="route-line"><span>Secure invite</span></div><div class="city-node"><i></i><strong>Studio B</strong><small>Artist signs remotely</small></div></div><div><div class="section-kicker">Made for remote collaboration</div><h2>Different studios. Different states. One final agreement.</h2><p>Send each contributor a secure review link. The split stays pending until everyone confirms. After the final signature, the completed packet is automatically delivered to every selected recipient.</p></div></div></section>
 
-      <section class="premium-section premium-container launch-card"><div><div class="section-kicker">Early release</div><h2>Put rights clarity in every session.</h2><p>Use the hosted app today. The Windows beta installer is available for testing before code signing and checkout go live.</p></div><div class="launch-price"><span>Current beta</span><strong>Free test build</strong><a class="premium-button premium-button-primary" href="/beta"><%= stripeEnabled ? 'Get Split Sheet Studio' : 'Download beta plugin' %></a></div></section>
+      <section class="premium-section premium-container launch-card"><div><div class="section-kicker">Launch pricing</div><h2>Put rights clarity in every session.</h2><p>Start free with 3 completed split sheets per month. Upgrade to Creator at $7/month or Studio at $19/month when sessions become regular. The Windows VST3 plugin and standalone app are included with both paid packages.</p></div><div class="launch-price"><span>Creator starts at</span><strong>$7/mo</strong><a class="premium-button premium-button-primary" href="/pricing"><%= stripeEnabled ? 'Choose a package' : 'View launch packages' %></a></div></section>
 
       <section class="premium-section premium-container editorial-section"><div class="section-heading compact"><div><div class="section-kicker">The rights room</div><h2>Practical guidance for working creators.</h2></div><a class="text-link" href="<%= blogUrl %>">Read all articles →</a></div><div class="editorial-grid"><% latestPosts.forEach((post, index) => { %><article class="editorial-card <%= index === 0 ? 'editorial-featured' : '' %>"><div class="editorial-number">0<%= index + 1 %></div><div class="pill"><%= post.category %></div><h3><a href="/blog/<%= post.slug %>"><%= post.title %></a></h3><p><%= post.excerpt %></p><small><%= post.readingMinutes %> min read</small></article><% }) %></div></section>
+
+      <section id="newsletter" class="premium-section newsletter-section"><div class="premium-container newsletter-grid"><div><div class="section-kicker">The session rights list</div><h2>Useful music-rights guidance, not inbox noise.</h2><p>Get practical articles about split sheets, publishing, PRO registration, sync licensing readiness, and studio documentation.</p></div><form method="post" action="/newsletter/subscribe" class="newsletter-form"><div class="newsletter-fields"><input name="displayName" autocomplete="name" placeholder="Your name"><input type="email" name="email" autocomplete="email" placeholder="Email address" required></div><label class="newsletter-consent"><input type="checkbox" name="marketingOptIn" value="yes" required><span>I want educational emails and product updates from Split Sheet Studio. I can unsubscribe anytime. See the <a href="/legal/privacy">Privacy Policy</a>.</span></label><button class="premium-button premium-button-primary" type="submit">Join the list →</button><% if (newsletterStatus === 'subscribed') { %><p class="newsletter-message success">You’re on the list.</p><% } else if (newsletterStatus === 'consent-required') { %><p class="newsletter-message">Please check the consent box to subscribe.</p><% } else if (newsletterStatus === 'invalid-email') { %><p class="newsletter-message">Enter a valid email address.</p><% } %></form></div></section>
 
       <section class="final-cta premium-container"><div class="brand-mark brand-mark-cta" aria-hidden="true"><img class="brand-logo-img" src="/split-sheet-studio-logo.png" width="116" height="116" alt=""></div><h2>Make the agreement part of the session.</h2><p>Create your account and run the complete split-sheet workflow from browser or plugin.</p><div class="hero-actions centered"><a class="premium-button premium-button-primary" href="<%= signupUrl %>">Create account →</a><a class="premium-button premium-button-ghost" href="<%= appUrl %>">Open the app</a></div></section>
     </main>

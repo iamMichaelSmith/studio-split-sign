@@ -51,16 +51,21 @@ $taskPolicyPath = Join-Path $env:TEMP "$AppName-ecs-task-policy.json"
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "AllowSplitSheetPdfBucketAccess",
+      "Sid": "AllowSplitSheetBucketReadiness",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::$BucketName"
+    },
+    {
+      "Sid": "AllowSplitSheetObjectAccess",
       "Effect": "Allow",
       "Action": [
         "s3:GetObject",
         "s3:PutObject"
       ],
-      "Resource": [
-        "arn:aws:s3:::$BucketName",
-        "arn:aws:s3:::$BucketName/*"
-      ]
+      "Resource": "arn:aws:s3:::$BucketName/*"
     },
     {
       "Sid": "AllowSesDelivery",

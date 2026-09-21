@@ -44,6 +44,10 @@
         <input type="email" name="email" value="<%= values.email %>" required>
         <label>Password</label>
         <input type="password" name="password" placeholder="At least 8 characters" required>
+        <label class="agreement-check marketing-opt-in">
+          <input type="checkbox" name="marketingOptIn" value="yes" <%= values.marketingOptIn ? 'checked' : '' %>>
+          <span>Send me educational music-rights articles and Split Sheet Studio product updates. Optional; unsubscribe anytime. See the <a href="/legal/privacy">Privacy Policy</a>.</span>
+        </label>
         <button type="submit" <%= allowPublicRegistration ? "" : "disabled" %>>Create account</button>
       </form>
       <p class="small auth-links">

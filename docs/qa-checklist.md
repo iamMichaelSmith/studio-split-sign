@@ -1,11 +1,16 @@
 # QA Checklist
 
 ## Goal
-Use this checklist to validate the phase-one split-sign workflow quickly and consistently.
+Use this checklist to validate the phase-one Split Sheet Studio signature workflow quickly and consistently.
+
+Latest automated evidence: [September 2 release-validation report](./release-validation-2026-09-02.md). Its passing backend tests do not mark the manual native-client or production-delivery items below complete.
 
 ## Pre-check
 - [ ] `npm install` completed
 - [ ] `npm test` passes
+- [ ] `npm run test:postgres` passes against its disposable PostgreSQL cluster, including backup/restore
+- [ ] concurrent signing, resend, and duplicate-submit behavior is verified across backend instances
+- [ ] document download-link authorization and expiry policy is reviewed and tested
 - [ ] app starts with `npm run dev`
 - [ ] `/health` responds successfully
 - [ ] `/ready` responds successfully
@@ -43,11 +48,11 @@ Use this checklist to validate the phase-one split-sign workflow quickly and con
 - [ ] copy the revision request link for a completed split
 - [ ] verify JSON retrieval route works
 
-## Studio One VST3 beta flow
-- [ ] close Studio One before installing the beta
-- [ ] install `SplitSheetStudio-Setup-0.1.1.exe`
+## Windows VST3 beta flow
+- [ ] close all DAWs before installing the beta
+- [ ] install `SplitSheetStudio-Setup-0.1.2.exe`
 - [ ] confirm VST3 binary exists at `C:\Program Files\Common Files\VST3\Split Sheet Studio.vst3\Contents\x86_64-win\Split Sheet Studio.vst3`
-- [ ] open Studio One and rescan plugins
+- [ ] open the selected 64-bit Windows VST3 host and rescan plugins
 - [ ] load `Split Sheet Studio` on an audio track or instrument track
 - [ ] confirm the marigold logo appears instead of the old `SS` mark
 - [ ] confirm the standalone app does not need to be open
@@ -56,16 +61,16 @@ Use this checklist to validate the phase-one split-sign workflow quickly and con
 - [ ] send remote invite links from the plugin
 - [ ] sign both links in the browser
 - [ ] confirm both completed emails arrive with PDF and revision link
-- [ ] reopen the plugin and confirm `/api/plugin/update` reports up to date for `0.1.1`
+- [ ] reopen the plugin and confirm `/api/plugin/update` reports up to date for `0.1.2`
 
 ## Plugin update flow
 - [ ] install or simulate plugin version `0.1.0`
 - [ ] open plugin and confirm update notice appears
 - [ ] click Download Update
 - [ ] confirm browser opens `https://app.splitsheetstudio.com/downloads/plugin/latest`
-- [ ] close Studio One before running installer
+- [ ] close the DAW before running installer
 - [ ] install latest package
-- [ ] reopen Studio One and confirm version `0.1.1` behavior
+- [ ] reopen the DAW and confirm version `0.1.2` behavior
 
 ## Email flow
 If SMTP is configured:
@@ -92,5 +97,5 @@ A phase-one build is ready for internal testing when:
 - [ ] admin timeline is accurate
 - [ ] final PDF generation works
 - [ ] reminder flow works
-- [ ] Studio One VST3 opens and submits
+- [ ] Windows VST3 opens and submits in the selected compatible host
 - [ ] beta installer path and update URL work

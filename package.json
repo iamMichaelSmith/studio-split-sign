@@ -1,14 +1,16 @@
 {
   "name": "split-sheet-studio",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Music studio split-sheet platform with a web app, JSON API, and JUCE VST client",
   "main": "server.js",
   "scripts": {
     "dev": "node --use-system-ca server.js",
     "start": "node --use-system-ca server.js",
-    "test": "node tests/smoke.cjs",
-    "test:postgres": "node tests/smoke-postgres.cjs",
+    "test": "node --test tests/auth-security.cjs tests/release-security.cjs && node tests/smoke.cjs",
+    "test:security": "node --test tests/auth-security.cjs tests/release-security.cjs",
+    "test:release:postgres": "node tests/release-postgres.cjs",
+    "test:postgres": "node tests/release-postgres.cjs",
     "db:postgres:setup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\setup-local-postgres.ps1",
     "vst:build": "powershell -ExecutionPolicy Bypass -File .\\vst\\build-and-install.ps1",
     "vst:package": "powershell -ExecutionPolicy Bypass -File .\\vst\\package-installer.ps1",
@@ -26,7 +28,7 @@
     "express-session": "^1.18.0",
     "jose": "^5.10.0",
     "nanoid": "^3.3.11",
-    "nodemailer": "^9.0.5",
+    "nodemailer": "^9.1.1",
     "pdfkit": "^0.17.2",
     "pg": "^8.22.0",
     "rate-limit-redis": "^5.0.0",
@@ -35,7 +37,13 @@
     "signature_pad": "^4.1.7",
     "stripe": "^22.3.1"
   },
+  "overrides": {
+    "qs": "6.16.0"
+  },
   "optionalDependencies": {
     "better-sqlite3": "^12.11.1"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
   }
 }

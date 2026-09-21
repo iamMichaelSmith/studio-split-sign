@@ -53,6 +53,7 @@ void SplitSheetStudioProcessor::getStateInformation(juce::MemoryBlock& destData)
         state.setProperty("displayName", displayName, nullptr);
         state.setProperty("accessToken", accessToken, nullptr);
         state.setProperty("refreshToken", refreshToken, nullptr);
+        state.setProperty("themeKey", themeKey, nullptr);
     }
 
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
@@ -76,6 +77,8 @@ void SplitSheetStudioProcessor::setStateInformation(const void* data, int sizeIn
     displayName = state["displayName"].toString();
     accessToken = state["accessToken"].toString();
     refreshToken = state["refreshToken"].toString();
+    const auto restoredThemeKey = state["themeKey"].toString();
+    themeKey = restoredThemeKey.isNotEmpty() ? restoredThemeKey : "bronze";
 }
 
 SplitSheetApiClient& SplitSheetStudioProcessor::getApiClient() { return apiClient; }
@@ -138,6 +141,21 @@ void SplitSheetStudioProcessor::setRefreshToken(juce::String newToken)
 {
     const juce::ScopedLock lock(stateLock);
     refreshToken = std::move(newToken);
+}
+
+juce::String SplitSheetStudioProcessor::getThemeKey() const
+{
+    const juce::ScopedLock lock(stateLock);
+    return themeKey;
+}
+
+void SplitSheetStudioProcessor::setThemeKey(juce::String newThemeKey)
+{
+    {
+        const juce::ScopedLock lock(stateLock);
+        themeKey = std::move(newThemeKey);
+    }
+    updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
 }
 
 bool SplitSheetStudioProcessor::hasSession() const

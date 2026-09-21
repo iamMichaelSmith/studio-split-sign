@@ -4,27 +4,45 @@ const PLAN_DEFINITIONS = {
     name: "Free",
     monthlySheetLimit: 3,
     monthlyPriceUsdCents: 0,
+    annualPriceUsdCents: 0,
     stripePriceEnv: "",
+    annualStripePriceEnv: "",
     priceLabel: "$0",
+    annualPriceLabel: "",
+    compareAtPriceLabel: "",
+    annualCompareAtPriceLabel: "",
+    discountLabel: "",
     description: "Starter access for testing the workflow."
   },
   creator: {
     key: "creator",
     name: "Creator",
     monthlySheetLimit: 25,
-    monthlyPriceUsdCents: 500,
+    monthlyPriceUsdCents: 700,
+    annualPriceUsdCents: 7000,
     stripePriceEnv: "STRIPE_CREATOR_PRICE_ID",
-    priceLabel: "$5/mo",
-    description: "For artists, producers, and songwriters using split sheets regularly."
+    annualStripePriceEnv: "STRIPE_CREATOR_ANNUAL_PRICE_ID",
+    priceLabel: "$7/mo",
+    annualPriceLabel: "$70/yr",
+    compareAtPriceLabel: "$10/mo",
+    annualCompareAtPriceLabel: "$100/yr",
+    discountLabel: "Launch deal",
+    description: "For artists, producers, and songwriters using split sheets regularly. Includes the Windows VST3 plugin and standalone app."
   },
   studio_pro: {
     key: "studio_pro",
-    name: "Studio Pro",
-    monthlySheetLimit: 250,
-    monthlyPriceUsdCents: 2000,
+    name: "Studio",
+    monthlySheetLimit: 150,
+    monthlyPriceUsdCents: 1900,
+    annualPriceUsdCents: 19000,
     stripePriceEnv: "STRIPE_STUDIO_PRO_PRICE_ID",
-    priceLabel: "$20/mo",
-    description: "For studios, engineers, managers, and high-volume sessions."
+    annualStripePriceEnv: "STRIPE_STUDIO_ANNUAL_PRICE_ID",
+    priceLabel: "$19/mo",
+    annualPriceLabel: "$190/yr",
+    compareAtPriceLabel: "$30/mo",
+    annualCompareAtPriceLabel: "$300/yr",
+    discountLabel: "Launch deal",
+    description: "For studios, engineers, managers, and regular session workflows. Includes the Windows VST3 plugin and standalone app."
   }
 };
 

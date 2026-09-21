@@ -20,10 +20,11 @@ powershell -ExecutionPolicy Bypass -File .\deploy\proxmox\deploy-to-lxc.ps1 -Syn
 
 The script:
 
-- archives the current repo without `.git`, `node_modules`, `data`, `.env`, or VST build output
+- archives the current repo without `.git`, `node_modules`, `data`, `.env`, or large VST build output folders
 - preserves the existing LXC `/opt/split-sheet-studio/data` folder
 - optionally copies your local `.env` into the LXC when `-SyncLocalEnv` is passed
 - sets `PUBLIC_BASE_URL=http://192.168.1.237:5050` inside the LXC
+- writes a local-only Docker Compose override so the LAN backup uses SQLite/local PDF storage instead of AWS production services
 - rebuilds and starts Docker Compose
 - checks `http://192.168.1.237:5050/health`
 

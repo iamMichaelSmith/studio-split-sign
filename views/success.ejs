@@ -9,7 +9,9 @@
   <div class="wrap">
     <h1><%= title %></h1>
     <div class="card">
-      <p>Submission saved successfully.</p>
+      <div class="stat-label">Saved</div>
+      <h2>Split sheet submitted</h2>
+      <p>Your split sheet was saved. If signature links were selected, contributors can approve from their own device. The final PDF stays available from your account vault.</p>
       <p><b>ID:</b> <%= id %></p>
       <% if (typeof songTitle !== 'undefined' && songTitle) { %>
         <p><b>Song:</b> <%= songTitle %> <% if (typeof version !== 'undefined' && version) { %>(v<%= version %>)<% } %></p>
@@ -26,10 +28,14 @@
       <% } %>
 
       <% if (type === 'split-sheet') { %>
-        <p><a href="/split-sheet/pdf/<%= id %>">Download PDF summary</a></p>
+        <div class="home-actions">
+          <a class="button-link" href="/account#split-sheet-vault">Open vault</a>
+          <a class="button-link button-link-secondary" href="<%= typeof pdfUrl !== 'undefined' ? pdfUrl : `/split-sheet/pdf/${id}` %>">Download PDF summary</a>
+          <a class="button-link button-link-secondary" href="/split-sheet">Create another</a>
+        </div>
       <% } %>
     </div>
-    <p><a href="/">Back to home</a></p>
+    <p><a href="/account">Back to account</a></p>
   </div>
 </body>
 </html>

@@ -40,7 +40,7 @@
       </div>
 
       <div class="inline-actions">
-        <a href="/split-sheet/pdf/<%= doc.id %>" target="_blank">Download PDF</a>
+        <a href="<%= pdfDownloadPath(doc) %>" target="_blank">Download PDF</a>
         <a href="/admin/doc/<%= doc.id %>" target="_blank">View JSON</a>
         <% if (doc.status === 'completed') { %>
           <form method="post" action="/admin/split/<%= doc.id %>/resend-final" style="display:inline;">

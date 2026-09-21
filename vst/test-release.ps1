@@ -1,5 +1,5 @@
 ﻿param(
-  [string]$Version = "0.1.1",
+  [string]$Version = "0.1.2",
   [switch]$RequireSigned,
   [switch]$CheckInstalled
 )
@@ -29,10 +29,13 @@ foreach ($path in $requiredPaths) {
 
 $signatureResults = foreach ($path in $requiredPaths) {
   $signature = Get-AuthenticodeSignature -LiteralPath $path
+  $item = Get-Item -LiteralPath $path
   [pscustomobject]@{
     Path = $path
     Signature = $signature.Status.ToString()
     Sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+    ProductVersion = $item.VersionInfo.ProductVersion
+    FileVersion = $item.VersionInfo.FileVersion
   }
 }
 
@@ -55,10 +58,23 @@ if ($CheckInstalled) {
     VstPath = $installedVstBinary
     StandalonePath = $installedStandalone
     VstMatchesPackage = (Get-FileHash -LiteralPath $installedVstBinary).Hash -eq (Get-FileHash -LiteralPath $packagedVstBinary).Hash
+    StandaloneMatchesPackage = (Get-FileHash -LiteralPath $installedStandalone).Hash -eq (Get-FileHash -LiteralPath $packagedStandalone).Hash
+    InstalledVstProductVersion = (Get-Item -LiteralPath $installedVstBinary).VersionInfo.ProductVersion
+    InstalledStandaloneProductVersion = (Get-Item -LiteralPath $installedStandalone).VersionInfo.ProductVersion
   }
   if (-not $installedResult.VstMatchesPackage) {
     throw "The installed VST3 does not match the current installer package."
   }
+  if (-not $installedResult.StandaloneMatchesPackage) {
+    throw "The installed standalone app does not match the current installer package."
+  }
+}
+
+$versionMismatches = $signatureResults | Where-Object {
+  $_.ProductVersion -and ($_.ProductVersion -notlike "$Version*")
+}
+if ($versionMismatches) {
+  throw "One or more release artifacts report an embedded product version that does not match $Version."
 }
 
 [pscustomobject]@{

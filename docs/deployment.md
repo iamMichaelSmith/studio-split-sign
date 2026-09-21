@@ -121,11 +121,12 @@ REPLY_TO_EMAIL=blakmarigold@gmail.com
 NOTIFY_EMAIL=blakmarigold@gmail.com
 SUPPORT_EMAIL=blakmarigold@gmail.com
 
-STRIPE_PLUGIN_PRICE_USD_CENTS=1000
 STRIPE_SECRET_KEY=sk_live_or_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_CREATOR_PRICE_ID=price_creator_monthly_optional
+STRIPE_CREATOR_ANNUAL_PRICE_ID=price_creator_annual_optional
 STRIPE_STUDIO_PRO_PRICE_ID=price_studio_pro_monthly_optional
+STRIPE_STUDIO_ANNUAL_PRICE_ID=price_studio_annual_optional
 PLUGIN_VERSION_LABEL=0.1.0
 PLUGIN_LATEST_VERSION_LABEL=0.1.0
 PLUGIN_MINIMUM_SUPPORTED_VERSION=
@@ -135,7 +136,7 @@ PLUGIN_DOWNLOAD_BUCKET=...
 PLUGIN_DOWNLOAD_KEY=downloads/SplitSheetStudio-Setup-0.1.0.exe
 ```
 
-If `STRIPE_CREATOR_PRICE_ID` or `STRIPE_STUDIO_PRO_PRICE_ID` are omitted, the app creates Stripe Checkout sessions with inline monthly `price_data` using the built-in `$5/mo` Creator and `$20/mo` Studio Pro plan definitions. Use Stripe Price IDs before public launch if you want cleaner Stripe reporting and easier price changes.
+If Stripe price IDs are omitted, the app creates Stripe Checkout sessions with inline `price_data` using the built-in `$7/mo` or `$70/yr` Creator plan and `$19/mo` or `$190/yr` Studio plan definitions. Use Stripe Price IDs before public launch if you want cleaner Stripe reporting and easier price changes.
 
 ## Deployment scripts
 Key scripts live in `deploy/aws/`:

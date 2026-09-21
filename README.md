@@ -138,6 +138,8 @@ flowchart LR
 - `Amazon SES`
 - `AWS Secrets Manager`
 - `Amazon CloudWatch Logs`
+- `Amazon CloudWatch Alarms`
+- `Amazon SNS`
 - `IAM`
 
 ### Local / Edge Deployment Paths
@@ -160,6 +162,21 @@ flowchart LR
 - admin surface for reviewing signer status, revision lineage, reminder activity, and delivery state
 - marketing opt-in and transactional-vs-marketing contact capture boundaries
 
+## Production Security And Operations
+
+The public AWS runtime now includes:
+
+- fail-closed production configuration validation
+- verified PostgreSQL TLS using the AWS RDS CA bundle
+- Redis-backed secure sessions and private S3 artifact storage
+- request IDs, structured JSON logs, CSP, HSTS, frame protection, and same-origin mutation checks
+- readiness checks for PostgreSQL, Redis, S3, and SES configuration
+- seven-day RDS backups, deletion protection, S3 encryption/versioning, and 90-day CloudWatch logs
+- CloudWatch alarms for ECS CPU, ECS memory, RDS free storage, and ALB target 5xx responses
+- an SNS operations topic awaiting owner confirmation of the notification email
+
+See [`docs/security.md`](./docs/security.md) and [`docs/ops.md`](./docs/ops.md) for the current controls and runbook.
+
 ## Repository Map
 
 ### Core Product
@@ -170,7 +187,7 @@ flowchart LR
 - [`services/submission-service.js`](./services/submission-service.js) - submission persistence and versioning
 - [`services/plan-service.js`](./services/plan-service.js) - plan definitions and usage summaries
 - [`services/contact-service.js`](./services/contact-service.js) - consent-aware contact collection and email preference state
-- [`services/storefront-service.js`](./services/storefront-service.js) - plugin purchase and gated download support
+- [`services/storefront-service.js`](./services/storefront-service.js) - dormant purchase and gated download support for future packaging changes
 
 ### Web UI And Content
 
@@ -218,10 +235,10 @@ The app already contains internal plan definitions and Stripe-ready upgrade hook
 | Plan | Price | Limit | Intended Use |
 | --- | --- | ---: | --- |
 | Free | `$0` | `3` split sheets / month | testing and low-volume creators |
-| Creator | `$5/mo` | `25` split sheets / month | independent artists, producers, and writers |
-| Studio Pro | `$20/mo` | `250` split sheets / month | studios, engineers, and higher-volume teams |
+| Creator | `$7/mo` | `25` split sheets / month | independent artists, producers, writers, and the included Windows plugin |
+| Studio | `$19/mo` | `150` split sheets / month | studios, engineers, session teams, and the included Windows plugin |
 
-Stripe can be connected later without changing the plan model already built into the account and pricing surfaces.
+Stripe can be connected later without changing the plan model already built into the account and pricing surfaces. During launch, the Windows VST3 plugin and standalone Windows app are included with Creator and Studio rather than sold as a separate license.
 
 ## Delivery And Audit Model
 
@@ -236,7 +253,7 @@ Important behavioral details already implemented:
 
 ## Testing
 
-Local smoke coverage exercises the main system path end to end:
+Local automated coverage exercises the backend system path end to end. Tests use temporary databases and isolated environment settings, not the repository `.env` or customer accounts. Security integration tests deliver mail to a loopback SMTP capture server; they do not send to real inboxes or launch desktop windows.
 
 - app health and ready endpoints
 - signup, verification, login, refresh, logout, password reset
@@ -257,6 +274,17 @@ npm install
 npm test
 ```
 
+`npm test` includes authentication regressions, the HTTP signing/security suite, and the broader smoke suite. To run the same HTTP suite against a disposable PostgreSQL cluster, including a database backup/restore comparison:
+
+```powershell
+$env:RELEASE_TEST_PG_BIN = "C:\Program Files\PostgreSQL\16\bin"
+npm run test:postgres
+```
+
+PostgreSQL tools are required, but Docker and an existing database are not. The runner creates its own loopback-only cluster with a random port and password, then stops it. Temporary test files remain under the operating system's temp directory for troubleshooting. The legacy `tests/smoke-postgres.cjs` entry point now delegates to this isolated runner rather than using the shared development database.
+
+CI is configured for Node.js 22 and both database suites. Local September 2 verification used Node.js 24.20.0 and PostgreSQL 16.14; a GitHub-hosted CI run has not yet been observed for these changes. Backend HTTP tests do not replace native plugin/DAW compatibility testing, production email delivery testing, or an independent security assessment.
+
 ## Local Development
 
 ```powershell
@@ -271,7 +299,11 @@ Default local URL:
 
 ## Current Release Position
 
-As of Monday, August 24, 2026, the product is materially beyond prototype stage:
+**September 2, 2026 validation update:** the local SQLite/security suite reports 18 passing test entries, the PostgreSQL suite reports 12, and the broader smoke suite passes. The local dependency audit reports no known production dependency vulnerabilities after a targeted parser update. This pass also fixed account-verification, session-revocation, and revision-integrity problems. These fixes are **local and not yet deployed**; passing these tests is not a commercial-launch sign-off. Installed Windows binaries differ from the staged package, and the checked artifacts remain unsigned. See the [release-validation report](./docs/release-validation-2026-09-02.md) for scope, evidence, migration notes, and remaining release gates.
+
+### Previous Deployment Snapshot
+
+As of Tuesday, August 25, 2026, the product is materially beyond prototype stage:
 
 - hosted site is live
 - hosted app is live
@@ -282,21 +314,29 @@ As of Monday, August 24, 2026, the product is materially beyond prototype stage:
 - revision flow exists
 - update metadata exists
 - admin review surface exists
+- production security and readiness hardening is deployed on Node.js 22
+- Windows beta installer `0.1.2` is available through the public latest-download route
+- AWS backup, storage, logging, and alarm safeguards are enabled
 
 Still pending before a polished commercial release:
 
 - live Stripe configuration
 - production Google / Apple auth credentials
 - signed Windows binaries and installer
+- clean-machine and broader Windows DAW compatibility testing
 - a public Mac build path if AU or macOS support becomes a release target
-- deeper monitoring / alerting beyond current logs and runtime checks
+- owner confirmation of the SNS alert subscription
+- qualified legal review before commercial promotion
 
 ## Documentation
 
 - [`docs/public-launch.md`](./docs/public-launch.md)
 - [`docs/public-beta-release.md`](./docs/public-beta-release.md)
 - [`docs/qa-checklist.md`](./docs/qa-checklist.md)
+- [`docs/release-validation-2026-09-02.md`](./docs/release-validation-2026-09-02.md)
 - [`docs/release-checklist.md`](./docs/release-checklist.md)
+- [`docs/security.md`](./docs/security.md)
+- [`docs/ops.md`](./docs/ops.md)
 - [`docs/email-automation.md`](./docs/email-automation.md)
 
 ## Summary

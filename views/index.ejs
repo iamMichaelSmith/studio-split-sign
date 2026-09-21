@@ -11,7 +11,7 @@
     <h1>Split Sheet Studio</h1>
     <p class="small">Hosted split-sheet workflow for session capture, signatures, delivery, and plugin-connected studio use.</p>
     <div class="home-actions">
-      <a class="button-link" href="/login">Log in / Create account</a>
+      <a class="button-link" href="/login">Sign in</a>
       <a class="button-link button-link-secondary" href="/split-sheet">Start split sheet</a>
       <a class="button-link button-link-secondary" href="/beta">Download beta plugin</a>
     </div>
@@ -24,31 +24,32 @@
         <a href="/split-sheet">Open</a>
       </div>
       <div class="card">
-        <h3>Create Account</h3>
-        <p class="small">Public signup for plugin access, password recovery, and future hosted account tools.</p>
-        <a href="<%= signupUrl %>">Sign up</a>
-      </div>
-      <div class="card">
-        <h3>Account Usage</h3>
-        <p class="small">View plan, monthly split-sheet limit, remaining sheets, and recent documents.</p>
-        <a href="/account">View account</a>
-      </div>
-      <div class="card">
-        <h3>Plugin API</h3>
-        <p class="small">Default plugin target is now the hosted app instead of localhost.</p>
-        <a href="<%= appUrl %>/api/ready">Check API</a>
-      </div>
-      <div class="card">
-        <h3>Plugin Storefront</h3>
-        <p class="small">Download the Windows VST3 beta now; paid checkout can be enabled later.</p>
+        <h3>Get the Studio Toolkit</h3>
+        <p class="small">Download the Windows VST3 beta and standalone app.</p>
         <a href="/beta">Download beta</a>
       </div>
       <div class="card">
-        <h3>Blog</h3>
-        <p class="small">Publish rights, workflow, and sync-readiness content on the same domain.</p>
-        <a href="/blog">Read posts</a>
+        <h3>Rights Room</h3>
+        <p class="small">Practical articles on split sheets, sync readiness, publishing data, and session workflow.</p>
+        <a href="/blog">Read articles</a>
       </div>
     </div>
+
+    <% if (typeof latestPosts !== 'undefined' && latestPosts.length) { %>
+      <div class="card">
+        <h2>Latest from the Rights Room</h2>
+        <div class="grid">
+          <% latestPosts.forEach((post) => { %>
+            <div class="stat-card">
+              <div class="stat-label"><%= post.category %></div>
+              <h3><a href="/blog/<%= post.slug %>"><%= post.title %></a></h3>
+              <p class="small"><%= post.excerpt %></p>
+              <p class="small"><%= post.readingMinutes %> min read</p>
+            </div>
+          <% }) %>
+        </div>
+      </div>
+    <% } %>
 
     <p class="inline-actions">
       <a href="<%= forgotPasswordUrl %>">Forgot password</a>

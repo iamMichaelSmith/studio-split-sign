@@ -6,14 +6,14 @@
 2. VST3 plugin
    - Program Files\Common Files\VST3\Split Sheet Studio.vst3
 
-To use it in Studio One:
+To use it in a compatible Windows DAW:
 
-1. Open Studio One
-2. Go to Options > Locations > VST Plug-ins
-3. Make sure the default VST3 path is enabled
-4. Click Reset Blacklist if needed
-5. Click Scan at startup or rescan plugins now
-6. Search for "Split Sheet Studio" in the browser
+1. Close the DAW before installing or updating the plugin
+2. Open the DAW's plug-in manager or plug-in settings
+3. Make sure the standard Windows VST3 system folder is enabled
+4. Rescan new, failed, or blocked plug-ins if needed
+5. Search for "Split Sheet Studio" under VST3 effects
+6. Load it on a compatible audio or instrument track
 
 Important:
 - The standalone app does not need to remain open while using the VST3

@@ -1,4 +1,4 @@
-﻿# AWS Deployment Notes
+# AWS Deployment Notes
 
 This folder contains the AWS deployment path for `Split Sheet Studio`.
 
@@ -13,8 +13,9 @@ This folder contains the AWS deployment path for `Split Sheet Studio`.
 - ElastiCache Redis
 - S3 final PDF storage
 - Secrets Manager runtime secrets
-- SES domain identity setup in progress for `splitsheetstudio.com`
-- CloudWatch Logs
+- SES domain identity, DKIM, and custom MAIL FROM verified for `splitsheetstudio.com`
+- CloudWatch Logs with 90-day retention
+- CloudWatch alarms and SNS operations notifications
 
 ## Public host split
 - `splitsheetstudio.com` -> landing
@@ -30,8 +31,13 @@ The ECS task definition is built around:
 - `PDF_STORAGE=s3`
 - `COOKIE_SECURE=true`
 - `TRUST_PROXY=true`
+- `PGSSLMODE=verify-full`
+- `PG_SSL_REJECT_UNAUTHORIZED=true`
+- `PG_SSL_CA_PATH=/opt/aws-rds/global-bundle.pem`
+- `REQUIRE_EMAIL_VERIFICATION=true`
+- `AUTH_DEBUG=false`
 - `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` when checkout is live
-- optional `STRIPE_CREATOR_PRICE_ID` and `STRIPE_STUDIO_PRO_PRICE_ID` for fixed Stripe Price IDs
+- optional `STRIPE_CREATOR_PRICE_ID`, `STRIPE_CREATOR_ANNUAL_PRICE_ID`, `STRIPE_STUDIO_PRO_PRICE_ID`, and `STRIPE_STUDIO_ANNUAL_PRICE_ID` for fixed Stripe Price IDs
 
 ## AWS services used
 - `Route 53`
@@ -45,9 +51,11 @@ The ECS task definition is built around:
 - `SES`
 - `Secrets Manager`
 - `CloudWatch Logs`
+- `CloudWatch Alarms`
+- `SNS`
 - `IAM`
 
-Stripe remains an external payment processor. The app uses Stripe Checkout for the VST plugin purchase and Creator/Studio Pro subscriptions, Stripe webhooks for plan updates, and Stripe Customer Portal for customer billing management.
+Stripe remains an external payment processor. The app uses Stripe Checkout for Creator/Studio subscriptions, Stripe webhooks for plan updates, and Stripe Customer Portal for customer billing management. During launch, the VST plugin is included with paid packages rather than sold as a separate license.
 
 ## Script responsibilities
 
@@ -63,6 +71,7 @@ Stripe remains an external payment processor. The app uses Stripe Checkout for t
 - `sync-runtime-secrets.ps1` -> writes live `DATABASE_URL` and `REDIS_URL`
 - `render-task-definition.ps1` -> renders task definition JSON from the template
 - `deploy-ecs-service.ps1` -> registers task definition and updates service
+- `harden-public-runtime.ps1` -> enables backup, storage, log-retention, alarm, and SNS safeguards
 
 ## Email settings
 Current hosted defaults:
@@ -74,6 +83,19 @@ SES setup uses:
 - domain identity for `splitsheetstudio.com`
 - DKIM CNAME records in Route 53
 - custom MAIL FROM domain: `mail.splitsheetstudio.com`
+
+## Current operations posture
+
+- RDS backup retention: 7 days
+- RDS deletion protection: enabled
+- RDS automatic minor updates: enabled
+- S3 public access: blocked
+- S3 server-side encryption: enabled
+- S3 versioning: enabled
+- CloudWatch log retention: 90 days
+- alarms: ECS CPU, ECS memory, RDS free storage, and ALB target 5xx
+- public container runtime: Node.js 22
+- current task definition: revision 38 at the September 13, 2026 Stripe and n8n export validation
 
 ## Typical deploy commands
 ```powershell
@@ -103,9 +125,13 @@ powershell -ExecutionPolicy Bypass -File .\deploy\aws\deploy-ecs-service.ps1 `
   -DesiredCount 1
 ```
 
-## What still needs work
-- final SES verification confirmation
-- plugin release automation
-- production/staging environment separation cleanup
-- WAF / rate limiting if traffic increases
-- production release checklist automation
+## Remaining owner and commercial-release work
+
+- confirm the SNS email subscription sent to `blakmarigold@gmail.com`
+- sign the Windows installer and binaries
+- complete clean-machine and multi-DAW Windows beta testing
+- complete one live end-to-end paid checkout and refund rehearsal
+- configure Google and Apple OAuth only if those providers will be offered
+- review legal pages with qualified counsel
+- separate production naming from the current staging-named public resources when operationally convenient
+- add AWS WAF when traffic or abuse justifies the additional cost

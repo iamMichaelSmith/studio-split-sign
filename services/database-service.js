@@ -22,6 +22,10 @@ function createSqliteProvider({ dbPath }) {
   return {
     provider: "sqlite",
     client: db,
+    async ping() {
+      db.prepare("SELECT 1 AS ok").get();
+      return true;
+    },
     async close() {
       db.close();
     }
@@ -42,11 +46,13 @@ function createPostgresProvider({ databaseUrl }) {
   normalizedUrl.searchParams.delete("gssencmode");
   const sslMode = String(process.env.PGSSLMODE || urlSslMode).trim().toLowerCase();
   const rejectUnauthorized = String(process.env.PG_SSL_REJECT_UNAUTHORIZED || "false").toLowerCase() === "true";
+  const caPath = String(process.env.PG_SSL_CA_PATH || "").trim();
+  const ca = caPath ? fs.readFileSync(caPath, "utf8") : undefined;
   let ssl;
   if (sslMode === "disable") {
     ssl = false;
   } else if (sslMode === "verify-full" || rejectUnauthorized) {
-    ssl = { rejectUnauthorized: true };
+    ssl = { rejectUnauthorized: true, ...(ca ? { ca } : {}) };
   } else {
     ssl = { rejectUnauthorized: false };
   }
@@ -58,6 +64,10 @@ function createPostgresProvider({ databaseUrl }) {
   return {
     provider: "postgres",
     client: pool,
+    async ping() {
+      await pool.query("SELECT 1 AS ok");
+      return true;
+    },
     async close() {
       await pool.end();
     }

@@ -7,18 +7,47 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div class="wrap">
-    <div class="timeline-top">
+  <div class="wrap account-wrap">
+    <div class="timeline-top account-top">
       <div>
+        <div class="stat-label">Signed in</div>
         <h1>Account</h1>
-        <p class="small">Signed in as <b><%= user.displayName %></b> · <%= user.email %></p>
+        <p class="small"><b><%= user.displayName %></b> · <%= user.email %></p>
         <% if (billingNotice === "success") { %><p class="small"><b>Billing updated.</b> Your plan will refresh after Stripe confirms the subscription.</p><% } %>
         <% if (billingNotice === "cancelled") { %><p class="small">Checkout was cancelled. Your current plan is unchanged.</p><% } %>
       </div>
       <form method="post" action="/logout"><button class="secondary-button" type="submit">Sign out</button></form>
     </div>
 
-    <div class="grid">
+    <nav class="account-tabs" aria-label="Account sections">
+      <% for (const tab of ["overview", "vault", "resources", "vst", "plans"]) { %>
+        <a class="account-tab<%= accountTab === tab ? " active" : "" %>" href="/account?tab=<%= tab %>"<% if (accountTab === tab) { %> aria-current="page"<% } %>><%= tab === "vst" ? "VST" : tab.charAt(0).toUpperCase() + tab.slice(1) %></a>
+      <% } %>
+    </nav>
+
+    <% if (accountTab === "overview") { %>
+    <section class="card account-hero">
+      <div>
+        <div class="stat-label">Next session</div>
+        <h2>Create the split sheet before the song leaves the room.</h2>
+        <p class="small">Start with song details, add contributors, send signature links, then keep the final PDF in your vault.</p>
+      </div>
+      <div class="account-primary-actions">
+        <% if (usage.canCreate) { %>
+          <a class="button-link account-primary-button" href="<%= splitSheetUrl %>">Create split sheet</a>
+        <% } else { %>
+          <a class="button-link account-primary-button" href="/account?tab=plans">Upgrade to create more</a>
+        <% } %>
+        <a class="button-link button-link-secondary" href="/account?tab=vault">Open vault</a>
+      </div>
+    </section>
+
+    <div class="account-summary-grid">
+      <div class="card">
+        <div class="stat-label">This month</div>
+        <div class="stat-value"><%= usage.used %>/<%= usage.limit %></div>
+        <p class="small"><%= usage.remaining %> split sheets remaining for <%= usage.window.label %>.</p>
+      </div>
       <div class="card">
         <div class="stat-label">Current plan</div>
         <div class="stat-value"><%= usage.plan.name %></div>
@@ -26,56 +55,30 @@
         <% if (billingEnabled && user.stripeCustomerId) { %>
           <form method="post" action="/account/billing/portal"><button class="secondary-button" type="submit">Manage billing</button></form>
         <% } else { %>
-          <p><a class="button-link button-link-secondary" href="#available-plans">View plan options</a></p>
+          <p><a class="button-link button-link-secondary" href="/account?tab=plans">View plan options</a></p>
         <% } %>
       </div>
       <div class="card">
-        <div class="stat-label">Split sheets this month</div>
-        <div class="stat-value"><%= usage.used %>/<%= usage.limit %></div>
-        <p class="small"><%= usage.remaining %> remaining for <%= usage.window.label %>.</p>
-      </div>
-      <div class="card">
-        <div class="stat-label">Next action</div>
-        <div class="stat-value"><%= usage.canCreate ? "Ready" : "Limit hit" %></div>
-        <% if (usage.canCreate) { %>
-          <p><a href="<%= splitSheetUrl %>">Create split sheet</a></p>
-        <% } else { %>
-          <p class="small">Upgrade your plan before creating another split sheet.</p>
-        <% } %>
+        <div class="stat-label">Studio toolkit</div>
+        <div class="stat-value">DAW</div>
+        <p class="small">Use Split Sheet Studio inside your Windows music workflow with the beta toolkit.</p>
+        <p><a class="button-link button-link-secondary" href="/account?tab=vst">Open VST</a></p>
       </div>
     </div>
+    <% } %>
 
-    <div id="available-plans" class="card">
-      <h2>Available plans</h2>
-      <div class="grid">
-        <% planOptions.forEach((plan) => { %>
-          <div class="stat-card">
-            <div class="stat-label"><%= plan.priceLabel %></div>
-            <h3><%= plan.name %></h3>
-            <p class="small"><%= plan.monthlySheetLimit %> completed split sheets/month</p>
-            <p class="small"><%= plan.description %></p>
-            <% if (plan.key === currentPlan.key) { %>
-              <p class="plan-badge">Current plan</p>
-            <% } else if (billingEnabled && plan.monthlyPriceUsdCents > 0) { %>
-              <form method="post" action="/account/billing/checkout">
-                <input type="hidden" name="planKey" value="<%= plan.key %>">
-                <button type="submit">Upgrade to <%= plan.name %></button>
-              </form>
-            <% } else if (plan.monthlyPriceUsdCents > 0) { %>
-              <a class="button-link" href="<%= pricingUrl %>">Upgrade to <%= plan.name %></a>
-              <p class="small">Checkout is not connected yet. This button will route to Stripe when billing is enabled.</p>
-            <% } else { %>
-              <a class="button-link button-link-secondary" href="<%= splitSheetUrl %>">Start free</a>
-            <% } %>
-          </div>
-        <% }) %>
+    <% if (accountTab === "vault") { %>
+    <div id="split-sheet-vault" class="card">
+      <div class="timeline-top">
+        <div>
+          <div class="stat-label">Your records</div>
+          <h2>Your Split Sheet Vault</h2>
+          <p class="small">View, download, and keep track of the split sheets you have created.</p>
+        </div>
+        <% if (usage.canCreate) { %><a class="button-link button-link-secondary" href="<%= splitSheetUrl %>">New split sheet</a><% } %>
       </div>
-    </div>
-
-    <div class="card">
-      <h2>Recent split sheets</h2>
       <% if (!splitSheets.length) { %>
-        <p class="small">No split sheets yet.</p>
+        <p class="small">No split sheets in the vault yet. Start your first split sheet when your session credits are ready.</p>
       <% } %>
       <% splitSheets.forEach((doc) => { %>
         <% const songName = (doc.payload && (doc.payload.songTitle || doc.payload.title || doc.payload.song || doc.payload.workTitle)) || "Untitled song"; %>
@@ -86,11 +89,106 @@
               <b><%= songName %></b>
               <div class="small"><%= doc.status %> · <%= doc.createdAt %> · ID <%= doc.id %></div>
             </div>
-            <div><a href="/split-sheet/pdf/<%= doc.id %>">PDF</a></div>
+            <div class="vault-actions">
+              <a href="<%= pdfViewPath(doc) %>" target="_blank" rel="noopener">View</a>
+              <a href="<%= pdfDownloadPath(doc) %>">Download</a>
+            </div>
           </div>
         </div>
       <% }) %>
     </div>
+    <% } %>
+
+    <% if (accountTab === "resources") { %>
+    <% if (latestPosts && latestPosts.length) { %>
+      <div class="card">
+        <div class="timeline-top">
+          <div>
+            <div class="stat-label">Rights Room</div>
+            <h2>Guides for your next session</h2>
+            <p class="small">Use these articles as the main learning source for split sheets, rights data, sync readiness, and DAW workflow.</p>
+          </div>
+          <a class="button-link button-link-secondary" href="<%= blogUrl %>">Read all</a>
+        </div>
+        <div class="grid">
+          <% latestPosts.forEach((post) => { %>
+            <div class="stat-card">
+              <div class="stat-label"><%= post.category %></div>
+              <h3><a href="/blog/<%= post.slug %>"><%= post.title %></a></h3>
+              <p class="small"><%= post.excerpt %></p>
+              <p class="small"><%= post.readingMinutes %> min read</p>
+            </div>
+          <% }) %>
+        </div>
+      </div>
+    <% } %>
+    <% } %>
+
+    <% if (accountTab === "vst") { %>
+      <section class="card">
+        <div class="stat-label">Studio toolkit</div>
+        <h2>Split Sheet Studio VST3</h2>
+        <p class="small">Use the Windows VST3 or standalone app with your Split Sheet Studio account.</p>
+        <% if (currentPlan.key === "free") { %>
+          <p class="small">The plugin is included with Creator and Studio plans.</p>
+          <p><a class="button-link" href="/account?tab=plans">View plans</a></p>
+        <% } else { %>
+          <p><a class="button-link" href="/downloads/plugin/latest">Download Windows installer</a></p>
+        <% } %>
+        <p><a href="/beta#windows-beta">Installation guide and compatibility</a></p>
+      </section>
+    <% } %>
+
+    <% if (accountTab === "plans") { %>
+    <div id="available-plans" class="card">
+      <div class="timeline-top">
+        <div>
+          <div class="stat-label">Plan options</div>
+          <h2>Upgrade when your session volume grows</h2>
+          <p class="small">Use these plans when you need more monthly split sheets or the studio toolkit in your workflow.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <% planOptions.forEach((plan) => { %>
+          <div class="stat-card">
+            <div class="stat-label"><%= plan.discountLabel || plan.priceLabel %></div>
+            <h3><%= plan.name %></h3>
+            <% if (plan.compareAtPriceLabel) { %>
+              <p class="deal-price"><s><%= plan.compareAtPriceLabel %></s> <strong><%= plan.priceLabel %></strong></p>
+            <% } else { %>
+              <p class="deal-price"><strong><%= plan.priceLabel %></strong></p>
+            <% } %>
+            <p class="small"><%= plan.monthlySheetLimit %> split sheets/month</p>
+            <% if (plan.annualPriceLabel) { %>
+              <p class="small"><% if (plan.annualCompareAtPriceLabel) { %><s><%= plan.annualCompareAtPriceLabel %></s> <% } %><%= plan.annualPriceLabel %> annual launch option</p>
+            <% } %>
+            <p class="small"><%= plan.description %></p>
+            <% if (plan.key === currentPlan.key) { %>
+              <p class="plan-badge">Current plan</p>
+            <% } else if (billingEnabled && plan.monthlyPriceUsdCents > 0) { %>
+              <form method="post" action="/account/billing/checkout">
+                <input type="hidden" name="planKey" value="<%= plan.key %>">
+                <input type="hidden" name="billingInterval" value="month">
+                <button type="submit">Upgrade to <%= plan.name %> monthly</button>
+              </form>
+              <% if (plan.annualPriceLabel) { %>
+                <form method="post" action="/account/billing/checkout">
+                  <input type="hidden" name="planKey" value="<%= plan.key %>">
+                  <input type="hidden" name="billingInterval" value="year">
+                  <button class="secondary-button" type="submit">Choose annual</button>
+                </form>
+              <% } %>
+            <% } else if (plan.monthlyPriceUsdCents > 0) { %>
+              <a class="button-link" href="<%= pricingUrl %>">Upgrade to <%= plan.name %></a>
+              <p class="small">Checkout is not connected yet. This button will route to Stripe when billing is enabled.</p>
+            <% } else { %>
+              <a class="button-link button-link-secondary" href="<%= splitSheetUrl %>">Start free</a>
+            <% } %>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+    <% } %>
   </div>
 </body>
 </html>

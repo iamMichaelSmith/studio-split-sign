@@ -66,6 +66,20 @@
     </div>
 
     <div class="card">
+      <h2>Email Contacts</h2>
+      <p class="small">Transactional contacts are not marketing subscribers. Export only contacts marked subscribed when you connect n8n.</p>
+      <p><a href="/admin/contacts.csv">Download consented subscribers CSV</a></p>
+      <% if (!contacts.length) { %><p>No contacts yet.</p><% } %>
+      <% contacts.forEach((contact) => { %>
+        <div class="timeline-item">
+          <b><%= contact.displayName || contact.email %></b>
+          <div class="small"><%= contact.email %> · <%= contact.marketingStatus %> · source: <%= contact.latestSource %></div>
+          <div class="small">Consent: <%= contact.consentAt || 'not provided' %> · Unsubscribed: <%= contact.unsubscribedAt || 'no' %></div>
+        </div>
+      <% }) %>
+    </div>
+
+    <div class="card">
       <h2>Submitted Documents</h2>
       <% if (!docs.length) { %>
         <p>No submissions yet.</p>
@@ -93,7 +107,7 @@
             <a href="/admin/doc/<%= doc.id %>" target="_blank">View JSON</a>
             <% if (doc.type === 'split-sheet') { %>
               <a href="/admin/split/<%= doc.id %>">Signer timeline</a>
-              <a href="/split-sheet/pdf/<%= doc.id %>" target="_blank">Download PDF</a>
+              <a href="<%= pdfDownloadPath(doc) %>" target="_blank">Download PDF</a>
               <% if (doc.signerStats && doc.signerStats.pending > 0) { %>
                 <form method="post" action="/admin/split/<%= doc.id %>/remind"><button type="submit">Send reminder</button></form>
               <% } %>

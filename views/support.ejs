@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Split Sheet Studio Support | Setup, Signing, and Downloads</title>
+  <meta name="description" content="Get help installing Split Sheet Studio, signing in, completing split sheets, collecting remote signatures, and downloading final records.">
+  <link rel="canonical" href="https://splitsheetstudio.com/support"><meta name="theme-color" content="#171311">
+  <meta property="og:type" content="website"><meta property="og:title" content="Split Sheet Studio Support"><meta property="og:description" content="Help with setup, signing, downloads, DAW rescans, remote signatures, and final split-sheet records."><meta property="og:url" content="https://splitsheetstudio.com/support"><meta property="og:image" content="<%= socialImageUrl %>">
+  <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Split Sheet Studio Support"><meta name="twitter:description" content="Support for music split sheets, DAW setup, signatures, and final PDF records."><meta name="twitter:image" content="<%= socialImageUrl %>">
+  <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/premium.css">
+</head>
+<body class="premium-site"><div class="premium-shell">
+  <%- include('partials/site-nav') %>
+  <main class="premium-container legal-page">
+    <section class="legal-hero"><div class="section-kicker">Support</div><h1>Keep the session moving.</h1><p>Quick answers for account access, Windows installation, DAW rescans, remote signatures, and completed split-sheet records.</p></section>
+    <section class="faq-grid">
+      <article><h2>Install the Windows beta</h2><p>Download version <%= pluginVersionLabel %> from the beta page, run the installer, then restart or rescan your 64-bit Windows DAW. The installer includes the VST3 plugin and standalone app.</p><a class="text-link" href="/beta">Open beta downloads →</a></article>
+      <article><h2>Sign in or recover access</h2><p>Create an account in the hosted app, verify your email, and use the same credentials in the plugin. Password reset links are available from the sign-in screen.</p><a class="text-link" href="<%= appUrl %>/forgot-password">Reset a password →</a></article>
+      <article><h2>Collect remote signatures</h2><p>Select invite-based signing when contributors are in another studio or state. Every signer receives a secure link, and the final packet is issued only after all required signatures are complete.</p></article>
+      <article><h2>Correct a completed split</h2><p>Use the revision link from the completed email. A revision creates a new request and preserves the prior signed record instead of changing it in place.</p></article>
+      <article><h2>Find the plugin in your DAW</h2><p>Restart the DAW, rescan VST3 plugins, and confirm the standard VST3 folder is enabled. The Windows beta targets VST3 hosts such as Studio One, Ableton Live, FL Studio, Cubase, Nuendo, REAPER, Bitwig Studio, Cakewalk Sonar, Mixcraft, Waveform, Reason, Samplitude, and Adobe Audition. Pro Tools requires AAX, Logic Pro requires Audio Units, and BandLab web/mobile do not host desktop VST3 plugins.</p></article>
+      <article><h2>Need direct help?</h2><p>Email your Windows version, DAW name and version, Split Sheet Studio version, and a short description of what happened.</p><a class="text-link" href="mailto:<%= supportEmail %>"><%= supportEmail %> →</a></article>
+    </section>
+  </main>
+  <%- include('partials/site-footer') %>
+</div></body></html>

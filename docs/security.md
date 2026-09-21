@@ -1,44 +1,54 @@
-# Security Notes
+# Security Posture
 
-## Current protections
-The app currently includes pragmatic protections appropriate for local/LAN/internal workflow use:
-- session auth for admin routes
-- login-attempt throttling on admin login
-- tokenized signer links for invite flow
-- optional secure cookie mode with `COOKIE_SECURE=true`
-- audit metadata captured in submissions
-- final packet checksum for split sheet completion artifacts
+## Production safeguards
 
-## What is secure enough today
-This project is well-positioned for:
-- local desktop use
-- internal office/studio network use
-- controlled testing behind trusted network boundaries
+The hosted runtime fails closed when critical production settings are unsafe. Startup validation requires:
 
-## What is not yet the goal
-This repo should not be represented as:
-- a regulated e-sign compliance platform
-- a tamper-proof records system
-- a hardened multi-tenant SaaS application
+- HTTPS public URLs and secure cookies
+- PostgreSQL persistence and Redis-backed sessions
+- verified TLS for PostgreSQL using the AWS RDS CA bundle
+- private S3 artifact storage
+- strong, separate session and API secrets
+- non-default administrator credentials
+- email verification with authentication debug output disabled
+- configured sender and support addresses
 
-## Required controls before broader deployment
-Before exposing the app to wider internet traffic:
-- set a strong random `SESSION_SECRET`
-- replace any default admin credentials
-- enable HTTPS via reverse proxy
-- restrict access with VPN, firewall, or allowlists where possible
-- review SMTP provider settings and sender identity
-- define backup and restoration procedures for legal records
+Requests receive a unique request ID, structured JSON access logging, Content Security Policy, HSTS, frame protection, a strict referrer policy, and a restrictive permissions policy. Private application surfaces are marked `no-store` and `noindex`. State-changing browser requests are protected by same-origin checks, and sensitive endpoints use request rate limits.
 
-## Residual risks / limitations
-- JSON persistence is operationally convenient but not immutable
-- signer identity relies on possession of the tokenized URL
-- admin auth is lightweight and should evolve for broader use
-- reminder/email actions run inline rather than through a job queue
+## Data and workflow protections
 
-## Recommended next security upgrades
-- move secrets into managed secret storage
-- add stronger admin password policy or SSO
-- store artifacts in managed storage with retention policy
-- introduce structured audit logging
-- add signature/event history normalization in persistent storage
+- Passwords are hashed before storage.
+- Sessions are stored in Redis and use secure, HTTP-only cookies in production.
+- Signer access uses expiring, scoped tokens.
+- Final records are immutable; later adjustments create a linked revision.
+- Final PDFs are stored in a private, encrypted, versioned S3 bucket.
+- Database connections require certificate verification.
+- Transactional email and optional marketing consent are treated separately.
+- Administrator access uses constant-time credential comparison and must use non-default secrets.
+
+## AWS controls
+
+- Application traffic terminates at an HTTPS Application Load Balancer.
+- ECS task permissions are limited to the required S3 and SES actions.
+- RDS has seven-day backups, deletion protection, and automatic minor updates.
+- S3 has public-access blocking, encryption, and versioning enabled.
+- CloudWatch logs retain 90 days of application output.
+- CloudWatch alarms monitor ECS CPU, ECS memory, RDS free storage, and ALB target 5xx responses.
+- Alarm delivery uses an SNS operations topic.
+
+## Remaining commercial-release controls
+
+- Sign the Windows installer and plugin binaries with a trusted code-signing certificate.
+- Complete a clean-machine install and DAW compatibility matrix.
+- Configure Stripe keys, webhook signing secret, products, prices, and live checkout tests.
+- Configure Google and Apple OAuth only if those sign-in options are enabled publicly.
+- Obtain qualified legal review of the Terms, Privacy Policy, e-sign disclosures, refund language, and music-rights disclaimer.
+- Add AWS WAF or an edge rate-limiting layer when traffic or abuse warrants it.
+
+## Product boundary
+
+Split Sheet Studio records contributor-provided information and workflow events. It is not a law firm, PRO, publisher, copyright office, royalty administrator, or substitute for legal advice. Legal pages can reduce ambiguity but cannot eliminate the operator's legal responsibility. Public launch should include qualified counsel review and appropriate business insurance.
+
+## Reporting
+
+Security issues can be reported through `/.well-known/security.txt` or the support address configured for the hosted app. Never include passwords, signing tokens, private split-sheet contents, or other sensitive personal information in a public issue.

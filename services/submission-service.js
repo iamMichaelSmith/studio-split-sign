@@ -124,6 +124,25 @@ function createSqliteAdapter(db) {
       upsertStmt.run(submissionToRow(submission));
       return rowToSubmission(getByIdStmt.get(submission.id));
     },
+    async saveSubmissionIfUnchanged(submission, expectedUpdatedAt) {
+      const row = submissionToRow(submission);
+      const result = db.prepare(`
+        UPDATE submissions SET
+          type = @type,
+          status = @status,
+          owner_user_id = @ownerUserId,
+          owner_email = @ownerEmail,
+          created_at = @createdAt,
+          updated_at = @updatedAt,
+          ip = @ip,
+          user_agent = @userAgent,
+          last_reminder_run_json = @lastReminderRunJson,
+          payload_json = @payloadJson
+        WHERE id = @id AND updated_at = @expectedUpdatedAt
+      `).run({ ...row, expectedUpdatedAt });
+      if (result.changes < 1) return null;
+      return rowToSubmission(getByIdStmt.get(submission.id));
+    },
     async getSubmission(id) {
       return rowToSubmission(getByIdStmt.get(id));
     },
@@ -213,6 +232,30 @@ function createPostgresAdapter(pool) {
     },
     async saveSubmission(submission) {
       return this.createSubmission(submission);
+    },
+    async saveSubmissionIfUnchanged(submission, expectedUpdatedAt) {
+      await ready;
+      const row = submissionToRow(submission);
+      const result = await pool.query(`
+        UPDATE submissions SET
+          type = $2,
+          status = $3,
+          owner_user_id = $4,
+          owner_email = $5,
+          created_at = $6,
+          updated_at = $7,
+          ip = $8,
+          user_agent = $9,
+          last_reminder_run_json = $10,
+          payload_json = $11
+        WHERE id = $1 AND updated_at = $12
+        RETURNING *
+      `, [
+        row.id, row.type, row.status, row.ownerUserId, row.ownerEmail,
+        row.createdAt, row.updatedAt, row.ip, row.userAgent,
+        row.lastReminderRunJson, row.payloadJson, expectedUpdatedAt
+      ]);
+      return rowToSubmission(result.rows[0]);
     },
     async getSubmission(id) {
       await ready;
@@ -319,6 +362,10 @@ function createSubmissionService({ db, legacySubmissionsDir, provider = "sqlite"
     async saveSubmission(submission) {
       await legacyImportReady;
       return adapter.saveSubmission(submission);
+    },
+    async saveSubmissionIfUnchanged(submission, expectedUpdatedAt) {
+      await legacyImportReady;
+      return adapter.saveSubmissionIfUnchanged(submission, expectedUpdatedAt);
     },
     async getSubmission(id) {
       await legacyImportReady;

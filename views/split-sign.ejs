@@ -62,6 +62,11 @@
       <input type="hidden" id="signatureData" name="signatureData" value="<%= signer.signatureData || '' %>">
       <div class="inline-actions"><button type="button" id="clearSig" class="secondary-button">Clear signature</button></div>
 
+      <label class="agreement-check marketing-opt-in">
+        <input type="checkbox" name="marketingOptIn" value="yes">
+        <span>Optional: send me educational music-rights articles and Split Sheet Studio product updates. Signing this split does not subscribe me automatically. See the <a href="/legal/privacy">Privacy Policy</a>.</span>
+      </label>
+
       <button type="submit" id="signButton">Confirm and sign split sheet</button>
       <p class="small">Submitting records your consent, timestamp, and signing-session audit information. The record is locked after every contributor signs.</p>
     </form>

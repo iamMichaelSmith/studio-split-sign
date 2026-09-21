@@ -5,6 +5,36 @@
 #include <vector>
 #include "PluginProcessor.h"
 
+enum class SplitSheetTheme
+{
+    bronze = 1,
+    paperThin,
+    denim,
+    soft,
+    speakeasy,
+    plush
+};
+
+struct SplitSheetThemePalette
+{
+    juce::Colour background;
+    juce::Colour panel;
+    juce::Colour section;
+    juce::Colour card;
+    juce::Colour field;
+    juce::Colour fieldOutline;
+    juce::Colour accent;
+    juce::Colour success;
+    juce::Colour warning;
+    juce::Colour error;
+    juce::Colour neutral;
+    juce::Colour primaryText;
+    juce::Colour secondaryText;
+    juce::Colour placeholder;
+    juce::Colour fieldText;
+    float textureOpacity = 0.16f;
+};
+
 class SplitSheetStudioEditor final : public juce::AudioProcessorEditor,
                                      private juce::Button::Listener
 {
@@ -76,8 +106,15 @@ private:
     double publisherTotal() const;
     bool isAuthenticated() const;
     void populateSignedInDefaults();
+    void applyTheme(SplitSheetTheme theme, bool persist);
+    void restyleControls();
+    void maybeGenerateBackendScreenshots();
+    void populateDemoScreenshotState();
+    void writeCurrentStepScreenshot(const juce::File& outputFile, int width, int height);
 
     SplitSheetStudioProcessor& processor;
+    SplitSheetTheme currentTheme = SplitSheetTheme::bronze;
+    SplitSheetThemePalette palette;
     std::unique_ptr<PremiumLookAndFeel> premiumLookAndFeel;
 
     juce::Label titleLabel;
@@ -137,6 +174,7 @@ private:
     juce::TextButton nextStepButton { "Next" };
     juce::TextButton submitButton { "Send Split Sheet" };
     juce::TextButton logoutButton { "Sign Out" };
+    juce::ComboBox themeSelector;
 
     juce::Viewport contributorsViewport;
     std::unique_ptr<PaintedComponent> contributorsCanvas;
@@ -150,5 +188,8 @@ private:
     bool settingsVisible = false;
     bool restoringSession = false;
     bool updateAvailable = false;
+    bool backendScreenshotMode = false;
+    bool backendScreenshotQueued = false;
     juce::String updateDownloadUrl;
+    juce::File backendScreenshotDir;
 };

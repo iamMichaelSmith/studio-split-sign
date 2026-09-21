@@ -10,15 +10,17 @@ const crypto = require("crypto");
 const Stripe = require("stripe");
 const nodemailer = require("nodemailer");
 const PDFDocument = require("pdfkit");
-const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, GetObjectCommand, HeadBucketCommand } = require("@aws-sdk/client-s3");
 const { SESv2Client, SendEmailCommand, ListEmailIdentitiesCommand } = require("@aws-sdk/client-sesv2");
 const { RedisStore } = require("connect-redis");
 const { RedisStore: RateLimitRedisStore } = require("rate-limit-redis");
 const { createClient } = require("redis");
 const { nanoid } = require("nanoid");
-const { createRemoteJWKSet, jwtVerify } = require("jose");
+const { createRemoteJWKSet, SignJWT, importPKCS8, jwtVerify } = require("jose");
 const { createAuthService, ApiAuthError } = require("./services/auth-service");
 const { createDatabaseService } = require("./services/database-service");
+const { createContactService } = require("./services/contact-service");
+const { validateProductionRuntime } = require("./services/runtime-config");
 const { createStorefrontService } = require("./services/storefront-service");
 const { createSubmissionService } = require("./services/submission-service");
 const {
@@ -58,6 +60,8 @@ const pdfDir = path.join(dataDir, "pdfs");
 const authDbPath = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(dataDir, "app.db");
 const pdfLogoMarkPath = path.join(__dirname, "public", "pdf-logo-mark.png");
 const cookieSecure = String(process.env.COOKIE_SECURE || "false") === "true";
+const productionRuntime = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+const csrfProtectionEnabled = String(process.env.CSRF_PROTECTION_ENABLED || (productionRuntime ? "true" : "false")).toLowerCase() === "true";
 const cookieMaxAgeMs = 1000 * 60 * 60 * 8;
 const sessionTtlSeconds = Math.max(60, Math.floor(cookieMaxAgeMs / 1000));
 const redisPrefix = process.env.REDIS_PREFIX || "splitsheet:sess:";
@@ -72,11 +76,13 @@ const rawStripeSecretKey = String(process.env.STRIPE_SECRET_KEY || "").trim();
 const rawStripeWebhookSecret = String(process.env.STRIPE_WEBHOOK_SECRET || "").trim();
 const stripeSecretKey = /^(disabled|unset|none|null)$/i.test(rawStripeSecretKey) ? "" : rawStripeSecretKey;
 const stripeWebhookSecret = /^(disabled|unset|none|null)$/i.test(rawStripeWebhookSecret) ? "" : rawStripeWebhookSecret;
-const stripePluginPriceUsdCents = Number(process.env.STRIPE_PLUGIN_PRICE_USD_CENTS || 1000);
+const stripeUseConfiguredPriceIds = String(process.env.STRIPE_USE_CONFIGURED_PRICE_IDS || "false").toLowerCase() === "true";
+const stripePluginPriceUsdCents = Number(process.env.STRIPE_PLUGIN_PRICE_USD_CENTS || 2900);
 const stripePluginProductSku = process.env.STRIPE_PLUGIN_PRODUCT_SKU || "splitsheet-studio-vst3";
 const stripePluginProductName = process.env.STRIPE_PLUGIN_PRODUCT_NAME || "Split Sheet Studio VST3 Plugin";
 const stripePluginProductDescription = process.env.STRIPE_PLUGIN_PRODUCT_DESCRIPTION || "Compact split-sheet workflow inside your DAW with hosted account, email delivery, and signed session records.";
-const pluginVersionLabel = process.env.PLUGIN_VERSION_LABEL || "0.1.1";
+const standalonePluginCheckoutEnabled = String(process.env.STANDALONE_PLUGIN_CHECKOUT_ENABLED || "false").toLowerCase() === "true";
+const pluginVersionLabel = process.env.PLUGIN_VERSION_LABEL || "0.1.2";
 const pluginLatestVersionLabel = process.env.PLUGIN_LATEST_VERSION_LABEL || pluginVersionLabel;
 const pluginMinimumSupportedVersion = process.env.PLUGIN_MINIMUM_SUPPORTED_VERSION || "";
 const pluginReleaseNotesUrl = process.env.PLUGIN_RELEASE_NOTES_URL || `${baseUrl}/pricing`;
@@ -84,10 +90,18 @@ const pluginDownloadUrl = process.env.PLUGIN_DOWNLOAD_URL || "";
 const pluginDownloadBucket = process.env.PLUGIN_DOWNLOAD_BUCKET || s3Bucket;
 const pluginDownloadKey = process.env.PLUGIN_DOWNLOAD_KEY || `downloads/SplitSheetStudio-Setup-${pluginVersionLabel}.exe`;
 const pluginDownloadPath = process.env.PLUGIN_DOWNLOAD_PATH ? path.resolve(process.env.PLUGIN_DOWNLOAD_PATH) : "";
+const macPluginDownloadUrl = process.env.MAC_PLUGIN_DOWNLOAD_URL || "";
+const macPluginDownloadBucket = process.env.MAC_PLUGIN_DOWNLOAD_BUCKET || pluginDownloadBucket;
+const macPluginDownloadKey = process.env.MAC_PLUGIN_DOWNLOAD_KEY || `downloads/SplitSheetStudio-${pluginVersionLabel}-macOS.pkg`;
+const macPluginDownloadPath = process.env.MAC_PLUGIN_DOWNLOAD_PATH ? path.resolve(process.env.MAC_PLUGIN_DOWNLOAD_PATH) : "";
+const macPluginDownloadEnabled = String(process.env.MAC_PLUGIN_DOWNLOAD_ENABLED || "false").toLowerCase() === "true"
+  || Boolean(macPluginDownloadUrl || macPluginDownloadPath);
 const signerLinkTtlHours = Math.max(1, Number(process.env.SIGNER_LINK_TTL_HOURS || 168));
 const signerReminderAfterHours = Math.max(1, Number(process.env.SIGNER_REMINDER_AFTER_HOURS || 24));
 const signerReminderIntervalMinutes = Math.max(5, Number(process.env.SIGNER_REMINDER_INTERVAL_MINUTES || 60));
 const automaticSignerReminders = String(process.env.AUTO_SIGNER_REMINDERS || "false").toLowerCase() === "true";
+const analyticsMeasurementId = String(process.env.GA_MEASUREMENT_ID || "").trim();
+const contactExportToken = String(process.env.CONTACT_EXPORT_TOKEN || "").trim();
 const oauthProviderConfigs = {
   google: {
     label: "Google",
@@ -103,6 +117,10 @@ const oauthProviderConfigs = {
     label: "Apple",
     clientId: String(process.env.APPLE_CLIENT_ID || "").trim(),
     clientSecret: String(process.env.APPLE_CLIENT_SECRET || "").trim(),
+    teamId: String(process.env.APPLE_TEAM_ID || "").trim(),
+    keyId: String(process.env.APPLE_KEY_ID || "").trim(),
+    privateKey: String(process.env.APPLE_PRIVATE_KEY || "").trim(),
+    privateKeyPath: String(process.env.APPLE_PRIVATE_KEY_PATH || "").trim(),
     authUrl: "https://appleid.apple.com/auth/authorize",
     tokenUrl: "https://appleid.apple.com/auth/token",
     jwksUrl: "https://appleid.apple.com/auth/keys",
@@ -112,6 +130,15 @@ const oauthProviderConfigs = {
   }
 };
 const oauthJwks = {};
+
+validateProductionRuntime({
+  environment: process.env,
+  baseUrl,
+  dbProvider,
+  sessionStoreMode,
+  cookieSecure,
+  pdfStorageMode
+});
 
 fs.mkdirSync(submissionsDir, { recursive: true });
 fs.mkdirSync(pdfDir, { recursive: true });
@@ -158,26 +185,62 @@ app.use("/api/stripe/webhook", express.raw({ type: "application/json", limit: "2
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(express.json({ limit: "10mb" }));
 app.use((req, res, next) => {
+  const requestId = String(req.headers["x-request-id"] || crypto.randomUUID());
+  const startedAt = Date.now();
+  req.requestId = requestId;
+  res.setHeader("X-Request-ID", requestId);
   res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-DNS-Prefetch-Control", "off");
+  res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-site");
+  res.setHeader("Origin-Agent-Cluster", "?1");
+  res.setHeader("Content-Security-Policy", [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com",
+    "font-src 'self' data:",
+    "form-action 'self' https://checkout.stripe.com https://billing.stripe.com",
+    "frame-ancestors 'none'",
+    "img-src 'self' data: blob:",
+    "object-src 'none'",
+    "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com",
+    "style-src 'self' 'unsafe-inline'"
+  ].join("; "));
   if (req.secure || trustProxy) {
     res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
   }
   if (req.path.startsWith("/account") || req.path.startsWith("/admin") || req.path.startsWith("/split-sheet") || req.path.startsWith("/api/")) {
     res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
   }
+  res.on("finish", () => {
+    if (req.path.startsWith("/style") || req.path.startsWith("/premium") || req.path.match(/\.(png|jpg|jpeg|svg|ico|woff2?)$/i)) return;
+    console.log(JSON.stringify({
+      event: "http_request",
+      requestId,
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      durationMs: Date.now() - startedAt,
+      at: nowIso()
+    }));
+  });
   next();
 });
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/vendor/signature_pad", express.static(path.join(__dirname, "node_modules", "signature_pad", "dist")));
 app.use(session({
+  name: "sss.sid",
   store: redisStore || undefined,
-  secret: process.env.SESSION_SECRET || "split-open-sign",
+  secret: process.env.SESSION_SECRET || crypto.randomBytes(48).toString("hex"),
   resave: false,
   saveUninitialized: false,
+  rolling: true,
+  proxy: trustProxy,
   cookie: {
     httpOnly: true,
     sameSite: "lax",
@@ -185,12 +248,48 @@ app.use(session({
     maxAge: cookieMaxAgeMs
   }
 }));
+const allowedWebOrigins = new Set([
+  baseOrigin.origin,
+  `${baseOrigin.protocol}//${rootDomain}`,
+  `${baseOrigin.protocol}//www.${rootDomain}`
+]);
+app.use((req, res, next) => {
+  res.locals.gaMeasurementId = analyticsMeasurementId;
+  if (!csrfProtectionEnabled || ["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
+  if (req.path.startsWith("/api/") || req.path === "/auth/apple/callback") return next();
+
+  const originHeader = String(req.headers.origin || "").trim();
+  const refererHeader = String(req.headers.referer || "").trim();
+  let requestOrigin = originHeader;
+  if (!requestOrigin && refererHeader) {
+    try { requestOrigin = new URL(refererHeader).origin; } catch {}
+  }
+  if (requestOrigin && allowedWebOrigins.has(requestOrigin)) return next();
+
+  if (req.path.startsWith("/api/")) return apiError(res, 403, "Cross-site request blocked.");
+  return res.status(403).render("auth-message", {
+    title: "Request blocked",
+    message: "This form request could not be verified.",
+    details: "Reload the page and try again. If the problem continues, contact support.",
+    actionHref: safeRedirectPath(req.get("referer"), "/"),
+    actionLabel: "Return to the app",
+    debugLink: null,
+    supportEmail
+  });
+});
 
 function nowIso() { return new Date().toISOString(); }
 function randomToken(size = 32) { return crypto.randomBytes(size).toString("hex"); }
 function uniq(arr) { return [...new Set(arr.filter(Boolean))]; }
+function isAffirmative(value) { return ["yes", "true", "1", "on"].includes(String(value || "").trim().toLowerCase()); }
 function hoursFromNow(hours) { return new Date(Date.now() + (hours * 60 * 60 * 1000)).toISOString(); }
 function isPast(value) { const time = new Date(value || 0).getTime(); return Number.isFinite(time) && time > 0 && time <= Date.now(); }
+function constantTimeEqual(leftValue, rightValue) {
+  const left = Buffer.from(String(leftValue || ""));
+  const right = Buffer.from(String(rightValue || ""));
+  if (!left.length || left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+}
 function rightsScopeLabel(value) {
   const scope = normalizeRightsScope(value);
   if (scope === "master") return "Master recording ownership";
@@ -203,6 +302,36 @@ function appendAuditEvent(doc, event) {
   doc.payload.auditTrail.push({ ...event, at: event.at || nowIso() });
 }
 function pdfDownloadFilename(id, kind = "final") { return `split-sheet-${id}-${kind}.pdf`; }
+function fallbackPdfAccessToken(doc) {
+  const secret = process.env.PDF_LINK_SECRET || process.env.API_TOKEN_SECRET || process.env.SESSION_SECRET || "split-sheet-studio-local-pdf-links";
+  return crypto
+    .createHmac("sha256", secret)
+    .update(`${doc.id}:${doc.createdAt || ""}`)
+    .digest("hex");
+}
+function ensurePdfAccessToken(doc) {
+  doc.payload = doc.payload || {};
+  if (!doc.payload.pdfAccessToken) {
+    doc.payload.pdfAccessToken = fallbackPdfAccessToken(doc);
+  }
+  return doc.payload.pdfAccessToken;
+}
+function pdfDownloadUrl(doc) {
+  return `${baseUrl}/split-sheet/pdf/${doc.id}?token=${encodeURIComponent(ensurePdfAccessToken(doc))}`;
+}
+function pdfDownloadPath(doc) {
+  return `/split-sheet/pdf/${doc.id}?token=${encodeURIComponent(ensurePdfAccessToken(doc))}`;
+}
+function pdfViewPath(doc) {
+  return `${pdfDownloadPath(doc)}&view=1`;
+}
+function wantsInlinePdf(req) {
+  return String(req.query.view || req.query.disposition || "").toLowerCase() === "1"
+    || String(req.query.view || req.query.disposition || "").toLowerCase() === "inline";
+}
+function pdfContentDisposition(id, kind = "final", inline = false) {
+  return `${inline ? "inline" : "attachment"}; filename="${pdfDownloadFilename(id, kind)}"`;
+}
 function splitPdfS3Key(id) {
   return s3Prefix ? `${s3Prefix}/${pdfDownloadFilename(id)}` : pdfDownloadFilename(id);
 }
@@ -224,7 +353,7 @@ const submissionStore = createSubmissionService({
 });
 const authService = createAuthService({
   db: databaseService.client,
-  tokenSecret: process.env.API_TOKEN_SECRET || process.env.SESSION_SECRET || "split-open-sign-api-secret",
+  tokenSecret: process.env.API_TOKEN_SECRET || process.env.SESSION_SECRET || crypto.randomBytes(48).toString("hex"),
   accessTokenTtlMinutes: Number(process.env.API_ACCESS_TOKEN_TTL_MINUTES || 15),
   refreshTokenTtlDays: Number(process.env.API_REFRESH_TOKEN_TTL_DAYS || 30),
   verificationTokenTtlHours: Number(process.env.EMAIL_VERIFICATION_TOKEN_TTL_HOURS || 48),
@@ -237,6 +366,10 @@ const authService = createAuthService({
     displayName: process.env.OWNER_DISPLAY_NAME || "Owner",
     planKey: process.env.OWNER_PLAN_KEY || "studio_pro"
   }
+});
+const contactService = createContactService({
+  db: databaseService.client,
+  provider: databaseService.provider
 });
 
 const loginAttempts = new Map();
@@ -371,6 +504,33 @@ async function saveSubmissionRow(row) {
   return submissionStore.saveSubmission(row);
 }
 
+async function saveSubmissionIfUnchanged(row, expectedUpdatedAt) {
+  return submissionStore.saveSubmissionIfUnchanged(row, expectedUpdatedAt);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function updateSubmissionWithRetry(id, mutate, attempts = 5) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const doc = await loadSubmission(id);
+    if (!doc) return { notFound: true };
+    const expectedUpdatedAt = doc.updatedAt;
+    const result = await mutate(doc);
+    if (result?.skipSave) {
+      return { ...result, doc };
+    }
+    doc.updatedAt = nowIso();
+    const saved = await saveSubmissionIfUnchanged(doc, expectedUpdatedAt);
+    if (saved) {
+      return { ...result, doc: saved };
+    }
+    await sleep(15 + (attempt * 20));
+  }
+  throw new ApiAuthError("This split sheet was updated at the same time. Reload and try again.", 409);
+}
+
 async function saveSubmission(type, payload, req) {
   return submissionStore.createSubmission({
     id: nanoid(10),
@@ -421,6 +581,32 @@ async function nextSplitVersion(songTitle) {
 
 function splitPdfPath(id) {
   return path.join(pdfDir, `split-sheet-${id}-final.pdf`);
+}
+
+function splitSheetSummary(doc) {
+  const summary = summarizeSplitSheet(doc, baseUrl);
+  summary.pdfUrl = pdfDownloadUrl(doc);
+  return summary;
+}
+
+function splitSheetDetail(doc) {
+  const detail = detailSplitSheet(doc, baseUrl);
+  detail.pdfUrl = pdfDownloadUrl(doc);
+  return detail;
+}
+
+function canDownloadSplitPdf(req, doc) {
+  const suppliedToken = String(req.query.token || "").trim();
+  if (suppliedToken && constantTimeEqual(suppliedToken, ensurePdfAccessToken(doc))) {
+    return true;
+  }
+  if (req.session?.isAdmin) {
+    return true;
+  }
+  if (req.webUser && canAccessSplitSheet(doc, req.webUser)) {
+    return true;
+  }
+  return false;
 }
 
 function checksumFor(row) {
@@ -502,7 +688,7 @@ function drawPdfHeader(pdf, title, subtitle) {
   } else {
     pdf.roundedRect(left + 14, top + 11, 54, 38, 8).fill("#d4af37");
   }
-  pdf.fillColor("#d4af37").fontSize(9).text("BLAK MARIGOLD STUDIO", textLeft, top + 14, {
+  pdf.fillColor("#d4af37").fontSize(9).text("SPLIT SHEET STUDIO", textLeft, top + 12, {
     width: width - (textLeft - left) - 18,
     characterSpacing: 1.2
   });
@@ -510,7 +696,7 @@ function drawPdfHeader(pdf, title, subtitle) {
     width: width - (textLeft - left) - 18
   });
   if (subtitle) {
-    pdf.fillColor("#d8d8d8").fontSize(8).text(subtitle, textLeft, top + 40, {
+    pdf.fillColor("#d8d8d8").fontSize(8).text(`${subtitle} | Blak Marigold Studio`, textLeft, top + 42, {
       width: width - (textLeft - left) - 18
     });
   }
@@ -806,11 +992,6 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
 
   const summaryLeft = pdf.page.margins.left;
   const summaryTop = pdf.y + 6;
-  const summaryWidth = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
-  const summaryBottom = pdf.page.height - pdf.page.margins.bottom - 24;
-  pdf.save();
-  pdf.roundedRect(summaryLeft, summaryTop, summaryWidth, summaryBottom - summaryTop, 12).strokeColor("#d9ccb1").lineWidth(1).stroke();
-  pdf.restore();
   pdf.y = summaryTop + 14;
 
   drawSectionHeading(pdf, "Song Information");
@@ -854,6 +1035,21 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
     ownershipRows.unshift({ label: "Total master share", value: formatPercent(totals.master) });
   }
   drawKeyValueGrid(pdf, ownershipRows);
+
+  drawSectionHeading(pdf, "Contributor Snapshot");
+  drawContributorGrid(pdf, contributors, options);
+
+  ensurePdfSpace(pdf, 56);
+  pdf.roundedRect(summaryLeft, pdf.y + 4, pdf.page.width - pdf.page.margins.left - pdf.page.margins.right, 42, 8)
+    .fillAndStroke("#111111", "#d7c49b");
+  pdf.fillColor("#d4af37").fontSize(7).text("PACKET CONTENTS", summaryLeft + 14, pdf.y + 14, { width: 140 });
+  pdf.fillColor("#ffffff").fontSize(8.5).text(
+    "Detailed contributor signature pages, agreement language, and execution audit follow this summary.",
+    summaryLeft + 14,
+    pdf.y + 25,
+    { width: pdf.page.width - pdf.page.margins.left - pdf.page.margins.right - 28 }
+  );
+  pdf.y += 58;
 
   contributors.forEach((contributor, index) => {
     pdf.addPage();
@@ -957,7 +1153,7 @@ function generateFinalSplitPdf(docJson) {
   });
 }
 
-async function streamStoredFinalPdf(docJson, res) {
+async function streamStoredFinalPdf(docJson, res, options = {}) {
   const remotePdf = docJson?.payload?.finalPdfStorage;
   if (!remotePdf || remotePdf.provider !== "s3" || !remotePdf.bucket || !remotePdf.key || !s3Client) {
     return false;
@@ -968,7 +1164,10 @@ async function streamStoredFinalPdf(docJson, res) {
     Key: remotePdf.key
   }));
   res.setHeader("Content-Type", s3Object.ContentType || "application/pdf");
-  res.setHeader("Content-Disposition", s3Object.ContentDisposition || `attachment; filename="${pdfDownloadFilename(docJson.id)}"`);
+  res.setHeader(
+    "Content-Disposition",
+    options.inline ? pdfContentDisposition(docJson.id, "final", true) : (s3Object.ContentDisposition || pdfContentDisposition(docJson.id))
+  );
   if (s3Object.ContentLength) {
     res.setHeader("Content-Length", String(s3Object.ContentLength));
   }
@@ -978,16 +1177,17 @@ async function streamStoredFinalPdf(docJson, res) {
 
 async function initializeRuntime() {
   await redisReady;
+  await databaseService.ping();
   if (pdfStorageMode === "s3") {
     console.log(`S3 PDF storage enabled (${s3Bucket}/${s3Prefix || "."})`);
   }
   if (automaticSignerReminders) {
     const timer = setInterval(() => {
-      runAutomaticSignerReminders().catch((error) => console.error("Automatic signer reminder failed:", error.message || error));
+      runAutomaticSignerRemindersWithLock().catch((error) => console.error("Automatic signer reminder failed:", error.message || error));
     }, signerReminderIntervalMinutes * 60 * 1000);
     timer.unref();
     setTimeout(() => {
-      runAutomaticSignerReminders().catch((error) => console.error("Initial signer reminder run failed:", error.message || error));
+      runAutomaticSignerRemindersWithLock().catch((error) => console.error("Initial signer reminder run failed:", error.message || error));
     }, 5000).unref();
     console.log(`Automatic signer reminders enabled (${signerReminderAfterHours}h threshold)`);
   }
@@ -1064,7 +1264,7 @@ async function sendEmail({ subject, html, to, attachments = [] }) {
 function verificationEmailHtml({ displayName, verifyUrl, expiresAt }) {
   return `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
     <h2 style="margin:0 0 10px">Verify your Split Sheet Studio account</h2>
-    <p style="margin:0 0 12px">Hi ${displayName || "there"},</p>
+    <p style="margin:0 0 12px">Hi ${escapeHtml(displayName || "there")},</p>
     <p style="margin:0 0 12px">Confirm this email address so you can recover your password and keep your account secure.</p>
     <p style="margin:0 0 14px"><a href="${verifyUrl}">Verify your email</a></p>
     <p style="margin:0 0 12px">This link expires on ${new Date(expiresAt).toUTCString()}.</p>
@@ -1076,7 +1276,7 @@ function verificationEmailHtml({ displayName, verifyUrl, expiresAt }) {
 function passwordResetEmailHtml({ displayName, resetUrl, expiresAt }) {
   return `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
     <h2 style="margin:0 0 10px">Reset your Split Sheet Studio password</h2>
-    <p style="margin:0 0 12px">Hi ${displayName || "there"},</p>
+    <p style="margin:0 0 12px">Hi ${escapeHtml(displayName || "there")},</p>
     <p style="margin:0 0 12px">Use the link below to set a new password for your account.</p>
     <p style="margin:0 0 14px"><a href="${resetUrl}">Reset password</a></p>
     <p style="margin:0 0 12px">This link expires on ${new Date(expiresAt).toUTCString()}.</p>
@@ -1162,36 +1362,69 @@ function latestBlogPosts(limit = 3) {
   return listPosts().slice(0, limit);
 }
 
+function marketingSiteUrl(pathname = "") {
+  const origin = rootDomain === appHost ? baseOrigin.origin : `https://${rootDomain}`;
+  return `${origin}${pathname}`;
+}
+
+function escapeXml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function csvCell(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
 function publicNavModel() {
   return {
     appUrl: baseUrl,
     signupUrl: `${baseUrl}/signup`,
     pricingUrl: "/pricing",
     blogUrl: "/blog",
+    supportUrl: "/support",
     supportEmail,
     rootDomain
   };
+}
+
+function socialImageUrl() {
+  return marketingSiteUrl("/vst-contributors.png");
 }
 
 function paidPlanOptions() {
   return Object.values(PLAN_DEFINITIONS).filter((plan) => Number(plan.monthlyPriceUsdCents || 0) > 0);
 }
 
-function stripePriceIdForPlan(plan) {
-  return String(process.env[plan.stripePriceEnv] || "").trim();
+function normalizeBillingInterval(value) {
+  return String(value || "").trim().toLowerCase() === "year" ? "year" : "month";
 }
 
-function stripeLineItemForPlan(plan) {
-  const priceId = stripePriceIdForPlan(plan);
+function stripePriceIdForPlan(plan, interval = "month") {
+  if (!stripeUseConfiguredPriceIds) return "";
+  const envName = normalizeBillingInterval(interval) === "year" ? plan.annualStripePriceEnv : plan.stripePriceEnv;
+  return String(process.env[envName] || "").trim();
+}
+
+function stripeLineItemForPlan(plan, interval = "month") {
+  const billingInterval = normalizeBillingInterval(interval);
+  const priceId = stripePriceIdForPlan(plan, billingInterval);
   if (priceId) {
     return { quantity: 1, price: priceId };
   }
+  const unitAmount = billingInterval === "year"
+    ? Number(plan.annualPriceUsdCents || 0)
+    : Number(plan.monthlyPriceUsdCents || 0);
   return {
     quantity: 1,
     price_data: {
       currency: "usd",
-      unit_amount: Number(plan.monthlyPriceUsdCents || 0),
-      recurring: { interval: "month" },
+      unit_amount: unitAmount,
+      recurring: { interval: billingInterval },
       product_data: {
         name: `Split Sheet Studio ${plan.name}`,
         description: `${plan.monthlySheetLimit} completed split sheets per month. ${plan.description}`
@@ -1228,6 +1461,10 @@ async function updateUserFromStripeSubscription(subscription) {
 
 function pluginDownloadHref(purchase) {
   return `${baseUrl}/downloads/plugin/${encodeURIComponent(purchase.id)}?token=${encodeURIComponent(purchase.downloadToken)}`;
+}
+
+function isPaidStripeCheckoutSession(session) {
+  return String(session?.payment_status || "").toLowerCase() === "paid";
 }
 
 function pluginPurchaseEmailHtml({ purchase, downloadHref }) {
@@ -1280,17 +1517,21 @@ async function sendPluginInstaller(res) {
   }
 
   if (s3Client && pluginDownloadBucket && pluginDownloadKey) {
-    const object = await s3Client.send(new GetObjectCommand({
-      Bucket: pluginDownloadBucket,
-      Key: pluginDownloadKey
-    }));
-    res.setHeader("Content-Type", object.ContentType || "application/octet-stream");
-    res.setHeader("Content-Disposition", `attachment; filename="${path.basename(pluginDownloadKey)}"`);
-    if (object.ContentLength) {
-      res.setHeader("Content-Length", String(object.ContentLength));
+    try {
+      const object = await s3Client.send(new GetObjectCommand({
+        Bucket: pluginDownloadBucket,
+        Key: pluginDownloadKey
+      }));
+      res.setHeader("Content-Type", object.ContentType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${path.basename(pluginDownloadKey)}"`);
+      if (object.ContentLength) {
+        res.setHeader("Content-Length", String(object.ContentLength));
+      }
+      object.Body.pipe(res);
+      return;
+    } catch (error) {
+      console.error("Plugin installer delivery failed:", error.message || error);
     }
-    object.Body.pipe(res);
-    return;
   }
 
   return res.status(503).render("auth-message", {
@@ -1299,6 +1540,54 @@ async function sendPluginInstaller(res) {
     details: "Set PLUGIN_DOWNLOAD_URL, PLUGIN_DOWNLOAD_PATH, or S3 download settings before opening storefront downloads.",
     actionHref: "/pricing",
     actionLabel: "Back to pricing",
+    debugLink: null
+  });
+}
+
+async function sendMacPluginInstaller(res) {
+  if (!macPluginDownloadEnabled) {
+    return res.status(503).render("auth-message", {
+      title: "Mac beta coming soon",
+      message: "The macOS Audio Unit beta is prepared but not publicly testable yet.",
+      details: "It must be built on macOS, signed with an Apple Developer ID, notarized, and validated in Logic Pro before this download is enabled.",
+      actionHref: "/beta#mac-beta",
+      actionLabel: "View Mac beta status",
+      debugLink: null
+    });
+  }
+
+  if (macPluginDownloadUrl) {
+    return res.redirect(302, macPluginDownloadUrl);
+  }
+
+  if (macPluginDownloadPath && fs.existsSync(macPluginDownloadPath)) {
+    return res.download(macPluginDownloadPath, path.basename(macPluginDownloadPath));
+  }
+
+  if (s3Client && macPluginDownloadBucket && macPluginDownloadKey) {
+    try {
+      const object = await s3Client.send(new GetObjectCommand({
+        Bucket: macPluginDownloadBucket,
+        Key: macPluginDownloadKey
+      }));
+      res.setHeader("Content-Type", object.ContentType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${path.basename(macPluginDownloadKey)}"`);
+      if (object.ContentLength) {
+        res.setHeader("Content-Length", String(object.ContentLength));
+      }
+      object.Body.pipe(res);
+      return;
+    } catch (error) {
+      console.error("Mac plugin installer delivery failed:", error.message || error);
+    }
+  }
+
+  return res.status(503).render("auth-message", {
+    title: "Mac installer unavailable",
+    message: "The Mac beta is enabled, but its installer source is not configured.",
+    details: "Set MAC_PLUGIN_DOWNLOAD_URL, MAC_PLUGIN_DOWNLOAD_PATH, or the Mac S3 download settings.",
+    actionHref: "/beta#mac-beta",
+    actionLabel: "View Mac beta status",
     debugLink: null
   });
 }
@@ -1352,21 +1641,44 @@ function splitSummaryHtml(contributors = [], rightsScope = "composition") {
 
 function completionEmailHtml({ title, id, songLabel, downloadUrl, recipients, splitHtml = "", revisionUrl = "" }) {
   const revisionBlock = revisionUrl
-    ? `<p style="margin:16px 0 8px"><b>Need to change the split later?</b></p>
-    <p style="margin:0 0 12px">Use the revision link to create a new version. The original completed PDF stays preserved, and every contributor must review and sign the revised split before it becomes final.</p>
-    <p style="margin:0 0 12px"><a href="${revisionUrl}" style="display:inline-block;background:#111;color:#f4c76b;border:1px solid #b8860b;padding:10px 14px;border-radius:8px;text-decoration:none;font-weight:bold;">Request revised split sheet</a></p>`
+    ? `<div style="margin:18px 0 0;padding:16px;border:1px solid #eadfca;border-radius:12px;background:#fffaf0">
+      <p style="margin:0 0 8px;font-size:14px;color:#6b5430"><b>Need to change the split later?</b></p>
+      <p style="margin:0 0 14px;color:#4b4034">Create a new version without replacing this completed record. Every contributor must review and sign the revised split before it becomes final.</p>
+      <p style="margin:0"><a href="${revisionUrl}" style="display:inline-block;background:#171311;color:#f8d76f;border:1px solid #c78a33;padding:11px 16px;border-radius:8px;text-decoration:none;font-weight:bold;">Request revised split sheet</a></p>
+    </div>`
     : "";
-  return `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111">
-    <h2 style="margin:0 0 8px">${title}</h2>
-    <p style="margin:0 0 10px">Submission ID: <b>${id}</b></p>
-    ${songLabel ? `<p style="margin:0 0 10px">${songLabel}</p>` : ""}
-    ${splitHtml || ""}
-    <p style="margin:12px 0 12px">Your agreement is complete and attached to this email for your records.</p>
-    <p style="margin:0 0 12px"><a href="${downloadUrl}">Download agreement packet</a></p>
-    ${revisionBlock}
-    <p style="margin:0 0 12px"><b>Recipients:</b> ${recipients.join(", ")}</p>
-    <hr style="border:none;border-top:1px solid #ddd;margin:14px 0" />
-    <p style="margin:0">Blak Marigold Studio<br/>blakmarigold.com<br/>512-593-1267</p>
+  const viewUrl = `${downloadUrl}${downloadUrl.includes("?") ? "&" : "?"}view=1`;
+  return `<div style="margin:0;padding:0;background:#f4efe5;font-family:Arial,sans-serif;line-height:1.55;color:#171311">
+    <div style="max-width:760px;margin:0 auto;padding:24px 14px">
+      <div style="overflow:hidden;border:1px solid #ddcfb9;border-radius:18px;background:#fffdf8;box-shadow:0 18px 48px rgba(23,19,17,.12)">
+        <div style="padding:24px 26px;background:#171311;color:#f6f3ec">
+          <p style="margin:0 0 8px;color:#f8d76f;font-size:11px;font-weight:bold;letter-spacing:.16em;text-transform:uppercase">Split Sheet Studio</p>
+          <h2 style="margin:0;font-size:28px;line-height:1.15">${title}</h2>
+          <p style="margin:10px 0 0;color:#d9cbb9">The executed split sheet packet is ready for your records.</p>
+        </div>
+        <div style="padding:24px 26px">
+          <div style="display:block;margin:0 0 18px;padding:14px 16px;border:1px solid #eadfca;border-radius:12px;background:#fbf7ee">
+            <p style="margin:0 0 8px;color:#7d673f;font-size:12px;font-weight:bold;letter-spacing:.08em;text-transform:uppercase">Packet details</p>
+            <p style="margin:0 0 6px">Submission ID: <b>${escapeHtml(id)}</b></p>
+            ${songLabel ? `<p style="margin:0">${escapeHtml(songLabel)}</p>` : ""}
+          </div>
+          ${splitHtml || ""}
+          <p style="margin:18px 0 18px;color:#3d352e">Your agreement is complete and the PDF is attached. You can also view it in your browser before downloading.</p>
+          <p style="margin:0 0 20px">
+            <a href="${viewUrl}" style="display:inline-block;background:#f8d76f;color:#36302a;padding:13px 18px;border-radius:8px;text-decoration:none;font-weight:bold;">View packet</a>
+            <a href="${downloadUrl}" style="display:inline-block;margin-left:8px;background:#171311;color:#f8d76f;border:1px solid #c78a33;padding:12px 17px;border-radius:8px;text-decoration:none;font-weight:bold;">Download PDF</a>
+          </p>
+          ${revisionBlock}
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid #eadfca">
+            <p style="margin:0 0 8px;color:#6b5430"><b>Recipients</b></p>
+            <p style="margin:0;color:#4b4034">${recipients.map(escapeHtml).join(", ")}</p>
+          </div>
+        </div>
+        <div style="padding:18px 26px;background:#171311;color:#d9cbb9">
+          <p style="margin:0"><b style="color:#f8d76f">Blak Marigold Studio</b><br/>blakmarigold.com<br/>512-593-1267</p>
+        </div>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -1406,7 +1718,7 @@ async function sendCompletedSplitSheetPacket(doc, { title = "Split Sheet Complet
       title,
       id: doc.id,
       songLabel: `Song: ${doc.payload.songTitle} (v${doc.payload.version})`,
-      downloadUrl: `${baseUrl}/split-sheet/pdf/${doc.id}`,
+      downloadUrl: pdfDownloadUrl(doc),
       recipients,
       revisionUrl: revisionUrlFor(doc),
       splitHtml: splitSummaryHtml(doc.payload?.contributors || [], doc.payload?.rightsScope)
@@ -1480,6 +1792,23 @@ async function runAutomaticSignerReminders() {
   }
 }
 
+async function runAutomaticSignerRemindersWithLock() {
+  if (!redisClient) return runAutomaticSignerReminders();
+  await redisReady;
+  const lockKey = "splitsheet:jobs:signer-reminders";
+  const lockValue = randomToken(16);
+  const acquired = await redisClient.set(lockKey, lockValue, { NX: true, EX: Math.max(300, signerReminderIntervalMinutes * 60) });
+  if (!acquired) return;
+  try {
+    return await runAutomaticSignerReminders();
+  } finally {
+    await redisClient.eval(
+      "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+      { keys: [lockKey], arguments: [lockValue] }
+    ).catch((error) => console.error("Reminder lock release failed:", error.message || error));
+  }
+}
+
 function requireAdmin(req, res, next) { if (req.session && req.session.isAdmin) return next(); res.redirect("/admin/login"); }
 function apiError(res, status, message, details = undefined) {
   const body = { ok: false, error: message };
@@ -1508,15 +1837,32 @@ async function requireApiAuth(req, res, next) {
   }
 }
 
+function requireContactExportAuth(req, res, next) {
+  if (!contactExportToken) {
+    return apiError(res, 404, "Contact export is not configured.");
+  }
+  const suppliedToken = bearerTokenFrom(req);
+  if (!suppliedToken) {
+    return apiError(res, 401, "Contact export token required.");
+  }
+  if (!constantTimeEqual(suppliedToken, contactExportToken)) {
+    return apiError(res, 403, "Contact export token rejected.");
+  }
+  return next();
+}
+
 async function attachWebUser(req, res, next) {
   try {
     if (req.session?.userId) {
       const user = await authService.getUserById(req.session.userId);
-      if (user?.status === "active") {
+      if (user?.status === "active"
+          && (!requireEmailVerification || user.emailVerifiedAt)
+          && (req.session.passwordChangedAt || null) === (user.passwordChangedAt || null)) {
         req.webUser = user;
         res.locals.webUser = user;
       } else {
         delete req.session.userId;
+        delete req.session.passwordChangedAt;
       }
     }
     return next();
@@ -1537,19 +1883,46 @@ function oauthRedirectUri(providerKey) {
 }
 
 function oauthUiProviders() {
-  return Object.entries(oauthProviderConfigs).map(([key, config]) => ({
-    key,
-    label: config.label,
-    enabled: Boolean(config.clientId && config.clientSecret)
-  }));
+  return Object.entries(oauthProviderConfigs)
+    .map(([key, config]) => ({
+      key,
+      label: config.label,
+      enabled: Boolean(config.clientId && (config.clientSecret || appleJwtConfigReady(config)))
+    }))
+    .filter((provider) => provider.enabled);
+}
+
+function appleJwtConfigReady(config) {
+  return Boolean(config?.teamId && config?.keyId && (config?.privateKey || config?.privateKeyPath));
 }
 
 function oauthProvider(key) {
   const provider = oauthProviderConfigs[key];
-  if (!provider || !provider.clientId || !provider.clientSecret) {
+  if (!provider || !provider.clientId || (!provider.clientSecret && !appleJwtConfigReady(provider))) {
     throw new ApiAuthError(`${provider?.label || "This"} sign-in is not configured yet.`, 503);
   }
   return provider;
+}
+
+function applePrivateKey(config) {
+  if (config.privateKey) return config.privateKey.replace(/\\n/g, "\n");
+  return fs.readFileSync(path.resolve(config.privateKeyPath), "utf8");
+}
+
+async function oauthClientSecret(providerKey, provider) {
+  if (provider.clientSecret) return provider.clientSecret;
+  if (providerKey !== "apple" || !appleJwtConfigReady(provider)) {
+    throw new ApiAuthError(`${provider.label} sign-in is not configured yet.`, 503);
+  }
+  const key = await importPKCS8(applePrivateKey(provider), "ES256");
+  return new SignJWT({})
+    .setProtectedHeader({ alg: "ES256", kid: provider.keyId })
+    .setIssuer(provider.teamId)
+    .setIssuedAt()
+    .setExpirationTime("180d")
+    .setAudience("https://appleid.apple.com")
+    .setSubject(provider.clientId)
+    .sign(key);
 }
 
 function oauthError(res, error, next = "/account") {
@@ -1572,7 +1945,7 @@ async function exchangeOAuthCode(providerKey, code) {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: provider.clientId,
-      client_secret: provider.clientSecret,
+      client_secret: await oauthClientSecret(providerKey, provider),
       code,
       grant_type: "authorization_code",
       redirect_uri: oauthRedirectUri(providerKey)
@@ -1662,6 +2035,23 @@ async function createSplitSheetSubmission(input, req) {
     if (!canAccessSplitSheet(draft, req.apiUser)) {
       throw new ApiAuthError("You do not have access to this draft.", 403);
     }
+    if (draft.status !== "draft") {
+      throw new ApiAuthError("Submitted split sheets are locked. Create a new revision instead.", 409);
+    }
+  }
+
+  let revisionSource = null;
+  if (input.revisionOfId) {
+    revisionSource = await loadSubmission(String(input.revisionOfId).trim());
+    if (!revisionSource || revisionSource.type !== "split-sheet") {
+      throw new ApiAuthError("Original split sheet not found.", 404);
+    }
+    if (!canAccessSplitSheet(revisionSource, req.apiUser)) {
+      throw new ApiAuthError("You do not have access to revise this split sheet.", 403);
+    }
+    if (revisionSource.status !== "completed") {
+      throw new ApiAuthError("Only completed split sheets can be revised.", 409);
+    }
   }
 
   const { payload, collectByInvite, recipientEmails } = await buildSplitSheetPayload(input, {
@@ -1671,9 +2061,9 @@ async function createSplitSheetSubmission(input, req) {
     nowIso
   });
   payload.revisionToken = nanoid(22);
-  if (input.revisionOfId) {
-    payload.revisionOfId = String(input.revisionOfId || "").trim();
-    payload.revisionOfVersion = Number(input.revisionOfVersion || 0) || null;
+  if (revisionSource) {
+    payload.revisionOfId = revisionSource.id;
+    payload.revisionOfVersion = Number(revisionSource.payload.version || 1);
     payload.supersedesPrevious = true;
     payload.auditTrail.push({
       type: "revision-created",
@@ -1692,6 +2082,14 @@ async function createSplitSheetSubmission(input, req) {
       payload
     })
     : await saveSubmission("split-sheet", payload, req);
+  await Promise.all(payload.contributors.map((contributor) => contactService.recordContact({
+    email: contributor.email,
+    displayName: contributor.legalName,
+    source: "contributor_invite",
+    marketingOptIn: false,
+    ip: requestIp(req),
+    userAgent: req.headers["user-agent"] || ""
+  })));
   const recipients = uniq([
     process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com",
     ...payload.contributors.map((contributor) => contributor.email),
@@ -1708,7 +2106,7 @@ async function createSplitSheetSubmission(input, req) {
     const proposalEmailResult = await sendEmail({
       subject: `Split Sheet Created - ${payload.songTitle} (v${payload.version})`,
       to: recipients,
-      html: `<h2>Split Sheet Created</h2><p>ID: ${escapeHtml(saved.id)}</p><p>Song: ${escapeHtml(payload.songTitle)}</p><p>Rights covered: ${escapeHtml(rightsScopeLabel(payload.rightsScope))}</p><p>Version: ${payload.version}</p>${payload.revisionOfId ? `<p><b>Revision:</b> This is a revised request for submission ${escapeHtml(payload.revisionOfId)}. The previous completed PDF remains preserved until this version is fully signed.</p>` : ""}<p>Status: Pending signatures</p><p>Every contributor must review, agree, and sign before the final packet is generated.</p><p><a href="${baseUrl}/split-sheet/pdf/${saved.id}">Download Current PDF Summary</a></p><p><b>Recipients:</b> ${recipients.map(escapeHtml).join(", ")}</p>`
+      html: `<h2>Split Sheet Created</h2><p>ID: ${escapeHtml(saved.id)}</p><p>Song: ${escapeHtml(payload.songTitle)}</p><p>Rights covered: ${escapeHtml(rightsScopeLabel(payload.rightsScope))}</p><p>Version: ${payload.version}</p>${payload.revisionOfId ? `<p><b>Revision:</b> This is a revised request for submission ${escapeHtml(payload.revisionOfId)}. The previous completed PDF remains preserved until this version is fully signed.</p>` : ""}<p>Status: Pending signatures</p><p>Every contributor must review, agree, and sign before the final packet is generated.</p><p><a href="${pdfDownloadUrl(saved)}">Download Current PDF Summary</a></p><p><b>Recipients:</b> ${recipients.map(escapeHtml).join(", ")}</p>`
     });
     saved.payload.proposalEmailDelivery = proposalEmailResult;
     appendAuditEvent(saved, { type: "proposal-email-sent", deliveryStatus: proposalEmailResult.ok ? "sent" : "failed" });
@@ -1783,6 +2181,12 @@ const registerLimiter = createRateLimiter({
   prefix: "auth-register",
   windowMs: 60 * 60 * 1000,
   limit: 5
+});
+
+const contactCaptureLimiter = createRateLimiter({
+  prefix: "contact-capture",
+  windowMs: 60 * 60 * 1000,
+  limit: 10
 });
 
 const forgotPasswordLimiter = createRateLimiter({
@@ -1870,6 +2274,81 @@ const signerSubmitLimiter = createRateLimiter({
 
 app.use(["/split-sheet", "/account", "/login", "/logout", "/admin", "/signup", "/forgot-password", "/reset-password", "/verify-email", "/auth"], ensureAppHost);
 app.use(attachWebUser);
+app.use((req, res, next) => {
+  res.locals.pdfDownloadPath = pdfDownloadPath;
+  res.locals.pdfViewPath = pdfViewPath;
+  next();
+});
+
+app.get("/robots.txt", (req, res) => {
+  res.type("text/plain");
+  if (!isMarketingHost(req)) return res.send("User-agent: *\nDisallow: /\n");
+  return res.send(`User-agent: *\nAllow: /\nAllow: /llms.txt\nDisallow: /admin\nDisallow: /account\nDisallow: /split-sheet\nSitemap: ${marketingSiteUrl("/sitemap.xml")}\n`);
+});
+app.get("/sitemap.xml", publicPageLimiter, (req, res) => {
+  if (!isMarketingHost(req)) return res.status(404).type("text/plain").send("Not found");
+  const staticUrls = ["/", "/pricing", "/beta", "/blog", "/support"].map((pathname) => ({
+    pathname,
+    lastmod: "2026-09-13",
+    changefreq: pathname === "/" ? "weekly" : "monthly",
+    priority: pathname === "/" ? "1.0" : "0.8"
+  }));
+  const blogUrls = listPosts().map((post) => ({
+    pathname: `/blog/${post.slug}`,
+    lastmod: post.publishedAt,
+    changefreq: "monthly",
+    priority: "0.7"
+  }));
+  const legalUrls = listLegalPages().map((page) => ({
+    pathname: `/legal/${page.slug}`,
+    lastmod: "2026-08-25",
+    changefreq: "yearly",
+    priority: "0.3"
+  }));
+  const urls = [...staticUrls, ...blogUrls, ...legalUrls];
+  res.type("application/xml");
+  return res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => `  <url><loc>${escapeXml(marketingSiteUrl(url.pathname))}</loc><lastmod>${escapeXml(url.lastmod)}</lastmod><changefreq>${escapeXml(url.changefreq)}</changefreq><priority>${escapeXml(url.priority)}</priority></url>`).join("\n")}\n</urlset>\n`);
+});
+app.get("/llms.txt", publicPageLimiter, (req, res) => {
+  if (!isMarketingHost(req)) return res.status(404).type("text/plain").send("Not found");
+  const posts = listPosts();
+  res.type("text/plain");
+  return res.send([
+    "# Split Sheet Studio",
+    "",
+    "> Split Sheet Studio helps artists, producers, songwriters, managers, and recording studios create music split sheets, validate composition and master ownership percentages, collect remote signatures, and deliver final PDF records.",
+    "",
+    "## Product Facts",
+    "- Free web plan: 3 completed split sheets per month on the Split Sheet Studio website.",
+    "- Creator launch plan: $7/month or $70/year for 25 completed split sheets per month.",
+    "- Studio launch plan: $19/month or $190/year for 150 completed split sheets per month.",
+    "- Paid plans include the Windows VST3 plugin and standalone Windows app during launch.",
+    "- The app is built for music split sheets, sync licensing readiness, recording studio paperwork, remote collaboration, and clean rights metadata.",
+    "- No refunds are offered except where required by law.",
+    "",
+    "## Key Pages",
+    `- Homepage: ${marketingSiteUrl("/")}`,
+    `- Pricing: ${marketingSiteUrl("/pricing")}`,
+    `- Blog: ${marketingSiteUrl("/blog")}`,
+    `- Beta downloads: ${marketingSiteUrl("/beta")}`,
+    `- Support: ${marketingSiteUrl("/support")}`,
+    "",
+    "## Blog Guides",
+    ...posts.map((post) => `- ${post.title}: ${marketingSiteUrl(`/blog/${post.slug}`)} - ${post.excerpt}`),
+    "",
+    "## Audience",
+    "The primary audience is independent artists, producers, songwriters, sync producers, studio owners, engineers, managers, publishers, labels, music supervisors, and collaborators who need clear ownership records before release or licensing conversations."
+  ].join("\n"));
+});
+app.get("/.well-known/security.txt", (req, res) => {
+  res.type("text/plain");
+  return res.send(`Contact: mailto:${supportEmail}\nCanonical: ${marketingSiteUrl("/.well-known/security.txt")}\nPolicy: ${marketingSiteUrl("/legal/privacy")}\nPreferred-Languages: en\nExpires: 2027-08-25T00:00:00.000Z\n`);
+});
+app.get("/support", publicPageLimiter, (req, res) => res.render("support", {
+  ...publicNavModel(),
+  pluginVersionLabel,
+  socialImageUrl: socialImageUrl()
+}));
 
 app.get("/", publicPageLimiter, (req, res) => {
   if (isMarketingHost(req)) {
@@ -1878,13 +2357,52 @@ app.get("/", publicPageLimiter, (req, res) => {
       pluginUrl: `${baseUrl}#plugin`,
       pluginPriceLabel: storefrontPriceLabel(),
       stripeEnabled,
-      latestPosts: latestBlogPosts()
+      newsletterStatus: String(req.query.newsletter || ""),
+      latestPosts: latestBlogPosts(),
+      socialImageUrl: socialImageUrl()
     });
+  }
+  if (req.webUser) {
+    return res.redirect("/account");
   }
   return res.render("index", {
     ...publicNavModel(),
-    forgotPasswordUrl: `${baseUrl}/forgot-password`
+    forgotPasswordUrl: `${baseUrl}/forgot-password`,
+    latestPosts: latestBlogPosts()
   });
+});
+app.post("/newsletter/subscribe", contactCaptureLimiter, async (req, res) => {
+  const marketingOptIn = isAffirmative(req.body.marketingOptIn);
+  if (!marketingOptIn) return res.redirect("/?newsletter=consent-required#newsletter");
+  const contact = await contactService.recordContact({
+    email: req.body.email,
+    displayName: req.body.displayName,
+    source: "website_newsletter",
+    marketingOptIn: true,
+    ip: requestIp(req),
+    userAgent: req.headers["user-agent"] || ""
+  });
+  return res.redirect(`/?newsletter=${contact ? "subscribed" : "invalid-email"}#newsletter`);
+});
+app.get("/email-preferences/:token", publicPageLimiter, async (req, res) => {
+  const contact = await contactService.getByUnsubscribeToken(req.params.token);
+  if (!contact) return res.status(404).render("auth-message", {
+    title: "Preference link unavailable",
+    message: "This email preference link is invalid or no longer available.",
+    details: "Contact support if you still need help.",
+    actionHref: "/",
+    actionLabel: "Return home",
+    debugLink: null
+  });
+  return res.render("email-preferences", { contact, updated: false });
+});
+app.post("/email-preferences/:token/unsubscribe", contactCaptureLimiter, async (req, res) => {
+  const contact = await contactService.unsubscribe(req.params.token, {
+    ip: requestIp(req),
+    userAgent: req.headers["user-agent"] || ""
+  });
+  if (!contact) return res.status(404).send("Invalid preference link");
+  return res.render("email-preferences", { contact, updated: true });
 });
 app.get("/pricing", publicPageLimiter, (req, res) => {
   return res.render("pricing", {
@@ -1894,7 +2412,8 @@ app.get("/pricing", publicPageLimiter, (req, res) => {
     pluginVersionLabel,
     planOptions: Object.values(PLAN_DEFINITIONS),
     checkoutEnabled: stripeEnabled,
-    launchMode: stripeEnabled ? "checkout" : "prelaunch"
+    launchMode: stripeEnabled ? "checkout" : "prelaunch",
+    socialImageUrl: socialImageUrl()
   });
 });
 app.get("/beta", publicPageLimiter, (req, res) => {
@@ -1903,26 +2422,43 @@ app.get("/beta", publicPageLimiter, (req, res) => {
     pluginVersionLabel,
     installerUrl: `${baseUrl}/downloads/plugin/latest`,
     appHealthUrl: `${baseUrl}/health`,
-    apiReadyUrl: `${baseUrl}/api/ready`
+    apiReadyUrl: `${baseUrl}/api/ready`,
+    socialImageUrl: socialImageUrl()
   });
 });
 app.post("/buy/plugin", publicPageLimiter, async (req, res) => {
+  if (!standalonePluginCheckoutEnabled) {
+    return res.status(404).render("auth-message", {
+      title: "Plugin included with plans",
+      message: "The Windows plugin is included with Creator and Studio during launch.",
+      details: "Choose a package from the pricing page to use the hosted app, Windows VST3 plugin, and standalone app together.",
+      actionHref: "/pricing",
+      actionLabel: "View packages",
+      debugLink: null,
+      supportEmail
+    });
+  }
+
   if (!stripeEnabled) {
     return res.status(503).render("pricing", {
       ...publicNavModel(),
       priceLabel: storefrontPriceLabel(),
       pluginName: stripePluginProductName,
       pluginVersionLabel,
-      planOptions: Object.values(PLAN_DEFINITIONS),
+      planOptions: paidPlanOptions(),
       checkoutEnabled: false,
       launchMode: "prelaunch",
-      error: "Stripe checkout is not configured on this environment yet."
+      error: "Stripe checkout is not configured on this environment yet.",
+      socialImageUrl: socialImageUrl()
     });
   }
 
   try {
     const session = await stripeClient.checkout.sessions.create({
       mode: "payment",
+      wallet_options: {
+        link: { display: "never" }
+      },
       customer_creation: "always",
       billing_address_collection: "auto",
       success_url: `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -1954,10 +2490,11 @@ app.post("/buy/plugin", publicPageLimiter, async (req, res) => {
       priceLabel: storefrontPriceLabel(),
       pluginName: stripePluginProductName,
       pluginVersionLabel,
-      planOptions: Object.values(PLAN_DEFINITIONS),
+      planOptions: paidPlanOptions(),
       checkoutEnabled: stripeEnabled,
       launchMode: stripeEnabled ? "checkout" : "prelaunch",
-      error: "Stripe checkout failed to initialize."
+      error: "Stripe checkout failed to initialize.",
+      socialImageUrl: socialImageUrl()
     });
   }
 });
@@ -1975,6 +2512,7 @@ app.post("/account/billing/checkout", requireWebAuth, async (req, res) => {
   }
 
   const planKey = normalizePlanKey(req.body.planKey);
+  const billingInterval = normalizeBillingInterval(req.body.billingInterval);
   const plan = PLAN_DEFINITIONS[planKey];
   if (!plan || Number(plan.monthlyPriceUsdCents || 0) <= 0) {
     return res.redirect("/account");
@@ -1983,22 +2521,27 @@ app.post("/account/billing/checkout", requireWebAuth, async (req, res) => {
   try {
     const checkoutSession = await stripeClient.checkout.sessions.create({
       mode: "subscription",
+      wallet_options: {
+        link: { display: "never" }
+      },
       customer: req.webUser.stripeCustomerId || undefined,
       customer_email: req.webUser.stripeCustomerId ? undefined : req.webUser.email,
       client_reference_id: req.webUser.id,
       billing_address_collection: "auto",
       success_url: `${baseUrl}/account?billing=success`,
       cancel_url: `${baseUrl}/account?billing=cancelled`,
-      line_items: [stripeLineItemForPlan(plan)],
+      line_items: [stripeLineItemForPlan(plan, billingInterval)],
       metadata: {
         checkoutType: "subscription_plan",
         userId: req.webUser.id,
-        planKey
+        planKey,
+        billingInterval
       },
       subscription_data: {
         metadata: {
           userId: req.webUser.id,
-          planKey
+          planKey,
+          billingInterval
         }
       }
     });
@@ -2072,6 +2615,16 @@ app.get("/checkout/success", publicPageLimiter, async (req, res) => {
 
   try {
     const session = await stripeClient.checkout.sessions.retrieve(sessionId);
+    if (!isPaidStripeCheckoutSession(session)) {
+      return res.status(402).render("auth-message", {
+        title: "Payment not completed",
+        message: "Stripe has not marked this payment as complete yet.",
+        details: "If you just finished checkout, wait a moment and refresh from your Stripe receipt. Otherwise, restart the purchase from pricing.",
+        actionHref: "/pricing",
+        actionLabel: "Back to pricing",
+        debugLink: null
+      });
+    }
     const purchase = await fulfillPluginCheckoutSession(session);
     return res.render("checkout-success", {
       purchase,
@@ -2104,11 +2657,10 @@ app.post("/api/stripe/webhook", async (req, res) => {
     const signature = req.headers["stripe-signature"];
     let event;
 
-    if (stripeWebhookSecret && signature) {
-      event = stripeClient.webhooks.constructEvent(rawBody, signature, stripeWebhookSecret);
-    } else {
-      event = JSON.parse(rawBody.toString("utf8"));
+    if (!stripeWebhookSecret || !signature) {
+      return res.status(400).json({ ok: false, error: "stripe_webhook_signature_required" });
     }
+    event = stripeClient.webhooks.constructEvent(rawBody, signature, stripeWebhookSecret);
 
     if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
       const session = event.data.object;
@@ -2132,6 +2684,9 @@ app.post("/api/stripe/webhook", async (req, res) => {
 app.get("/downloads/plugin/latest", pluginDownloadLimiter, async (req, res) => {
   return sendPluginInstaller(res);
 });
+app.get("/downloads/plugin/mac/latest", pluginDownloadLimiter, async (req, res) => {
+  return sendMacPluginInstaller(res);
+});
 app.get("/downloads/plugin/:purchaseId", pluginDownloadLimiter, async (req, res) => {
   const purchaseId = String(req.params.purchaseId || "").trim();
   const token = String(req.query.token || "").trim();
@@ -2152,7 +2707,8 @@ app.get("/downloads/plugin/:purchaseId", pluginDownloadLimiter, async (req, res)
 app.get("/blog", publicPageLimiter, (req, res) => {
   return res.render("blog-index", {
     posts: listPosts(),
-    ...publicNavModel()
+    ...publicNavModel(),
+    socialImageUrl: socialImageUrl()
   });
 });
 app.get("/blog/:slug", publicPageLimiter, (req, res) => {
@@ -2169,7 +2725,8 @@ app.get("/blog/:slug", publicPageLimiter, (req, res) => {
   }
   return res.render("blog-post", {
     post,
-    ...publicNavModel()
+    ...publicNavModel(),
+    socialImageUrl: socialImageUrl()
   });
 });
 app.get("/legal", publicPageLimiter, (req, res) => res.redirect(302, "/legal/terms"));
@@ -2191,20 +2748,55 @@ app.get("/legal/:slug", publicPageLimiter, (req, res) => {
     page,
     legalPages: listLegalPages(),
     commonNotice,
-    updatedLabel: legalUpdatedLabel
+    updatedLabel: legalUpdatedLabel,
+    socialImageUrl: socialImageUrl()
   });
 });
+async function runtimeReadiness() {
+  const checks = {
+    database: false,
+    sessionStore: sessionStoreMode !== "redis",
+    artifactStorage: pdfStorageMode !== "s3",
+    emailDelivery: Boolean((process.env.SMTP_USER && process.env.SMTP_PASS) || process.env.FROM_EMAIL)
+  };
+  try {
+    checks.database = await databaseService.ping();
+  } catch (error) {
+    console.error("Database readiness check failed:", error.message || error);
+  }
+  if (sessionStoreMode === "redis") {
+    try {
+      await redisReady;
+      checks.sessionStore = (await redisClient.ping()) === "PONG";
+    } catch (error) {
+      console.error("Redis readiness check failed:", error.message || error);
+    }
+  }
+  if (pdfStorageMode === "s3") {
+    try {
+      if (!s3Client || !s3Bucket) throw new Error("S3 client or bucket is not configured");
+      await s3Client.send(new HeadBucketCommand({ Bucket: s3Bucket }));
+      checks.artifactStorage = true;
+    } catch (error) {
+      console.error("Artifact storage readiness check failed:", error.message || error);
+    }
+  }
+  const requiredChecks = productionRuntime ? Object.values(checks) : [checks.database, checks.sessionStore];
+  return { ok: requiredChecks.every(Boolean), checks };
+}
 app.get("/health", (req, res) => res.json({ ok: true, at: nowIso() }));
-app.get("/ready", (req, res) => res.json({
-  ok: true,
-  at: nowIso(),
-  dbProvider: databaseService.provider,
-  requireEmailVerification,
-  stripeEnabled,
-  smtpConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
-  sesConfigured: Boolean((process.env.SES_REGION || process.env.AWS_REGION || process.env.AWS_PROFILE || process.env.FROM_EMAIL) && process.env.FROM_EMAIL),
-  baseUrl
-}));
+app.get("/ready", async (req, res) => {
+  const readiness = await runtimeReadiness();
+  return res.status(readiness.ok ? 200 : 503).json({
+    ...readiness,
+    at: nowIso(),
+    version: pluginVersionLabel,
+    dbProvider: databaseService.provider,
+    requireEmailVerification,
+    stripeEnabled,
+    baseUrl
+  });
+});
 app.get("/api/health", (req, res) => res.json({ ok: true, at: nowIso(), api: "v1" }));
 app.get("/api/plugin/update", publicPageLimiter, (req, res) => {
   const currentVersion = String(req.query.currentVersion || "").trim();
@@ -2228,18 +2820,20 @@ app.get("/api/plugin/update", publicPageLimiter, (req, res) => {
       : "Split Sheet Studio is up to date."
   });
 });
-app.get("/api/ready", (req, res) => res.json({
-  ok: true,
-  at: nowIso(),
-  api: "v1",
-  dbProvider: databaseService.provider,
-  allowPublicRegistration,
-  requireEmailVerification,
-  stripeEnabled,
-  smtpConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
-  sesConfigured: Boolean((process.env.SES_REGION || process.env.AWS_REGION || process.env.AWS_PROFILE || process.env.FROM_EMAIL) && process.env.FROM_EMAIL),
-  baseUrl
-}));
+app.get("/api/ready", async (req, res) => {
+  const readiness = await runtimeReadiness();
+  return res.status(readiness.ok ? 200 : 503).json({
+    ...readiness,
+    at: nowIso(),
+    api: "v1",
+    version: pluginVersionLabel,
+    dbProvider: databaseService.provider,
+    allowPublicRegistration,
+    requireEmailVerification,
+    stripeEnabled,
+    baseUrl
+  });
+});
 app.post("/api/auth/register", registerLimiter, async (req, res) => {
   if (!allowPublicRegistration && await authService.userCount() > 0) {
     return apiError(res, 403, "Public registration is disabled.");
@@ -2256,6 +2850,14 @@ app.post("/api/auth/register", registerLimiter, async (req, res) => {
       user: result.user,
       token: result.verificationToken,
       expiresAt: result.verificationExpiresAt
+    });
+    await contactService.recordContact({
+      email: result.user.email,
+      displayName: result.user.displayName,
+      source: "account_signup_api",
+      marketingOptIn: isAffirmative(req.body.marketingOptIn),
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"] || ""
     });
     clearLoginFailures(req);
     return res.status(201).json({
@@ -2312,8 +2914,9 @@ app.post("/api/auth/resend-verification", resendVerificationLimiter, async (req,
     }
     return res.json({
       ok: true,
-      sent: Boolean(verification.created),
-      verificationEmail,
+      message: "If an account needs verification, a link will be sent to that email address.",
+      sent: authDebugTokens ? Boolean(verification.created) : undefined,
+      verificationEmail: authDebugTokens ? verificationEmail : undefined,
       verificationToken: authDebugTokens ? verification.token : undefined
     });
   } catch (error) {
@@ -2351,8 +2954,9 @@ app.post("/api/auth/request-password-reset", forgotPasswordLimiter, async (req, 
     }
     return res.json({
       ok: true,
-      sent: Boolean(resetRequest.created),
-      resetEmail,
+      message: "If the account exists, a password reset link will be sent to that email address.",
+      sent: authDebugTokens ? Boolean(resetRequest.created) : undefined,
+      resetEmail: authDebugTokens ? resetEmail : undefined,
       resetToken: authDebugTokens ? resetRequest.token : undefined
     });
   } catch (error) {
@@ -2428,7 +3032,9 @@ app.post("/login", loginLimiter, async (req, res) => {
       ip: requestIp(req),
       userAgent: req.headers["user-agent"]
     });
+    await new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
     req.session.userId = result.user.id;
+    req.session.passwordChangedAt = result.user.passwordChangedAt || null;
     return res.redirect(next);
   } catch (error) {
     if (error instanceof ApiAuthError) {
@@ -2506,7 +3112,17 @@ async function handleOAuthCallback(req, res) {
       throw new ApiAuthError("Public registration is disabled right now.", 403);
     }
     const user = await authService.findOrCreateProviderUser(providerProfile);
+    await contactService.recordContact({
+      email: user.email,
+      displayName: user.displayName,
+      source: `oauth_${providerKey}`,
+      marketingOptIn: false,
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"] || ""
+    });
+    await new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
     req.session.userId = user.id;
+    req.session.passwordChangedAt = user.passwordChangedAt || null;
     clearLoginFailures(req);
     return res.redirect(next);
   } catch (error) {
@@ -2523,6 +3139,10 @@ app.post("/logout", requireWebAuth, (req, res) => {
 app.get("/account", requireWebAuth, async (req, res) => {
   const usage = await usageSummaryForUser(req.webUser);
   const splitSheets = await listUserSplitSheets(req.webUser);
+  const requestedTab = String(req.query.tab || "overview").toLowerCase();
+  const accountTab = ["overview", "vault", "resources", "vst", "plans"].includes(requestedTab)
+    ? requestedTab
+    : "overview";
   return res.render("account", {
     user: req.webUser,
     usage,
@@ -2532,14 +3152,17 @@ app.get("/account", requireWebAuth, async (req, res) => {
     currentPlan: planForUser(req.webUser),
     billingEnabled: stripeEnabled,
     billingNotice: req.query.billing || "",
+    accountTab,
     pricingUrl: "/pricing",
     splitSheetUrl: "/split-sheet",
+    blogUrl: "/blog",
+    latestPosts: latestBlogPosts(),
     supportEmail
   });
 });
 app.get("/signup", publicPageLimiter, (req, res) => res.render("auth-signup", {
   error: null,
-  values: { displayName: "", email: "" },
+  values: { displayName: "", email: "", marketingOptIn: false },
   allowPublicRegistration,
   baseUrl,
   oauthProviders: oauthUiProviders(),
@@ -2551,7 +3174,8 @@ app.post("/signup", registerLimiter, async (req, res) => {
       error: "Public registration is disabled right now.",
       values: {
         displayName: String(req.body.displayName || ""),
-        email: String(req.body.email || "")
+        email: String(req.body.email || ""),
+        marketingOptIn: isAffirmative(req.body.marketingOptIn)
       },
       allowPublicRegistration,
       baseUrl,
@@ -2572,6 +3196,14 @@ app.post("/signup", registerLimiter, async (req, res) => {
       token: result.verificationToken,
       expiresAt: result.verificationExpiresAt
     });
+    await contactService.recordContact({
+      email: result.user.email,
+      displayName: result.user.displayName,
+      source: "account_signup_web",
+      marketingOptIn: isAffirmative(req.body.marketingOptIn),
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"] || ""
+    });
     return res.render("auth-message", {
       title: "Account created",
       message: `We created your account for ${result.user.email}. Check your inbox for the verification link.`,
@@ -2588,7 +3220,8 @@ app.post("/signup", registerLimiter, async (req, res) => {
         error: error.message,
         values: {
           displayName: String(req.body.displayName || ""),
-          email: String(req.body.email || "")
+          email: String(req.body.email || ""),
+          marketingOptIn: isAffirmative(req.body.marketingOptIn)
         },
         allowPublicRegistration,
         baseUrl,
@@ -2601,7 +3234,8 @@ app.post("/signup", registerLimiter, async (req, res) => {
       error: "Unexpected server error while creating your account.",
       values: {
         displayName: String(req.body.displayName || ""),
-        email: String(req.body.email || "")
+        email: String(req.body.email || ""),
+        marketingOptIn: isAffirmative(req.body.marketingOptIn)
       },
       allowPublicRegistration,
       baseUrl,
@@ -2746,7 +3380,7 @@ app.get("/api/split-sheets", requireApiAuth, authenticatedApiLimiter, async (req
   }
   return res.json({
     ok: true,
-    splitSheets: docs.map((doc) => summarizeSplitSheet(doc, baseUrl))
+    splitSheets: docs.map((doc) => splitSheetSummary(doc))
   });
 });
 app.get("/api/split-sheets/:id", requireApiAuth, authenticatedApiLimiter, async (req, res) => {
@@ -2759,7 +3393,7 @@ app.get("/api/split-sheets/:id", requireApiAuth, authenticatedApiLimiter, async 
   }
   return res.json({
     ok: true,
-    splitSheet: detailSplitSheet(doc, baseUrl)
+    splitSheet: splitSheetDetail(doc)
   });
 });
 app.post("/api/split-sheets/drafts", requireApiAuth, splitDraftLimiter, async (req, res) => {
@@ -2767,7 +3401,7 @@ app.post("/api/split-sheets/drafts", requireApiAuth, splitDraftLimiter, async (r
     const draft = await createDraftSplitSheet(req.body, req);
     return res.status(201).json({
       ok: true,
-      splitSheet: detailSplitSheet(draft, baseUrl)
+      splitSheet: splitSheetDetail(draft)
     });
   } catch (error) {
     console.error(error);
@@ -2789,7 +3423,7 @@ app.put("/api/split-sheets/:id/draft", requireApiAuth, splitDraftLimiter, async 
     const updated = await updateDraftSplitSheet(doc, req.body, req);
     return res.json({
       ok: true,
-      splitSheet: detailSplitSheet(updated, baseUrl)
+      splitSheet: splitSheetDetail(updated)
     });
   } catch (error) {
     console.error(error);
@@ -2826,7 +3460,7 @@ app.post("/api/split-sheets", requireApiAuth, splitFinalizeLimiter, async (req, 
     const result = await createSplitSheetSubmission(req.body, req);
     return res.status(201).json({
       ok: true,
-      splitSheet: summarizeSplitSheet(result.saved, baseUrl),
+      splitSheet: splitSheetSummary(result.saved),
       emailResult: result.emailResult
     });
   } catch (error) {
@@ -2850,7 +3484,7 @@ app.get("/api/split-sheets/:id/status", requireApiAuth, authenticatedApiLimiter,
   }
   return res.json({
     ok: true,
-    splitSheet: summarizeSplitSheet(doc, baseUrl)
+    splitSheet: splitSheetSummary(doc)
   });
 });
 app.post("/api/split-sheets/:id/signers/:index/resend", requireApiAuth, splitFinalizeLimiter, async (req, res) => {
@@ -2918,6 +3552,7 @@ app.post("/split-sheet", splitSheetSubmitLimiter, requireWebAuth, async (req, re
       type: "split-sheet",
       songTitle: payload.songTitle,
       version: payload.version,
+      pdfUrl: pdfDownloadUrl(saved),
       status: saved.status,
       collectSignaturesByInvite: collectByInvite,
       emailResult
@@ -2979,81 +3614,108 @@ app.get("/split-sheet/sign/:id/:token", signerViewLimiter, async (req, res) => {
 });
 
 app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) => {
-  const doc = await loadSubmission(req.params.id);
-  if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
-  const contributors = doc.payload?.contributors || [];
-  const signerIndex = contributors.findIndex((c) => c.signerToken === req.params.token);
-  if (signerIndex < 0) return res.status(404).send("Invalid sign link");
-  const currentSigner = contributors[signerIndex];
-  if (currentSigner.signedAt) {
-    return res.render("split-sign-success", {
-      doc,
-      signer: currentSigner,
-      everyoneSigned: doc.status === "completed",
-      emailResult: doc.payload?.completionEmailDelivery || null,
-      message: "Your signature was already submitted. No duplicate signature was created."
+  const typedSignatureName = String(req.body.typedSignatureName || "").trim();
+  const signatureData = String(req.body.signatureData || "").trim();
+  const agreementAccepted = ["yes", "true", "1", "on"].includes(String(req.body.agreeToSplits || "").trim().toLowerCase());
+
+  let validationError = null;
+  const mutation = await updateSubmissionWithRetry(req.params.id, async (doc) => {
+    if (doc.type !== "split-sheet") return { wrongType: true, skipSave: true };
+    const contributors = doc.payload?.contributors || [];
+    const signerIndex = contributors.findIndex((c) => c.signerToken === req.params.token);
+    if (signerIndex < 0) return { invalidToken: true, skipSave: true };
+    const currentSigner = contributors[signerIndex];
+    if (currentSigner.signedAt) {
+      return { alreadySigned: true, signer: currentSigner, skipSave: true };
+    }
+    if (isPast(currentSigner.signerTokenExpiresAt)) {
+      return { expired: true, signer: currentSigner, skipSave: true };
+    }
+    if (!typedSignatureName || !signatureData.startsWith("data:image/") || !agreementAccepted) {
+      validationError = { doc, signer: currentSigner };
+      return { invalidInput: true, skipSave: true };
+    }
+
+    currentSigner.typedSignatureName = typedSignatureName;
+    currentSigner.signatureData = signatureData;
+    currentSigner.agreementAcceptedAt = nowIso();
+    currentSigner.agreementVersion = "remote-split-v1";
+    currentSigner.signerIp = requestIp(req);
+    currentSigner.signerUserAgent = req.headers["user-agent"] || "";
+    currentSigner.signedAt = nowIso();
+    appendAuditEvent(doc, {
+      type: "signer-agreed-and-signed",
+      contributorEmail: currentSigner.email,
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"] || "",
+      agreementVersion: "remote-split-v1"
     });
-  }
-  if (isPast(currentSigner.signerTokenExpiresAt)) {
+
+    const everyoneSigned = contributors.every((c) => c.signedAt);
+    const finalizedNow = everyoneSigned && doc.status !== "completed";
+    if (finalizedNow) {
+      doc.status = "completed";
+      doc.payload.allPartiesAgree = true;
+      doc.payload.completedAt = nowIso();
+      ensurePdfAccessToken(doc);
+      appendAuditEvent(doc, { type: "split-sheet-finalized", contributorCount: contributors.length });
+    }
+    return { signer: currentSigner, everyoneSigned, finalizedNow };
+  });
+
+  if (mutation.notFound) return res.status(404).send("Not found");
+  if (mutation.wrongType) return res.status(400).send("Not a split sheet");
+  if (mutation.invalidToken) return res.status(404).send("Invalid sign link");
+  if (mutation.expired) {
     return res.status(410).render("auth-message", {
       title: "Signing link expired",
       message: "This secure signing link has expired.",
-      details: `Ask the split-sheet creator to resend your invitation. Submission ID: ${doc.id}`,
+      details: `Ask the split-sheet creator to resend your invitation. Submission ID: ${mutation.doc.id}`,
       actionHref: "/",
       actionLabel: "Return home",
       debugLink: null
     });
   }
-
-  const typedSignatureName = String(req.body.typedSignatureName || "").trim();
-  const signatureData = String(req.body.signatureData || "").trim();
-  const agreementAccepted = ["yes", "true", "1", "on"].includes(String(req.body.agreeToSplits || "").trim().toLowerCase());
-  if (!typedSignatureName || !signatureData.startsWith("data:image/") || !agreementAccepted) {
-    const signer = contributors[signerIndex];
-    return res.status(400).render("split-sign", { doc, signer, timeline: splitSignerTimeline(doc), error: "Review confirmation, typed name, and drawn signature are required.", success: null });
+  if (mutation.invalidInput) {
+    return res.status(400).render("split-sign", {
+      doc: validationError.doc,
+      signer: validationError.signer,
+      timeline: splitSignerTimeline(validationError.doc),
+      error: "Review confirmation, typed name, and drawn signature are required.",
+      success: null
+    });
   }
 
-  contributors[signerIndex].typedSignatureName = typedSignatureName;
-  contributors[signerIndex].signatureData = signatureData;
-  contributors[signerIndex].agreementAcceptedAt = nowIso();
-  contributors[signerIndex].agreementVersion = "remote-split-v1";
-  contributors[signerIndex].signerIp = requestIp(req);
-  contributors[signerIndex].signerUserAgent = req.headers["user-agent"] || "";
-  contributors[signerIndex].signedAt = nowIso();
-  appendAuditEvent(doc, {
-    type: "signer-agreed-and-signed",
-    contributorEmail: contributors[signerIndex].email,
-    ip: requestIp(req),
-    userAgent: req.headers["user-agent"] || "",
-    agreementVersion: "remote-split-v1"
-  });
+  if (!mutation.alreadySigned && mutation.signer) {
+    contactService.recordContact({
+      email: mutation.signer.email,
+      displayName: mutation.signer.legalName,
+      source: "remote_signature",
+      marketingOptIn: isAffirmative(req.body.marketingOptIn),
+      ip: requestIp(req),
+      userAgent: req.headers["user-agent"] || ""
+    }).catch((error) => console.error("Failed to record remote signature contact:", error.message || error));
+  }
 
-  const everyoneSigned = contributors.every((c) => c.signedAt);
-  let emailResult = null;
-  if (everyoneSigned) {
-    doc.status = "completed";
-    doc.payload.allPartiesAgree = true;
-    doc.payload.completedAt = nowIso();
-    appendAuditEvent(doc, { type: "split-sheet-finalized", contributorCount: contributors.length });
-    const { auditChecksum } = await generateFinalSplitPdf(doc);
-    doc.payload.auditChecksum = auditChecksum;
-
-    ({ emailResult } = await sendCompletedSplitSheetPacket(doc, {
+  let emailResult = mutation.doc.payload?.completionEmailDelivery || null;
+  if (mutation.finalizedNow) {
+    ({ emailResult } = await sendCompletedSplitSheetPacket(mutation.doc, {
       title: "All Signatures Completed",
       subjectPrefix: "Completed Split Sheet"
     }));
+    mutation.doc = await loadSubmission(mutation.doc.id) || mutation.doc;
   }
 
-  doc.updatedAt = nowIso();
-  await saveSubmissionRow(doc);
-
-  const signer = contributors[signerIndex];
+  const signer = (mutation.doc.payload?.contributors || []).find((c) => c.signerToken === req.params.token) || mutation.signer;
+  const everyoneSigned = mutation.doc.status === "completed";
   res.render("split-sign-success", {
-    doc,
+    doc: mutation.doc,
     signer,
     everyoneSigned,
     emailResult,
-    message: everyoneSigned
+    message: mutation.alreadySigned
+      ? "Your signature was already submitted. No duplicate signature was created."
+      : everyoneSigned
       ? (emailResult?.ok
         ? "Submitted. The final packet was generated and emailed to every contributor."
         : "Submitted and finalized, but email delivery reported a problem. The completed packet remains available for download.")
@@ -3065,13 +3727,30 @@ app.get("/split-sheet/pdf/:id", splitSheetPublicLimiter, async (req, res) => {
   const docJson = await loadSubmission(req.params.id);
   if (!docJson) return res.status(404).send("Not found");
   if (docJson.type !== "split-sheet") return res.status(400).send("Not a split sheet");
+  const inline = wantsInlinePdf(req);
+  if (!canDownloadSplitPdf(req, docJson)) {
+    return res.status(403).render("auth-message", {
+      title: "PDF link restricted",
+      message: "This split sheet requires a valid download link or signed-in access.",
+      details: "Use the download link from the completion email, or sign in with the account that created the split sheet.",
+      actionHref: `/login?next=${encodeURIComponent(req.originalUrl || "/account")}`,
+      actionLabel: "Sign in",
+      debugLink: null,
+      supportEmail
+    });
+  }
 
   const finalPdf = splitPdfPath(docJson.id);
   if (fs.existsSync(finalPdf)) {
+    if (inline) {
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", pdfContentDisposition(docJson.id, "final", true));
+      return res.sendFile(finalPdf);
+    }
     return res.download(finalPdf, pdfDownloadFilename(docJson.id));
   }
   try {
-    if (await streamStoredFinalPdf(docJson, res)) {
+    if (await streamStoredFinalPdf(docJson, res, { inline })) {
       return;
     }
   } catch (error) {
@@ -3080,7 +3759,7 @@ app.get("/split-sheet/pdf/:id", splitSheetPublicLimiter, async (req, res) => {
 
   // fallback summary packet if final not generated yet
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${pdfDownloadFilename(docJson.id, "summary")}"`);
+  res.setHeader("Content-Disposition", pdfContentDisposition(docJson.id, "summary", inline));
 
   const pdf = new PDFDocument({ margin: 24 });
   pdf.pipe(res);
@@ -3089,16 +3768,27 @@ app.get("/split-sheet/pdf/:id", splitSheetPublicLimiter, async (req, res) => {
 });
 
 app.get("/admin/login", adminLimiter, (req, res) => res.render("admin-login", { error: null }));
-app.post("/admin/login", adminLimiter, (req, res) => {
+app.post("/admin/login", adminLimiter, async (req, res, next) => {
   const gate = canAttemptLogin(req);
   if (!gate.allowed) {
     return res.status(429).render("admin-login", { error: `Too many attempts. Try again in ${gate.retryAfterSec}s.` });
   }
 
-  if (req.body.username === (process.env.ADMIN_USER || "Knolly") && req.body.password === (process.env.ADMIN_PASS || "Testsubject5")) {
+  const adminUser = String(process.env.ADMIN_USER || "");
+  const adminPass = String(process.env.ADMIN_PASS || "");
+  if (!adminUser || !adminPass) {
+    return res.status(503).render("admin-login", { error: "Admin access is not configured." });
+  }
+
+  if (constantTimeEqual(req.body.username, adminUser) && constantTimeEqual(req.body.password, adminPass)) {
     clearLoginFailures(req);
-    req.session.isAdmin = true;
-    return res.redirect("/admin");
+    try {
+      await new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
+      req.session.isAdmin = true;
+      return res.redirect("/admin");
+    } catch (error) {
+      return next(error);
+    }
   }
 
   recordLoginFailure(req);
@@ -3122,11 +3812,55 @@ app.get("/admin", adminLimiter, requireAdmin, async (req, res) => {
     ...user,
     usage: await usageSummaryForUser(user)
   })));
+  const contacts = await contactService.listContacts();
   res.render("admin", {
     docs,
     users,
+    contacts,
     planOptions: Object.values(PLAN_DEFINITIONS),
     banner: req.query.banner || ""
+  });
+});
+
+app.get("/admin/contacts.csv", adminLimiter, requireAdmin, async (req, res) => {
+  const contacts = (await contactService.listContacts()).filter((contact) => contact.marketingStatus === "subscribed");
+  const headers = ["email", "display_name", "marketing_status", "source", "consent_at", "created_at", "updated_at"];
+  const rows = contacts.map((contact) => [
+    contact.email,
+    contact.displayName,
+    contact.marketingStatus,
+    contact.latestSource,
+    contact.consentAt,
+    contact.createdAt,
+    contact.updatedAt
+  ]);
+  res.type("text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="splitsheetstudio-subscribers-${new Date().toISOString().slice(0, 10)}.csv"`);
+  return res.send([headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n"));
+});
+
+app.get("/api/admin/marketing-contacts", authenticatedApiLimiter, requireContactExportAuth, async (req, res) => {
+  const requestedStatus = String(req.query.status || "subscribed").trim().toLowerCase();
+  const allowedStatuses = new Set(["subscribed", "transactional_only", "unsubscribed", "all"]);
+  const status = allowedStatuses.has(requestedStatus) ? requestedStatus : "subscribed";
+  const contacts = (await contactService.listContacts())
+    .filter((contact) => status === "all" || contact.marketingStatus === status)
+    .map((contact) => ({
+      email: contact.email,
+      displayName: contact.displayName,
+      marketingStatus: contact.marketingStatus,
+      latestSource: contact.latestSource,
+      consentAt: contact.consentAt,
+      unsubscribedAt: contact.unsubscribedAt,
+      createdAt: contact.createdAt,
+      updatedAt: contact.updatedAt,
+      unsubscribeUrl: `${baseUrl}/email-preferences/${contact.unsubscribeToken}`
+    }));
+  return res.json({
+    ok: true,
+    status,
+    count: contacts.length,
+    contacts
   });
 });
 

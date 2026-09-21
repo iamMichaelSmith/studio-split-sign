@@ -54,6 +54,9 @@ public:
     juce::String getRefreshToken() const;
     void setRefreshToken(juce::String newToken);
 
+    juce::String getThemeKey() const;
+    void setThemeKey(juce::String newThemeKey);
+
     bool hasSession() const;
     void clearSession();
 
@@ -64,5 +67,6 @@ private:
     juce::String displayName;
     juce::String accessToken;
     juce::String refreshToken;
+    juce::String themeKey { "bronze" };
     juce::CriticalSection stateLock;
 };

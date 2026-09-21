@@ -53,6 +53,7 @@ function mapUser(row) {
     stripeCustomerId: row.stripe_customer_id || null,
     stripeSubscriptionId: row.stripe_subscription_id || null,
     emailVerifiedAt: row.email_verified_at || null,
+    passwordChangedAt: row.password_changed_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -116,6 +117,9 @@ function createSqliteAdapter(db) {
   if (!userColumns.has("email_verified_at")) {
     db.exec(`ALTER TABLE users ADD COLUMN email_verified_at TEXT`);
   }
+  if (!userColumns.has("password_changed_at")) {
+    db.exec(`ALTER TABLE users ADD COLUMN password_changed_at TEXT`);
+  }
   if (!userColumns.has("plan_key")) {
     db.exec(`ALTER TABLE users ADD COLUMN plan_key TEXT`);
   }
@@ -130,10 +134,6 @@ function createSqliteAdapter(db) {
   }
 
   db.exec(`
-    UPDATE users
-    SET email_verified_at = COALESCE(email_verified_at, created_at)
-    WHERE email_verified_at IS NULL;
-
     UPDATE users
     SET plan_key = COALESCE(plan_key, 'free'),
         plan_updated_at = COALESCE(plan_updated_at, updated_at, created_at)
@@ -173,6 +173,7 @@ function createSqliteAdapter(db) {
   const updateUserPasswordStmt = db.prepare(`
     UPDATE users
     SET password_hash = @passwordHash,
+        password_changed_at = @updatedAt,
         updated_at = @updatedAt
     WHERE id = @id
   `);
@@ -357,6 +358,7 @@ function createPostgresAdapter(pool) {
       );
 
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_key TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_updated_at TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
@@ -399,10 +401,6 @@ function createPostgresAdapter(pool) {
       CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_expires ON email_verification_tokens(expires_at);
       CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
       CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires ON password_reset_tokens(expires_at);
-
-      UPDATE users
-      SET email_verified_at = COALESCE(email_verified_at, created_at)
-      WHERE email_verified_at IS NULL;
 
       UPDATE users
       SET plan_key = COALESCE(plan_key, 'free'),
@@ -488,6 +486,7 @@ function createPostgresAdapter(pool) {
       const result = await pool.query(`
         UPDATE users
         SET password_hash = $1,
+            password_changed_at = $2,
             updated_at = $2
         WHERE id = $3
         RETURNING *
@@ -689,6 +688,9 @@ function createAuthService({
 
     const existing = await adapter.userByEmail(normalizedEmail);
     if (existing) {
+      if (existing.status !== "active") {
+        throw new ApiAuthError("Invalid credentials.", 401);
+      }
       if (!existing.email_verified_at && emailVerifiedAt) {
         return mapUser(await adapter.markUserVerified({
           id: existing.id,
@@ -790,7 +792,7 @@ function createAuthService({
       verificationRequired: true,
       verificationExpiresAt: verification.expiresAt,
       verificationToken: verification.token,
-      ...(await issueTokensForUser({ userId: user.id, ip, userAgent }))
+      ...(!requireEmailVerification ? await issueTokensForUser({ userId: user.id, ip, userAgent }) : {})
     };
   }
 
@@ -977,6 +979,10 @@ function createAuthService({
 
       const row = await adapter.sessionByAccessHash(hashToken(tokenSecret, token));
       if (!row) throw new ApiAuthError("Invalid or expired access token.", 401);
+      if (row.status !== "active") throw new ApiAuthError("Invalid or expired access token.", 401);
+      if (requireEmailVerification && !row.email_verified_at) {
+        throw new ApiAuthError("Please verify your email before signing in.", 403);
+      }
 
       const accessExpiresAt = Date.parse(row.access_token_expires_at || "");
       if (!Number.isFinite(accessExpiresAt) || accessExpiresAt <= Date.now()) {
@@ -1010,6 +1016,10 @@ function createAuthService({
       const tokenHash = hashToken(tokenSecret, token);
       const row = await adapter.sessionByRefreshHash(tokenHash);
       if (!row) throw new ApiAuthError("Invalid or expired refresh token.", 401);
+      if (row.status !== "active") throw new ApiAuthError("Invalid or expired refresh token.", 401);
+      if (requireEmailVerification && !row.email_verified_at) {
+        throw new ApiAuthError("Please verify your email before signing in.", 403);
+      }
 
       const refreshExpiresAt = Date.parse(row.refresh_token_expires_at || "");
       if (!Number.isFinite(refreshExpiresAt) || refreshExpiresAt <= Date.now()) {

@@ -2,6 +2,8 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { validateProductionRuntime } = require('../services/runtime-config');
+const { availablePort, testEnvironment } = require('./helpers/isolated-app.cjs');
 
 async function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
@@ -30,16 +32,34 @@ function validInvitePayload(songTitle) {
 }
 
 async function main() {
-  const port = 5155;
+  let rejectedUnsafeProduction = false;
+  try {
+    validateProductionRuntime({
+      environment: { NODE_ENV: 'production' },
+      baseUrl: 'http://localhost:5050',
+      dbProvider: 'sqlite',
+      sessionStoreMode: 'memory',
+      cookieSecure: false,
+      pdfStorageMode: 'local'
+    });
+  } catch {
+    rejectedUnsafeProduction = true;
+  }
+  if (!rejectedUnsafeProduction) throw new Error('unsafe production configuration should fail closed');
+
+  const port = await availablePort();
   const tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'split-sheet-studio-'));
   const accountEmail = 'smoke@example.com';
   const accountPass = 'smoke-pass-123';
-  const child = spawn(process.execPath, ['server.js'], {
-    env: {
-      ...process.env,
+  const child = spawn(process.execPath, [path.resolve(__dirname, '../server.js')], {
+    cwd: tempDataDir,
+    windowsHide: true,
+    env: testEnvironment({
+      CSRF_PROTECTION_ENABLED: 'false',
       PORT: String(port),
       HOST: '127.0.0.1',
       PUBLIC_BASE_URL: `http://127.0.0.1:${port}`,
+      ROOT_DOMAIN: 'splitsheetstudio.test',
       DATA_DIR: tempDataDir,
       DB_PROVIDER: 'sqlite',
       DB_PATH: path.join(tempDataDir, 'app.db'),
@@ -48,8 +68,16 @@ async function main() {
       SESSION_SECRET: 'smoke-session-secret',
       API_TOKEN_SECRET: 'smoke-api-token-secret',
       ALLOW_PUBLIC_REGISTRATION: 'true',
-      AUTH_DEBUG_TOKENS: 'true'
-    },
+      AUTH_DEBUG_TOKENS: 'true',
+      GOOGLE_CLIENT_ID: 'google-client-id.apps.googleusercontent.com',
+      GOOGLE_CLIENT_SECRET: 'google-client-secret',
+      APPLE_CLIENT_ID: 'com.splitsheetstudio.web',
+      APPLE_CLIENT_SECRET: 'apple-client-secret-jwt',
+      STRIPE_SECRET_KEY: 'sk_test_smoke_fake_key',
+      STRIPE_WEBHOOK_SECRET: '',
+      PLUGIN_LATEST_VERSION_LABEL: '0.1.2',
+      PLUGIN_MINIMUM_SUPPORTED_VERSION: '0.1.0'
+    }),
     stdio: 'ignore'
   });
 
@@ -67,15 +95,107 @@ async function main() {
 
     const home = await fetch(`http://127.0.0.1:${port}/`);
     if (!home.ok) throw new Error('home failed');
+    if (!home.headers.get('content-security-policy')) throw new Error('content security policy missing');
+    if (!home.headers.get('x-request-id')) throw new Error('request id header missing');
 
     const pricing = await fetch(`http://127.0.0.1:${port}/pricing`);
     if (!pricing.ok) throw new Error('pricing page failed');
+    const pricingHtml = await pricing.text();
+    for (const expectedPrice of ['$0', '$7/mo', '$70/yr', '$19/mo', '$190/yr']) {
+      if (!pricingHtml.includes(expectedPrice)) throw new Error(`pricing page missing ${expectedPrice}`);
+    }
+    for (const expectedDealCopy of ['Creator is discounted from $10 to $7/month', 'Studio is discounted from $30 to $19/month', '$100/yr', '$300/yr']) {
+      if (!pricingHtml.includes(expectedDealCopy)) throw new Error(`pricing page missing discount copy: ${expectedDealCopy}`);
+    }
+    if (!pricingHtml.includes('Website workflow only')) throw new Error('pricing page should describe Free as website-only');
+    if (!pricingHtml.includes('No VST3 plugin download')) throw new Error('pricing page should exclude plugin downloads from Free');
+    if (!pricingHtml.includes('No Stripe checkout required')) throw new Error('pricing page should not require Stripe for Free');
+    if (pricingHtml.includes('$29')) throw new Error('pricing page should not advertise a separate plugin license');
+
+    const separatePluginCheckout = await fetch(`http://127.0.0.1:${port}/buy/plugin`, {
+      method: 'POST',
+      redirect: 'manual'
+    });
+    if (separatePluginCheckout.status !== 404) throw new Error('separate plugin checkout should be disabled during launch');
+
+    const unsignedStripeWebhook = await fetch(`http://127.0.0.1:${port}/api/stripe/webhook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'checkout.session.completed', data: { object: { id: 'cs_smoke' } } })
+    });
+    if (unsignedStripeWebhook.status !== 400) throw new Error('unsigned Stripe webhook should be rejected');
+    const unsignedStripeWebhookJson = await unsignedStripeWebhook.json();
+    if (unsignedStripeWebhookJson.error !== 'stripe_webhook_signature_required') {
+      throw new Error('unsigned Stripe webhook rejection reason mismatch');
+    }
+
+    const beta = await fetch(`http://127.0.0.1:${port}/beta`);
+    if (!beta.ok) throw new Error('beta page failed');
+    const betaHtml = await beta.text();
+    if (!betaHtml.includes('Windows VST3')) throw new Error('windows beta label missing');
+    if (betaHtml.includes('Mac AU beta')) throw new Error('public beta page should be Windows-only');
+
+    const support = await fetch(`http://127.0.0.1:${port}/support`);
+    if (!support.ok || !(await support.text()).includes('Keep the session moving')) throw new Error('support page failed');
+
+    const appRobots = await fetch(`http://127.0.0.1:${port}/robots.txt`);
+    if (!appRobots.ok || !(await appRobots.text()).includes('Disallow: /')) throw new Error('app robots policy failed');
+
+    const marketingRobots = await fetch(`http://127.0.0.1:${port}/robots.txt`, {
+      headers: { 'x-forwarded-host': 'splitsheetstudio.test' }
+    });
+    if (!marketingRobots.ok || !(await marketingRobots.text()).includes('Sitemap:')) throw new Error('marketing robots policy failed');
+
+    const sitemap = await fetch(`http://127.0.0.1:${port}/sitemap.xml`, {
+      headers: { 'x-forwarded-host': 'splitsheetstudio.test' }
+    });
+    if (!sitemap.ok || !(await sitemap.text()).includes('/blog/what-is-a-split-sheet-in-music')) throw new Error('sitemap failed');
+
+    const securityTxt = await fetch(`http://127.0.0.1:${port}/.well-known/security.txt`);
+    if (!securityTxt.ok || !(await securityTxt.text()).includes('Contact: mailto:')) throw new Error('security.txt failed');
+
+    const macBetaDownload = await fetch(`http://127.0.0.1:${port}/downloads/plugin/mac/latest`);
+    if (macBetaDownload.status !== 503) throw new Error('unreleased mac beta download should stay disabled');
 
     const blog = await fetch(`http://127.0.0.1:${port}/blog`);
     if (!blog.ok) throw new Error('blog index failed');
 
     const blogPost = await fetch(`http://127.0.0.1:${port}/blog/what-is-a-split-sheet-in-music`);
     if (!blogPost.ok) throw new Error('blog post failed');
+
+    const newsletter = await fetch(`http://127.0.0.1:${port}/newsletter/subscribe`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        displayName: 'Newsletter Smoke',
+        email: 'newsletter@example.com',
+        marketingOptIn: 'yes'
+      })
+    });
+    if (newsletter.status !== 302 || !newsletter.headers.get('location')?.includes('newsletter=subscribed')) {
+      throw new Error('newsletter opt-in failed');
+    }
+
+    const contactExportNoToken = await fetch(`http://127.0.0.1:${port}/api/admin/marketing-contacts`);
+    if (contactExportNoToken.status !== 401) throw new Error('contact export should require a bearer token');
+
+    const contactExportBadToken = await fetch(`http://127.0.0.1:${port}/api/admin/marketing-contacts`, {
+      headers: { authorization: 'Bearer wrong-token' }
+    });
+    if (contactExportBadToken.status !== 403) throw new Error('contact export should reject bad tokens');
+
+    const contactExport = await fetch(`http://127.0.0.1:${port}/api/admin/marketing-contacts`, {
+      headers: { authorization: 'Bearer release-test-contact-export-token-never-production' }
+    });
+    if (!contactExport.ok) throw new Error('contact export endpoint failed');
+    const contactExportJson = await contactExport.json();
+    if (contactExportJson.count !== 1 || contactExportJson.contacts[0].email !== 'newsletter@example.com') {
+      throw new Error('contact export should include opted-in subscribers');
+    }
+    if (!contactExportJson.contacts[0].unsubscribeUrl?.includes('/email-preferences/')) {
+      throw new Error('contact export should include unsubscribe URL');
+    }
 
     for (const slug of ['terms', 'privacy', 'refund-policy', 'electronic-signature-consent', 'disclaimer']) {
       const legal = await fetch(`http://127.0.0.1:${port}/legal/${slug}`);
@@ -86,6 +206,16 @@ async function main() {
     if (!pluginUpdate.ok) throw new Error('plugin update endpoint failed');
     const pluginUpdateJson = await pluginUpdate.json();
     if (!pluginUpdateJson.latestVersion) throw new Error('plugin update latest version missing');
+    if (!pluginUpdateJson.updateAvailable || !pluginUpdateJson.updateRequired) {
+      throw new Error('plugin update flags should report available + required for unsupported builds');
+    }
+
+    const pluginUpToDate = await fetch(`http://127.0.0.1:${port}/api/plugin/update?currentVersion=0.1.2`);
+    if (!pluginUpToDate.ok) throw new Error('plugin update current-version check failed');
+    const pluginUpToDateJson = await pluginUpToDate.json();
+    if (pluginUpToDateJson.updateAvailable || pluginUpToDateJson.updateRequired) {
+      throw new Error('plugin update should report current release as up to date');
+    }
 
     const split = await fetch(`http://127.0.0.1:${port}/split-sheet`);
     if (!split.ok) throw new Error('split form failed');
@@ -93,6 +223,9 @@ async function main() {
 
     const signupPage = await fetch(`http://127.0.0.1:${port}/signup`);
     if (!signupPage.ok) throw new Error('signup page failed');
+    const signupHtml = await signupPage.text();
+    if (!signupHtml.includes('Continue with Google')) throw new Error('signup page missing active Google sign-in');
+    if (!signupHtml.includes('Continue with Apple')) throw new Error('signup page missing active Apple sign-in');
 
     const forgotPasswordPage = await fetch(`http://127.0.0.1:${port}/forgot-password`);
     if (!forgotPasswordPage.ok) throw new Error('forgot password page failed');
@@ -110,7 +243,8 @@ async function main() {
       body: JSON.stringify({
         email: accountEmail,
         password: accountPass,
-        displayName: 'Smoke User'
+        displayName: 'Smoke User',
+        marketingOptIn: true
       })
     });
     if (!register.ok) throw new Error('api register failed');
@@ -295,10 +429,152 @@ async function main() {
     if (completedStatus.splitSheet.signerStats.signed !== 2) throw new Error('completed signer count mismatch');
     if (!completedStatus.splitSheet.allPartiesAgree || !completedStatus.splitSheet.completedAt) throw new Error('final agreement metadata missing');
 
-    const finalPdf = await fetch(`http://127.0.0.1:${port}/split-sheet/pdf/${created.splitSheet.id}`);
+    const finalPdf = await fetch(completedStatus.splitSheet.pdfUrl);
     if (!finalPdf.ok || !(await finalPdf.arrayBuffer()).byteLength) throw new Error('final split PDF missing');
+    if (!/attachment/i.test(finalPdf.headers.get('content-disposition') || '')) throw new Error('default final PDF should download as attachment');
 
-    for (const title of ['Free Limit Song 2', 'Free Limit Song 3']) {
+    const inlinePdf = await fetch(`${completedStatus.splitSheet.pdfUrl}&view=1`);
+    if (!inlinePdf.ok || !(await inlinePdf.arrayBuffer()).byteLength) throw new Error('inline final PDF preview missing');
+    if (!/inline/i.test(inlinePdf.headers.get('content-disposition') || '')) throw new Error('view final PDF should render inline');
+
+    const completedDetailResponse = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${created.splitSheet.id}`, {
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+    if (!completedDetailResponse.ok) throw new Error('completed split detail failed');
+    const completedDetail = await completedDetailResponse.json();
+    const revisionToken = completedDetail.splitSheet?.payload?.revisionToken;
+    if (!revisionToken) throw new Error('completed split missing revision token');
+
+    const webLogin = await fetch(`http://127.0.0.1:${port}/login`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        email: accountEmail,
+        password: accountPass
+      })
+    });
+    if (webLogin.status !== 302) throw new Error('web login failed');
+    if (webLogin.headers.get('location') !== '/account') throw new Error('web login should land on account');
+
+    const setCookieHeader = webLogin.headers.get('set-cookie') || '';
+    const cookie = setCookieHeader
+      .split(/,(?=[^;]+?=)/g)
+      .map((value) => value.split(';')[0])
+      .filter(Boolean)
+      .join('; ');
+    if (!cookie) throw new Error('web login cookie missing');
+
+    const accountPage = await fetch(`http://127.0.0.1:${port}/account`, { headers: { cookie } });
+    if (!accountPage.ok) throw new Error('account page failed after login');
+    const accountHtml = await accountPage.text();
+    for (const tab of ['Overview', 'Vault', 'Resources', 'VST', 'Plans']) {
+      if (!accountHtml.includes(`>${tab}</a>`)) throw new Error(`account page missing ${tab} tab`);
+    }
+    if (!accountHtml.includes('aria-current="page">Overview</a>')) throw new Error('account should open on Overview');
+
+    const vaultPage = await fetch(`http://127.0.0.1:${port}/account?tab=vault`, { headers: { cookie } });
+    if (!vaultPage.ok) throw new Error('account vault failed');
+    const vaultHtml = await vaultPage.text();
+    if (!vaultHtml.includes('Split Sheet Vault')) throw new Error('account vault title missing');
+    if (!vaultHtml.includes('>View</a>') || !vaultHtml.includes('>Download</a>')) throw new Error('account vault should include view and download actions');
+
+    const resourcesPage = await fetch(`http://127.0.0.1:${port}/account?tab=resources`, { headers: { cookie } });
+    if (!resourcesPage.ok || !(await resourcesPage.text()).includes('Guides for your next session')) {
+      throw new Error('account Resources tab failed');
+    }
+
+    const vstPage = await fetch(`http://127.0.0.1:${port}/account?tab=vst`, { headers: { cookie } });
+    if (!vstPage.ok) throw new Error('account VST tab failed');
+    const vstHtml = await vstPage.text();
+    if (!vstHtml.includes('Split Sheet Studio VST3') || !vstHtml.includes('plugin is included with Creator and Studio')) {
+      throw new Error('account VST tab should show Free-plan upgrade path');
+    }
+    if (vstHtml.includes('Download Windows installer')) throw new Error('Free account should not see plugin installer action');
+
+    const plansPage = await fetch(`http://127.0.0.1:${port}/account?tab=plans`, { headers: { cookie } });
+    if (!plansPage.ok || !(await plansPage.text()).includes('Upgrade to Creator monthly')) {
+      throw new Error('account Plans tab failed');
+    }
+
+    const revisionPage = await fetch(`http://127.0.0.1:${port}/split-sheet/revise/${created.splitSheet.id}/${revisionToken}`, {
+      headers: { cookie }
+    });
+    if (!revisionPage.ok) throw new Error('revision page failed');
+    const revisionPageHtml = await revisionPage.text();
+    if (!revisionPageHtml.includes('Revised split-sheet request')) throw new Error('revision page banner missing');
+    if (!revisionPageHtml.includes(`value="${created.splitSheet.id}"`)) throw new Error('revision source id missing from revision form');
+
+    const revisionSubmit = new URLSearchParams();
+    revisionSubmit.set('revisionOfId', created.splitSheet.id);
+    revisionSubmit.set('revisionOfVersion', '1');
+    revisionSubmit.set('songTitle', 'Smoke Test Song');
+    revisionSubmit.set('alternateTitle', 'Smoke Test Song Revision');
+    revisionSubmit.set('date', '2026-07-02');
+    revisionSubmit.set('sessionLocation', 'Remote Follow-Up');
+    revisionSubmit.set('notes', 'Revision smoke flow');
+    revisionSubmit.set('rightsScope', 'composition');
+    revisionSubmit.set('allPartiesAgree', 'yes');
+    revisionSubmit.set('collectSignaturesByInvite', 'yes');
+    revisionSubmit.set('supersedesPrevious', 'yes');
+    revisionSubmit.append('recipientEmails', 'writer1@example.com');
+    revisionSubmit.append('recipientEmails', 'writer2@example.com');
+    for (const contributor of [
+      { legalName: 'Writer One', role: 'Writer', email: 'writer1@example.com', writerShare: '50', publisherShare: '50' },
+      { legalName: 'Writer Two', role: 'Producer', email: 'writer2@example.com', writerShare: '50', publisherShare: '50' }
+    ]) {
+      revisionSubmit.append('legalName', contributor.legalName);
+      revisionSubmit.append('role', contributor.role);
+      revisionSubmit.append('address', '');
+      revisionSubmit.append('phone', '');
+      revisionSubmit.append('email', contributor.email);
+      revisionSubmit.append('pro', '');
+      revisionSubmit.append('ipi', '');
+      revisionSubmit.append('publisherName', '');
+      revisionSubmit.append('publisherIpi', '');
+      revisionSubmit.append('writerShare', contributor.writerShare);
+      revisionSubmit.append('publisherShare', contributor.publisherShare);
+      revisionSubmit.append('masterShare', '');
+      revisionSubmit.append('typedSignatureName', '');
+      revisionSubmit.append('signatureData', '');
+    }
+
+    const revisionCreate = await fetch(`http://127.0.0.1:${port}/split-sheet`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        cookie
+      },
+      body: revisionSubmit
+    });
+    if (!revisionCreate.ok) throw new Error('revision create failed');
+    await revisionCreate.text();
+
+    const listAfterRevision = await fetch(`http://127.0.0.1:${port}/api/split-sheets`, {
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+    if (!listAfterRevision.ok) throw new Error('split list after revision failed');
+    const listedAfterRevision = await listAfterRevision.json();
+    const revisionSummary = listedAfterRevision.splitSheets.find((doc) =>
+      doc.id !== created.splitSheet.id &&
+      doc.songTitle === 'Smoke Test Song' &&
+      Number(doc.version || 0) === 2
+    );
+    if (!revisionSummary) throw new Error('revision split sheet summary missing');
+
+    const revisionDetailResponse = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${revisionSummary.id}`, {
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+    if (!revisionDetailResponse.ok) throw new Error('revision split sheet detail missing');
+    const revisionDetail = await revisionDetailResponse.json();
+    if (revisionDetail.splitSheet?.payload?.revisionOfId !== created.splitSheet.id) {
+      throw new Error('revision split sheet lineage missing source id');
+    }
+    if (Number(revisionDetail.splitSheet?.payload?.revisionOfVersion || 0) !== 1) {
+      throw new Error('revision split sheet lineage missing source version');
+    }
+
+    for (const title of ['Free Limit Song 3']) {
       const extraCreate = await fetch(`http://127.0.0.1:${port}/api/split-sheets`, {
         method: 'POST',
         headers: {
@@ -325,7 +601,7 @@ async function main() {
       },
       body: JSON.stringify(validInvitePayload('Free Limit Song 4'))
     });
-    if (blockedCreate.status !== 402) throw new Error('free plan should block fourth split sheet');
+    if (blockedCreate.status !== 402) throw new Error('free plan should block fourth split sheet request');
 
     const refresh = await fetch(`http://127.0.0.1:${port}/api/auth/refresh`, {
       method: 'POST',

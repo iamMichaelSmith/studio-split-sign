@@ -1,9 +1,17 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Split Sheet Studio</title><link rel="stylesheet" href="/style.css"></head><body><div class="wrap"><div class="timeline-top"><div><h1>Split Sheet Studio</h1><p class="small">Fast legal split workflow. Fill once, capture signatures, email both parties instantly.</p></div><div class="small"><% if (typeof user !== 'undefined' && user) { %>Signed in as <b><%= user.displayName %></b><br><a href="/account">Account</a><% } %></div></div><% if (typeof usage !== 'undefined' && usage) { %><div class="card usage-card"><b><%= usage.plan.name %></b> plan · <%= usage.used %>/<%= usage.limit %> split sheets used in <%= usage.window.label %> · <%= usage.remaining %> remaining</div><% } %><% if (error) { %><div class="card"><b><%= error %></b></div><% } %>
+<!doctype html><html><head><meta charset="utf-8"><title>Split Sheet Studio</title><link rel="stylesheet" href="/style.css"></head><body><div class="wrap split-workflow-wrap"><div class="timeline-top"><div><div class="stat-label">New split sheet</div><h1>Document the session</h1><p class="small">Add the song, confirm contributors, then send signature links. Drafts autosave in this browser while you work.</p></div><div class="small"><% if (typeof user !== 'undefined' && user) { %>Signed in as <b><%= user.displayName %></b><br><a href="/account">Back to account</a><% } %></div></div><% if (typeof usage !== 'undefined' && usage) { %><div class="card usage-card"><b><%= usage.plan.name %></b> plan · <%= usage.used %>/<%= usage.limit %> split sheets used in <%= usage.window.label %> · <%= usage.remaining %> remaining</div><% } %><% if (error) { %><div class="card"><b><%= error %></b></div><% } %>
+
+<div class="card workflow-helper">
+  <div>
+    <div class="stat-label">How this works</div>
+    <p class="small">You can collect signatures by invite link, so nobody has to finish everything on this device. The final PDF appears in your account vault after the required approvals are complete.</p>
+  </div>
+  <a class="button-link button-link-secondary" href="/account#split-sheet-vault">View vault</a>
+</div>
 
 <div class="step-tabs">
   <button type="button" class="step-tab active" data-step-btn="1">1 Song</button>
-  <button type="button" class="step-tab" data-step-btn="2">2 Contributors</button>
-  <button type="button" class="step-tab" data-step-btn="3">3 Review and Submit</button>
+  <button type="button" class="step-tab" data-step-btn="2">2 People</button>
+  <button type="button" class="step-tab" data-step-btn="3">3 Send</button>
 </div>
 
 <% if (typeof revisionSource !== 'undefined' && revisionSource) { %>
@@ -42,7 +50,7 @@
         <div><label>ISRC (optional)</label><input name="isrc"></div>
       </div>
       <label>Notes (optional)</label><textarea name="notes" rows="3" placeholder="Any split/session context"></textarea>
-      <button type="button" class="next-step" data-next="2">Continue to Contributors</button>
+      <button type="button" class="next-step" data-next="2">Continue to people</button>
     </div>
   </section>
 
@@ -53,22 +61,22 @@
         <button type="button" id="add">Add contributor</button>
         <button type="button" id="setEqual">Set equal splits for all</button>
       </div>
-      <p class="small">Tip: Add the next contributor here, then use equal split first before making any custom percentage adjustments.</p>
+      <p class="small">Tip: Add everyone who should approve the split. Use equal splits first, then adjust percentages only where needed.</p>
     </div>
     <div class="row">
-      <button type="button" class="next-step" data-next="3">Continue to Review</button>
+      <button type="button" class="next-step" data-next="3">Review and send</button>
       <button type="button" id="clearDraftBtn">Clear saved draft</button>
     </div>
   </section>
 
   <section class="step-panel" data-step="3" style="display:none;">
     <div class="card" id="reviewCard">
-      <h3>Review before submit</h3>
+      <h3>Review before sending</h3>
       <div id="reviewSummary" class="small">Complete prior steps to preview details.</div>
     </div>
     <div class="card">
       <h3>Email recipients for signed copy</h3>
-      <p class="small">Contributor emails are pre-selected. Add any additional recipients below.</p>
+      <p class="small">Contributor emails are pre-selected. Add a manager, studio, label, or other recipient if they need the final copy.</p>
       <div id="recipientChecklist" class="small"></div>
       <div class="row">
         <div><label>Additional recipient #1</label><input type="email" name="recipientEmails" placeholder="email@example.com"></div>
@@ -78,10 +86,10 @@
     <div class="card legal-note">
       <label><input type="checkbox" name="supersedesPrevious" value="yes"> This split supersedes any previous draft for this song.</label>
       <label><input type="checkbox" id="allAgree" name="allPartiesAgree" value="yes" required> I confirm these proposed splits are ready to send. Every contributor must agree separately before finalization.</label>
-      <label><input type="checkbox" id="collectByInvite" name="collectSignaturesByInvite" value="yes"> Collect signatures by invite links instead of in-session signing.</label>
+      <label><input type="checkbox" id="collectByInvite" name="collectSignaturesByInvite" value="yes"> Send signature links so contributors can sign from their own device.</label>
       <div id="submitHint" class="small" style="margin-top:8px;color:#ffd48a;">Complete all required fields and signatures to enable submit.</div>
     </div>
-    <button type="submit" id="submitBtn" disabled>Submit split sheet</button>
+    <button type="submit" id="submitBtn" disabled>Send split sheet</button>
   </section>
 </form>
 
@@ -92,7 +100,7 @@
   <div id="totalsStatus" class="small">Required totals must equal 100%</div>
 </div>
 
-<p><a href="/">Back</a></p></div>
+<p><a href="/account">Back to account</a></p></div>
 <script src="/vendor/signature_pad/signature_pad.umd.min.js"></script>
 <script>
 const DRAFT_KEY = 'splitSheetDraft.v1';

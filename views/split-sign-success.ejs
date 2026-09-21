@@ -19,7 +19,7 @@
         <% } else if (emailResult) { %>
           <p class="form-error"><b>Email needs attention:</b> the packet is complete, but automatic delivery did not confirm successfully.</p>
         <% } %>
-        <p><a href="/split-sheet/pdf/<%= doc.id %>">Download final packet</a></p>
+        <p><a href="<%= pdfDownloadPath(doc) %>">Download final packet</a></p>
       <% } else { %>
         <p>You can close this page. The completed copy will be emailed automatically after the remaining contributor signs.</p>
       <% } %>

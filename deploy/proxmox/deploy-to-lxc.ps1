@@ -2,7 +2,7 @@
   [string]$ProxmoxHost = "proxmox-host",
   [int]$Vmid = 103,
   [string]$RemoteAppDir = "/opt/split-sheet-studio",
-  [string]$LegacyAppDir = "/opt/studio-split-sign",
+  [string]$LegacyAppDir = "/opt/split-sheet-studio-legacy",
   [string]$PublicBaseUrl = "http://192.168.1.237:5050",
   [switch]$SyncLocalEnv
 )
@@ -36,6 +36,10 @@ $tarExcludes = @(
   "--exclude=.env",
   "--exclude=.local",
   "--exclude=vst/build",
+  "--exclude=vst/build-release-clean",
+  "--exclude=vst/build-release",
+  "--exclude=vst/build-debug",
+  "--exclude=vst/cmake-build-*",
   "--exclude=vst/.cmake",
   "--exclude=vst/dist"
 )
@@ -123,6 +127,30 @@ else
   printf "HOST=0.0.0.0\n" >> "`$REMOTE_APP_DIR/.env"
 fi
 
+cat > "`$REMOTE_APP_DIR/docker-compose.override.yml" <<YAML
+services:
+  split-sheet:
+    build:
+      args:
+        INSTALL_OPTIONAL_DEPS: "true"
+    environment:
+      NODE_ENV: development
+      PUBLIC_BASE_URL: "`$PUBLIC_BASE_URL"
+      DB_PROVIDER: sqlite
+      DATABASE_URL: ""
+      SESSION_STORE: memory
+      REDIS_URL: ""
+      COOKIE_SECURE: "false"
+      TRUST_PROXY: "false"
+      CSRF_PROTECTION_ENABLED: "false"
+      PDF_STORAGE: local
+      S3_BUCKET: ""
+      REQUIRE_EMAIL_VERIFICATION: "false"
+      ALLOW_PUBLIC_REGISTRATION: "true"
+      PGSSLMODE: disable
+      PG_SSL_REJECT_UNAUTHORIZED: "false"
+YAML
+
 cd "`$REMOTE_APP_DIR"
 docker compose up -d --build
 docker compose ps
@@ -196,7 +224,20 @@ fi
   }
 
   Write-Host "Checking health at $PublicBaseUrl/health"
-  $health = Invoke-WebRequest -UseBasicParsing -Uri "$PublicBaseUrl/health" -TimeoutSec 20
+  $health = $null
+  $lastHealthError = $null
+  for ($attempt = 1; $attempt -le 12; $attempt += 1) {
+    try {
+      $health = Invoke-WebRequest -UseBasicParsing -Uri "$PublicBaseUrl/health" -TimeoutSec 10
+      break
+    } catch {
+      $lastHealthError = $_.Exception.Message
+      Start-Sleep -Seconds 5
+    }
+  }
+  if (-not $health) {
+    throw "health check failed after waiting: $lastHealthError"
+  }
   Write-Host $health.Content
   Write-Host "Done"
 }

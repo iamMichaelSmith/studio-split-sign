@@ -2,89 +2,218 @@
 #include <BinaryData.h>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 
 #ifndef SPLIT_SHEET_STUDIO_VERSION
-#define SPLIT_SHEET_STUDIO_VERSION "0.1.1"
+#define SPLIT_SHEET_STUDIO_VERSION "0.1.2"
 #endif
 
 namespace
 {
-    const auto backgroundColour = juce::Colour::fromRGB(27, 17, 12);
-    const auto panelColour = juce::Colour::fromRGB(74, 49, 35);
-    const auto sectionColour = juce::Colour::fromRGB(53, 35, 25);
-    const auto cardColour = juce::Colour::fromRGB(40, 25, 18);
-    const auto fieldColour = juce::Colour::fromRGB(70, 48, 36);
-    const auto fieldOutlineColour = juce::Colour::fromRGB(151, 101, 66);
-    const auto accentColour = juce::Colour::fromRGB(243, 189, 130);
-    const auto successColour = juce::Colour::fromRGB(71, 151, 105);
-    const auto warningColour = juce::Colour::fromRGB(145, 109, 44);
-    const auto errorColour = juce::Colour::fromRGB(145, 64, 58);
-    const auto neutralColour = juce::Colour::fromRGB(95, 65, 47);
-    const auto ivoryColour = juce::Colour::fromRGB(255, 242, 223);
-    const auto taupeColour = juce::Colour::fromRGB(201, 161, 127);
-    const auto subduedText = juce::Colour::fromRGB(229, 200, 170);
-    const auto placeholderColour = juce::Colour::fromRGB(184, 145, 115);
     const juce::String currentPluginVersion { SPLIT_SHEET_STUDIO_VERSION };
+    constexpr int defaultEditorWidth = 920;
+    constexpr int defaultEditorHeight = 680;
+    constexpr int authedMinEditorWidth = 860;
+    constexpr int authedMinEditorHeight = 620;
+    constexpr int loginMinEditorWidth = 720;
+    constexpr int loginMinEditorHeight = 560;
+    constexpr int loginUpdateMinEditorHeight = 620;
+    constexpr int maxEditorWidth = 1800;
+    constexpr int maxEditorHeight = 1400;
+    constexpr int screenshotSongWidth = 1280;
+    constexpr int screenshotSongHeight = 900;
+    constexpr int screenshotContributorsWidth = 1280;
+    constexpr int screenshotContributorsHeight = 1260;
+    constexpr int screenshotReviewWidth = 1280;
+    constexpr int screenshotReviewHeight = 980;
+    constexpr const char* screenshotDirEnvVar = "SPLITSHEET_SCREENSHOT_DIR";
+
+    SplitSheetThemePalette paletteForTheme(SplitSheetTheme theme)
+    {
+        switch (theme)
+        {
+            case SplitSheetTheme::paperThin:
+                return {
+                    juce::Colour::fromRGB(30, 29, 27), juce::Colour::fromRGB(50, 48, 44),
+                    juce::Colour::fromRGB(38, 37, 34), juce::Colour::fromRGB(26, 25, 23),
+                    juce::Colour::fromRGB(245, 241, 232), juce::Colour::fromRGB(173, 151, 112),
+                    juce::Colour::fromRGB(205, 158, 75), juce::Colour::fromRGB(67, 145, 99),
+                    juce::Colour::fromRGB(166, 120, 42), juce::Colour::fromRGB(161, 68, 61),
+                    juce::Colour::fromRGB(101, 95, 84), juce::Colour::fromRGB(255, 252, 246),
+                    juce::Colour::fromRGB(222, 214, 201), juce::Colour::fromRGB(116, 108, 96),
+                    juce::Colour::fromRGB(33, 29, 24), 0.20f
+                };
+            case SplitSheetTheme::denim:
+                return {
+                    juce::Colour::fromRGB(8, 30, 49), juce::Colour::fromRGB(18, 57, 86),
+                    juce::Colour::fromRGB(12, 41, 65), juce::Colour::fromRGB(7, 27, 44),
+                    juce::Colour::fromRGB(24, 64, 94), juce::Colour::fromRGB(109, 151, 180),
+                    juce::Colour::fromRGB(232, 194, 111), juce::Colour::fromRGB(69, 158, 113),
+                    juce::Colour::fromRGB(179, 132, 52), juce::Colour::fromRGB(177, 71, 66),
+                    juce::Colour::fromRGB(54, 92, 120), juce::Colour::fromRGB(249, 246, 236),
+                    juce::Colour::fromRGB(199, 218, 231), juce::Colour::fromRGB(155, 183, 203),
+                    juce::Colour::fromRGB(249, 246, 236), 0.24f
+                };
+            case SplitSheetTheme::soft:
+                return {
+                    juce::Colour::fromRGB(43, 34, 27), juce::Colour::fromRGB(83, 66, 51),
+                    juce::Colour::fromRGB(61, 48, 38), juce::Colour::fromRGB(37, 29, 23),
+                    juce::Colour::fromRGB(99, 81, 65), juce::Colour::fromRGB(186, 153, 112),
+                    juce::Colour::fromRGB(240, 198, 132), juce::Colour::fromRGB(75, 151, 107),
+                    juce::Colour::fromRGB(161, 118, 49), juce::Colour::fromRGB(157, 68, 61),
+                    juce::Colour::fromRGB(111, 88, 69), juce::Colour::fromRGB(255, 246, 231),
+                    juce::Colour::fromRGB(226, 207, 181), juce::Colour::fromRGB(190, 163, 128),
+                    juce::Colour::fromRGB(255, 246, 231), 0.22f
+                };
+            case SplitSheetTheme::speakeasy:
+                return {
+                    juce::Colour::fromRGB(7, 7, 7), juce::Colour::fromRGB(28, 23, 21),
+                    juce::Colour::fromRGB(19, 16, 15), juce::Colour::fromRGB(11, 10, 10),
+                    juce::Colour::fromRGB(34, 29, 27), juce::Colour::fromRGB(112, 82, 59),
+                    juce::Colour::fromRGB(216, 169, 98), juce::Colour::fromRGB(71, 145, 101),
+                    juce::Colour::fromRGB(166, 119, 53), juce::Colour::fromRGB(150, 61, 56),
+                    juce::Colour::fromRGB(70, 59, 52), juce::Colour::fromRGB(248, 235, 214),
+                    juce::Colour::fromRGB(204, 181, 151), juce::Colour::fromRGB(145, 126, 106),
+                    juce::Colour::fromRGB(248, 235, 214), 0.28f
+                };
+            case SplitSheetTheme::plush:
+                return {
+                    juce::Colour::fromRGB(48, 40, 33), juce::Colour::fromRGB(91, 76, 62),
+                    juce::Colour::fromRGB(62, 52, 43), juce::Colour::fromRGB(35, 30, 26),
+                    juce::Colour::fromRGB(248, 243, 233), juce::Colour::fromRGB(188, 154, 105),
+                    juce::Colour::fromRGB(232, 188, 106), juce::Colour::fromRGB(76, 151, 106),
+                    juce::Colour::fromRGB(166, 119, 49), juce::Colour::fromRGB(158, 67, 61),
+                    juce::Colour::fromRGB(112, 92, 74), juce::Colour::fromRGB(255, 249, 239),
+                    juce::Colour::fromRGB(231, 214, 190), juce::Colour::fromRGB(121, 105, 88),
+                    juce::Colour::fromRGB(43, 35, 29), 0.20f
+                };
+            case SplitSheetTheme::bronze:
+            default:
+                return {
+                    juce::Colour::fromRGB(27, 17, 12), juce::Colour::fromRGB(74, 49, 35),
+                    juce::Colour::fromRGB(53, 35, 25), juce::Colour::fromRGB(40, 25, 18),
+                    juce::Colour::fromRGB(70, 48, 36), juce::Colour::fromRGB(151, 101, 66),
+                    juce::Colour::fromRGB(243, 189, 130), juce::Colour::fromRGB(71, 151, 105),
+                    juce::Colour::fromRGB(145, 109, 44), juce::Colour::fromRGB(145, 64, 58),
+                    juce::Colour::fromRGB(95, 65, 47), juce::Colour::fromRGB(255, 242, 223),
+                    juce::Colour::fromRGB(229, 200, 170), juce::Colour::fromRGB(184, 145, 115),
+                    juce::Colour::fromRGB(255, 242, 223), 0.16f
+                };
+        }
+    }
+
+    SplitSheetTheme themeFromKey(const juce::String& key)
+    {
+        if (key == "paper-thin") return SplitSheetTheme::paperThin;
+        if (key == "denim") return SplitSheetTheme::denim;
+        if (key == "soft") return SplitSheetTheme::soft;
+        if (key == "speakeasy") return SplitSheetTheme::speakeasy;
+        if (key == "plush") return SplitSheetTheme::plush;
+        return SplitSheetTheme::bronze;
+    }
+
+    juce::String keyForTheme(SplitSheetTheme theme)
+    {
+        switch (theme)
+        {
+            case SplitSheetTheme::paperThin: return "paper-thin";
+            case SplitSheetTheme::denim: return "denim";
+            case SplitSheetTheme::soft: return "soft";
+            case SplitSheetTheme::speakeasy: return "speakeasy";
+            case SplitSheetTheme::plush: return "plush";
+            case SplitSheetTheme::bronze:
+            default: return "bronze";
+        }
+    }
+
+    juce::Image textureForTheme(SplitSheetTheme theme)
+    {
+        switch (theme)
+        {
+            case SplitSheetTheme::paperThin:
+                return juce::ImageCache::getFromMemory(BinaryData::paperthin_png, BinaryData::paperthin_pngSize);
+            case SplitSheetTheme::denim:
+                return juce::ImageCache::getFromMemory(BinaryData::denim_png, BinaryData::denim_pngSize);
+            case SplitSheetTheme::soft:
+                return juce::ImageCache::getFromMemory(BinaryData::soft_png, BinaryData::soft_pngSize);
+            case SplitSheetTheme::speakeasy:
+                return juce::ImageCache::getFromMemory(BinaryData::speakeasy_png, BinaryData::speakeasy_pngSize);
+            case SplitSheetTheme::plush:
+                return juce::ImageCache::getFromMemory(BinaryData::plush_png, BinaryData::plush_pngSize);
+            case SplitSheetTheme::bronze:
+            default:
+                return juce::ImageCache::getFromMemory(BinaryData::bronzetexture_png, BinaryData::bronzetexture_pngSize);
+        }
+    }
 
     juce::String todayIso()
     {
         return juce::Time::getCurrentTime().formatted("%Y-%m-%d");
     }
 
-    void styleEditor(juce::TextEditor& editor, const juce::String& placeholder, bool multiline = false)
+    void styleEditor(juce::TextEditor& editor, const juce::String& placeholder,
+                     const SplitSheetThemePalette& palette, bool multiline = false)
     {
-        editor.setTextToShowWhenEmpty(placeholder, placeholderColour);
-        editor.setColour(juce::TextEditor::backgroundColourId, fieldColour);
-        editor.setColour(juce::TextEditor::outlineColourId, fieldOutlineColour);
-        editor.setColour(juce::TextEditor::focusedOutlineColourId, accentColour);
-        editor.setColour(juce::TextEditor::textColourId, ivoryColour);
+        editor.setTextToShowWhenEmpty(placeholder, palette.placeholder);
+        editor.setColour(juce::TextEditor::backgroundColourId, palette.field);
+        editor.setColour(juce::TextEditor::outlineColourId, palette.fieldOutline);
+        editor.setColour(juce::TextEditor::focusedOutlineColourId, palette.accent);
+        editor.setColour(juce::TextEditor::textColourId, palette.fieldText);
         editor.setColour(juce::TextEditor::highlightedTextColourId, juce::Colours::black);
-        editor.setColour(juce::TextEditor::highlightColourId, accentColour);
-        editor.setColour(juce::CaretComponent::caretColourId, accentColour);
+        editor.setColour(juce::TextEditor::highlightColourId, palette.accent);
+        editor.setColour(juce::CaretComponent::caretColourId, palette.accent);
         editor.setIndents(12, multiline ? 11 : 8);
         editor.setMultiLine(multiline, true);
         editor.setReturnKeyStartsNewLine(multiline);
         editor.setScrollbarsShown(multiline);
     }
 
-    void styleComboBox(juce::ComboBox& comboBox, const juce::String& placeholder)
+    void styleComboBox(juce::ComboBox& comboBox, const juce::String& placeholder,
+                       const SplitSheetThemePalette& palette)
     {
         comboBox.setTextWhenNothingSelected(placeholder);
         comboBox.setJustificationType(juce::Justification::centredLeft);
-        comboBox.setColour(juce::ComboBox::backgroundColourId, fieldColour);
-        comboBox.setColour(juce::ComboBox::outlineColourId, fieldOutlineColour);
-        comboBox.setColour(juce::ComboBox::focusedOutlineColourId, accentColour);
-        comboBox.setColour(juce::ComboBox::textColourId, ivoryColour);
-        comboBox.setColour(juce::ComboBox::arrowColourId, accentColour);
+        comboBox.setColour(juce::ComboBox::backgroundColourId, palette.field);
+        comboBox.setColour(juce::ComboBox::outlineColourId, palette.fieldOutline);
+        comboBox.setColour(juce::ComboBox::focusedOutlineColourId, palette.accent);
+        comboBox.setColour(juce::ComboBox::textColourId, palette.fieldText);
+        comboBox.setColour(juce::ComboBox::arrowColourId, palette.accent);
     }
 
     void styleButton(juce::TextButton& button,
-                     juce::Colour colour = juce::Colour::fromRGB(54, 48, 42),
-                     juce::Colour text = ivoryColour)
+                     const SplitSheetThemePalette& palette,
+                     juce::Colour colour,
+                     juce::Colour text)
     {
         button.setColour(juce::TextButton::buttonColourId, colour);
-        button.setColour(juce::TextButton::buttonOnColourId, accentColour);
+        button.setColour(juce::TextButton::buttonOnColourId, palette.accent);
         button.setColour(juce::TextButton::textColourOffId, text);
         button.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
     }
 
-    void styleStepButton(juce::TextButton& button, bool active)
+    void styleButton(juce::TextButton& button, const SplitSheetThemePalette& palette)
     {
-        styleButton(button, active ? accentColour : juce::Colour::fromRGB(47, 40, 35),
-                    active ? juce::Colour::fromRGB(54, 48, 42) : taupeColour);
+        styleButton(button, palette, palette.card, palette.primaryText);
     }
 
-    void styleLabel(juce::Label& label, float size = 14.0f, bool bold = true, juce::Colour colour = ivoryColour)
+    void styleStepButton(juce::TextButton& button, bool active, const SplitSheetThemePalette& palette)
     {
-        label.setColour(juce::Label::textColourId, colour);
+        styleButton(button, palette, active ? palette.accent : palette.card,
+                    active ? palette.card : palette.secondaryText);
+    }
+
+    void styleLabel(juce::Label& label, const SplitSheetThemePalette& palette,
+                    float size = 14.0f, bool bold = true)
+    {
+        label.setColour(juce::Label::textColourId, palette.primaryText);
         label.setFont(juce::FontOptions(size, bold ? juce::Font::bold : juce::Font::plain));
     }
 
-    void styleToggle(juce::ToggleButton& toggle)
+    void styleToggle(juce::ToggleButton& toggle, const SplitSheetThemePalette& palette)
     {
-        toggle.setColour(juce::ToggleButton::textColourId, subduedText);
-        toggle.setColour(juce::ToggleButton::tickColourId, accentColour);
-        toggle.setColour(juce::ToggleButton::tickDisabledColourId, fieldOutlineColour);
+        toggle.setColour(juce::ToggleButton::textColourId, palette.secondaryText);
+        toggle.setColour(juce::ToggleButton::tickColourId, palette.accent);
+        toggle.setColour(juce::ToggleButton::tickDisabledColourId, palette.fieldOutline);
     }
 
     juce::StringArray parseEmailTokens(const juce::String& value)
@@ -112,13 +241,14 @@ namespace
         return publisherText.isNotEmpty() ? shareValue(publisherText) : shareValue(writerShareEditor.getText());
     }
 
-    void drawBrandMark(juce::Graphics& graphics, juce::Rectangle<float> area)
+    void drawBrandMark(juce::Graphics& graphics, juce::Rectangle<float> area,
+                       const SplitSheetThemePalette& palette)
     {
         juce::ColourGradient markGradient(juce::Colour::fromRGB(72, 63, 54), area.getX(), area.getY(),
                                           juce::Colour::fromRGB(18, 15, 14), area.getRight(), area.getBottom(), false);
         graphics.setGradientFill(markGradient);
         graphics.fillEllipse(area);
-        graphics.setColour(accentColour.withAlpha(0.7f));
+        graphics.setColour(palette.accent.withAlpha(0.7f));
         graphics.drawEllipse(area.reduced(0.75f), 1.2f);
 
         const auto logo = juce::ImageCache::getFromMemory(BinaryData::marigoldlogo_png,
@@ -136,7 +266,7 @@ namespace
             return;
         }
 
-        graphics.setColour(accentColour);
+        graphics.setColour(palette.accent);
         graphics.setFont(juce::FontOptions(10.5f, juce::Font::bold));
         graphics.drawFittedText("BM", area.toNearestInt(), juce::Justification::centred, 1);
     }
@@ -145,15 +275,30 @@ namespace
 class SplitSheetStudioEditor::PremiumLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
-    PremiumLookAndFeel()
+    explicit PremiumLookAndFeel(const SplitSheetThemePalette& initialPalette)
+        : palette(initialPalette)
     {
-        setColour(juce::PopupMenu::backgroundColourId, juce::Colour::fromRGB(33, 28, 25));
-        setColour(juce::PopupMenu::textColourId, ivoryColour);
-        setColour(juce::PopupMenu::highlightedBackgroundColourId, accentColour);
-        setColour(juce::PopupMenu::highlightedTextColourId, juce::Colour::fromRGB(54, 48, 42));
-        setColour(juce::ScrollBar::thumbColourId, taupeColour.withAlpha(0.56f));
+        applyPalette();
+    }
+
+    void setPalette(const SplitSheetThemePalette& newPalette)
+    {
+        palette = newPalette;
+        applyPalette();
+    }
+
+private:
+    void applyPalette()
+    {
+        setColour(juce::PopupMenu::backgroundColourId, palette.card);
+        setColour(juce::PopupMenu::textColourId, palette.primaryText);
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, palette.accent);
+        setColour(juce::PopupMenu::highlightedTextColourId, palette.card);
+        setColour(juce::ScrollBar::thumbColourId, palette.secondaryText.withAlpha(0.56f));
         setColour(juce::ScrollBar::trackColourId, juce::Colours::transparentBlack);
     }
+
+public:
 
     void drawButtonBackground(juce::Graphics& graphics,
                               juce::Button& button,
@@ -164,13 +309,13 @@ public:
         auto bounds = button.getLocalBounds().toFloat().reduced(0.75f);
         const auto highlightAmount = isHighlighted ? 0.08f : 0.0f;
         const auto pressAmount = isDown ? 0.12f : 0.0f;
-        const auto topColour = (background == accentColour ? juce::Colour::fromRGB(255, 219, 177) : background.brighter(0.06f + highlightAmount)).darker(pressAmount);
-        const auto bottomColour = (background == accentColour ? juce::Colour::fromRGB(185, 111, 61) : background.darker(0.10f)).darker(pressAmount);
+        const auto topColour = (background == palette.accent ? palette.accent.brighter(0.22f) : background.brighter(0.06f + highlightAmount)).darker(pressAmount);
+        const auto bottomColour = (background == palette.accent ? palette.accent.darker(0.28f) : background.darker(0.10f)).darker(pressAmount);
         juce::ColourGradient buttonGradient(topColour, bounds.getCentreX(), bounds.getY(),
                                             bottomColour, bounds.getCentreX(), bounds.getBottom(), false);
         graphics.setGradientFill(buttonGradient);
         graphics.fillRoundedRectangle(bounds, 6.0f);
-        graphics.setColour((background == accentColour ? accentColour.brighter(0.18f) : taupeColour.withAlpha(isHighlighted ? 0.72f : 0.34f)));
+        graphics.setColour((background == palette.accent ? palette.accent.brighter(0.18f) : palette.secondaryText.withAlpha(isHighlighted ? 0.72f : 0.34f)));
         graphics.drawRoundedRectangle(bounds, 6.0f, 1.0f);
 
         auto highlight = bounds.reduced(1.0f).removeFromTop(1.0f);
@@ -204,7 +349,7 @@ public:
         auto bounds = juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width - 1), static_cast<float>(height - 1));
         graphics.setColour(box.findColour(juce::ComboBox::backgroundColourId));
         graphics.fillRoundedRectangle(bounds, 6.0f);
-        graphics.setColour(box.hasKeyboardFocus(true) ? accentColour : fieldOutlineColour);
+        graphics.setColour(box.hasKeyboardFocus(true) ? palette.accent : palette.fieldOutline);
         graphics.drawRoundedRectangle(bounds, 6.0f, box.hasKeyboardFocus(true) ? 1.5f : 1.0f);
 
         juce::Path arrow;
@@ -213,7 +358,7 @@ public:
         arrow.startNewSubPath(centreX - 4.0f, centreY - 2.0f);
         arrow.lineTo(centreX, centreY + 2.0f);
         arrow.lineTo(centreX + 4.0f, centreY - 2.0f);
-        graphics.setColour(accentColour);
+        graphics.setColour(palette.accent);
         graphics.strokePath(arrow, juce::PathStrokeType(1.6f));
     }
 
@@ -232,7 +377,7 @@ public:
     void drawTextEditorOutline(juce::Graphics& graphics, int width, int height, juce::TextEditor& editor) override
     {
         auto bounds = juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width - 1), static_cast<float>(height - 1));
-        graphics.setColour(editor.hasKeyboardFocus(true) ? accentColour : fieldOutlineColour);
+        graphics.setColour(editor.hasKeyboardFocus(true) ? palette.accent : palette.fieldOutline);
         graphics.drawRoundedRectangle(bounds, 6.0f, editor.hasKeyboardFocus(true) ? 1.5f : 1.0f);
     }
 
@@ -242,9 +387,9 @@ public:
                           bool) override
     {
         auto box = juce::Rectangle<float>(2.0f, (static_cast<float>(button.getHeight()) - 17.0f) * 0.5f, 17.0f, 17.0f);
-        graphics.setColour(button.getToggleState() ? accentColour : fieldColour);
+        graphics.setColour(button.getToggleState() ? palette.accent : palette.field);
         graphics.fillRoundedRectangle(box, 4.0f);
-        graphics.setColour(button.getToggleState() ? accentColour.brighter(0.15f) : taupeColour.withAlpha(isHighlighted ? 0.8f : 0.42f));
+        graphics.setColour(button.getToggleState() ? palette.accent.brighter(0.15f) : palette.secondaryText.withAlpha(isHighlighted ? 0.8f : 0.42f));
         graphics.drawRoundedRectangle(box, 4.0f, 1.0f);
 
         if (button.getToggleState())
@@ -261,6 +406,9 @@ public:
         graphics.setFont(juce::FontOptions(12.5f));
         graphics.drawFittedText(button.getButtonText(), button.getLocalBounds().withTrimmedLeft(29), juce::Justification::centredLeft, 2);
     }
+
+private:
+    SplitSheetThemePalette palette;
 };
 
 class SplitSheetStudioEditor::PaintedComponent final : public juce::Component
@@ -285,21 +433,27 @@ public:
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
     }
 
+    void setPalette(const SplitSheetThemePalette& newPalette)
+    {
+        palette = newPalette;
+        repaint();
+    }
+
     void paint(juce::Graphics& graphics) override
     {
         auto area = getLocalBounds().toFloat();
-        graphics.setColour(fieldColour);
+        graphics.setColour(palette.field);
         graphics.fillRoundedRectangle(area, 8.0f);
 
         if (signatureImage.isValid())
             graphics.drawImageWithin(signatureImage, 0, 0, getWidth(), getHeight(), juce::RectanglePlacement::stretchToFit);
 
-        graphics.setColour(accentColour.withAlpha(hasSignature ? 0.85f : 0.45f));
+        graphics.setColour(palette.accent.withAlpha(hasSignature ? 0.85f : 0.45f));
         graphics.drawRoundedRectangle(area.reduced(0.5f), 8.0f, 1.4f);
 
         if (!hasSignature)
         {
-            graphics.setColour(placeholderColour);
+            graphics.setColour(palette.placeholder);
             graphics.setFont(juce::FontOptions(13.0f));
             graphics.drawFittedText("Draw signature", getLocalBounds(), juce::Justification::centred, 1);
         }
@@ -336,7 +490,7 @@ public:
     {
         ensureImage();
         juce::Graphics graphics(signatureImage);
-        graphics.setColour(juce::Colours::white);
+        graphics.setColour(palette.fieldText);
         graphics.drawLine(lastPoint.x, lastPoint.y, event.position.x, event.position.y, 2.4f);
         lastPoint = event.position;
         hasSignature = true;
@@ -391,15 +545,29 @@ private:
     }
 
     std::function<void()> onChanged;
+    SplitSheetThemePalette palette { paletteForTheme(SplitSheetTheme::bronze) };
     juce::Image signatureImage;
     juce::Point<float> lastPoint;
     bool hasSignature = false;
 };
 
 SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
-    : juce::AudioProcessorEditor(&value), processor(value)
+    : juce::AudioProcessorEditor(&value),
+      processor(value),
+      currentTheme(themeFromKey(value.getThemeKey())),
+      palette(paletteForTheme(currentTheme))
 {
-    premiumLookAndFeel = std::make_unique<PremiumLookAndFeel>();
+    if (const auto* screenshotDir = std::getenv(screenshotDirEnvVar))
+    {
+        const juce::String screenshotDirPath(screenshotDir);
+        if (screenshotDirPath.isNotEmpty())
+        {
+            backendScreenshotMode = true;
+            backendScreenshotDir = juce::File(screenshotDirPath);
+        }
+    }
+
+    premiumLookAndFeel = std::make_unique<PremiumLookAndFeel>(palette);
     setLookAndFeel(premiumLookAndFeel.get());
 
     contributorsCanvas = std::make_unique<PaintedComponent>();
@@ -407,9 +575,9 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     {
         for (const auto& cardBounds : contributorCardBounds)
         {
-            graphics.setColour(cardColour);
+            graphics.setColour(palette.card);
             graphics.fillRoundedRectangle(cardBounds.toFloat(), 10.0f);
-            graphics.setColour(taupeColour.withAlpha(0.24f));
+            graphics.setColour(palette.secondaryText.withAlpha(0.24f));
             graphics.drawRoundedRectangle(cardBounds.toFloat(), 10.0f, 1.0f);
         }
     };
@@ -419,21 +587,21 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
 
     titleLabel.setText("Split Sheet Studio", juce::dontSendNotification);
     titleLabel.setJustificationType(juce::Justification::centredLeft);
-    titleLabel.setColour(juce::Label::textColourId, ivoryColour);
+    titleLabel.setColour(juce::Label::textColourId, palette.primaryText);
     titleLabel.setFont(juce::FontOptions(25.0f, juce::Font::bold));
 
-    subtitleLabel.setText("Rights clarity for real studio sessions.  |  Powered by Blak Marigold", juce::dontSendNotification);
+    subtitleLabel.setText("Rights Clarity for Music Projects", juce::dontSendNotification);
     subtitleLabel.setJustificationType(juce::Justification::centredLeft);
-    subtitleLabel.setColour(juce::Label::textColourId, subduedText);
+    subtitleLabel.setColour(juce::Label::textColourId, palette.secondaryText);
     subtitleLabel.setFont(juce::FontOptions(12.5f));
 
     statusLabel.setJustificationType(juce::Justification::centredLeft);
-    statusLabel.setColour(juce::Label::textColourId, subduedText);
+    statusLabel.setColour(juce::Label::textColourId, palette.secondaryText);
     statusLabel.setFont(juce::FontOptions(14.0f, juce::Font::plain));
 
     statusBadgeLabel.setText("SYSTEM", juce::dontSendNotification);
     statusBadgeLabel.setJustificationType(juce::Justification::centred);
-    statusBadgeLabel.setColour(juce::Label::textColourId, ivoryColour);
+    statusBadgeLabel.setColour(juce::Label::textColourId, palette.primaryText);
     statusBadgeLabel.setFont(juce::FontOptions(12.5f, juce::Font::bold));
     statusBadgeLabel.setOpaque(true);
 
@@ -441,7 +609,7 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     emailLabel.setText("Email", juce::dontSendNotification);
     passwordLabel.setText("Password", juce::dontSendNotification);
     welcomeLabel.setJustificationType(juce::Justification::centredLeft);
-    welcomeLabel.setColour(juce::Label::textColourId, ivoryColour);
+    welcomeLabel.setColour(juce::Label::textColourId, palette.primaryText);
     welcomeLabel.setFont(juce::FontOptions(15.0f, juce::Font::bold));
 
     songTitleLabel.setText("Song Title", juce::dontSendNotification);
@@ -455,11 +623,11 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     contributorsLabel.setText("Contributors", juce::dontSendNotification);
     contributorsHintLabel.setText("Includes legal name, contact, PRO details, shares, typed signature, and drawn signature.", juce::dontSendNotification);
     contributorsHintLabel.setJustificationType(juce::Justification::centredLeft);
-    contributorsHintLabel.setColour(juce::Label::textColourId, subduedText);
+    contributorsHintLabel.setColour(juce::Label::textColourId, palette.secondaryText);
     contributorsHintLabel.setFont(juce::FontOptions(12.5f));
 
     totalsLabel.setJustificationType(juce::Justification::centredLeft);
-    totalsLabel.setColour(juce::Label::textColourId, subduedText);
+    totalsLabel.setColour(juce::Label::textColourId, palette.secondaryText);
     totalsLabel.setFont(juce::FontOptions(12.5f, juce::Font::bold));
 
     recipientsLabel.setText("Recipients", juce::dontSendNotification);
@@ -467,15 +635,15 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     agreementsLabel.setText("Confirmations", juce::dontSendNotification);
     reviewSummaryTitleLabel.setText("Review Summary", juce::dontSendNotification);
     reviewSummaryLabel.setJustificationType(juce::Justification::topLeft);
-    reviewSummaryLabel.setColour(juce::Label::textColourId, subduedText);
+    reviewSummaryLabel.setColour(juce::Label::textColourId, palette.secondaryText);
     reviewSummaryLabel.setFont(juce::FontOptions(13.0f));
 
     validationLabel.setJustificationType(juce::Justification::centredLeft);
-    validationLabel.setColour(juce::Label::textColourId, subduedText);
+    validationLabel.setColour(juce::Label::textColourId, palette.secondaryText);
     validationLabel.setFont(juce::FontOptions(12.5f));
 
     updateNoticeLabel.setJustificationType(juce::Justification::centredLeft);
-    updateNoticeLabel.setColour(juce::Label::textColourId, accentColour);
+    updateNoticeLabel.setColour(juce::Label::textColourId, palette.accent);
     updateNoticeLabel.setFont(juce::FontOptions(12.0f, juce::Font::bold));
 
     for (auto* label : std::array<juce::Label*, 14>{
@@ -483,26 +651,26 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
              &dateLabel, &sessionLocationLabel, &iswcLabel, &isrcLabel, &notesLabel,
              &contributorsLabel, &recipientsLabel, &additionalRecipientsLabel, &agreementsLabel })
     {
-        styleLabel(*label);
+        styleLabel(*label, palette);
     }
-    styleLabel(reviewSummaryTitleLabel);
+    styleLabel(reviewSummaryTitleLabel, palette);
 
     baseUrlEditor.setText(processor.getApiClient().getBaseUrl(), juce::dontSendNotification);
-    styleEditor(baseUrlEditor, "https://app.splitsheetstudio.com");
+    styleEditor(baseUrlEditor, "https://app.splitsheetstudio.com", palette);
     emailEditor.setText(processor.getUserEmail(), juce::dontSendNotification);
     emailEditor.setInputRestrictions(256);
-    styleEditor(emailEditor, "name@example.com");
+    styleEditor(emailEditor, "name@example.com", palette);
     passwordEditor.setPasswordCharacter('*');
-    styleEditor(passwordEditor, "Password");
-    styleEditor(songTitleEditor, "Song title");
-    styleEditor(alternateTitleEditor, "Alternate title");
-    styleEditor(dateEditor, "YYYY-MM-DD");
-    styleEditor(sessionLocationEditor, "City, studio, or room");
-    styleEditor(iswcEditor, "ISWC");
-    styleEditor(isrcEditor, "ISRC");
-    styleEditor(notesEditor, "Session notes", true);
-    styleEditor(additionalRecipientOneEditor, "email@example.com");
-    styleEditor(additionalRecipientTwoEditor, "email@example.com");
+    styleEditor(passwordEditor, "Password", palette);
+    styleEditor(songTitleEditor, "Song title", palette);
+    styleEditor(alternateTitleEditor, "Alternate title", palette);
+    styleEditor(dateEditor, "YYYY-MM-DD", palette);
+    styleEditor(sessionLocationEditor, "City, studio, or room", palette);
+    styleEditor(iswcEditor, "ISWC", palette);
+    styleEditor(isrcEditor, "ISRC", palette);
+    styleEditor(notesEditor, "Session notes", palette, true);
+    styleEditor(additionalRecipientOneEditor, "email@example.com", palette);
+    styleEditor(additionalRecipientTwoEditor, "email@example.com", palette);
 
     dateEditor.setText(todayIso(), juce::dontSendNotification);
 
@@ -519,29 +687,43 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     inviteToggle.setButtonText("Collect signatures by invite links instead of in-session signing");
     supersedesPreviousToggle.setButtonText("This split supersedes any previous draft for this song.");
     allPartiesAgreeToggle.setButtonText("All parties reviewed and agree to these splits.");
-    styleToggle(inviteToggle);
-    styleToggle(supersedesPreviousToggle);
-    styleToggle(allPartiesAgreeToggle);
+    styleToggle(inviteToggle, palette);
+    styleToggle(supersedesPreviousToggle, palette);
+    styleToggle(allPartiesAgreeToggle, palette);
 
     inviteToggle.setToggleState(true, juce::dontSendNotification);
     inviteToggle.onClick = [this] { refreshReviewSummary(); refreshSubmitState(); };
     supersedesPreviousToggle.onClick = [this] { refreshReviewSummary(); refreshSubmitState(); };
     allPartiesAgreeToggle.onClick = [this] { refreshReviewSummary(); refreshSubmitState(); };
 
-    styleButton(settingsButton);
-    styleButton(readyButton);
-    styleButton(loginButton, accentColour, panelColour);
-    styleButton(createAccountButton);
-    styleButton(forgotPasswordButton);
-    styleButton(updateDownloadButton, juce::Colour::fromRGB(78, 51, 35), ivoryColour);
-    styleButton(addContributorButton);
-    styleButton(setEqualSplitsButton);
-    styleButton(nextStepButton);
-    styleButton(submitButton, accentColour, panelColour);
-    styleButton(logoutButton);
-    styleStepButton(songStepButton, true);
-    styleStepButton(contributorsStepButton, false);
-    styleStepButton(reviewStepButton, false);
+    styleButton(settingsButton, palette);
+    styleButton(readyButton, palette);
+    styleButton(loginButton, palette, palette.accent, palette.card);
+    styleButton(createAccountButton, palette);
+    styleButton(forgotPasswordButton, palette);
+    styleButton(updateDownloadButton, palette, palette.panel, palette.primaryText);
+    styleButton(addContributorButton, palette);
+    styleButton(setEqualSplitsButton, palette);
+    styleButton(nextStepButton, palette);
+    styleButton(submitButton, palette, palette.accent, palette.card);
+    styleButton(logoutButton, palette);
+    styleStepButton(songStepButton, true, palette);
+    styleStepButton(contributorsStepButton, false, palette);
+    styleStepButton(reviewStepButton, false, palette);
+
+    themeSelector.addItem("Bronze", static_cast<int>(SplitSheetTheme::bronze));
+    themeSelector.addItem("Paper Thin", static_cast<int>(SplitSheetTheme::paperThin));
+    themeSelector.addItem("Denim", static_cast<int>(SplitSheetTheme::denim));
+    themeSelector.addItem("Soft", static_cast<int>(SplitSheetTheme::soft));
+    themeSelector.addItem("Speakeasy", static_cast<int>(SplitSheetTheme::speakeasy));
+    themeSelector.addItem("Plush", static_cast<int>(SplitSheetTheme::plush));
+    themeSelector.setSelectedId(static_cast<int>(currentTheme), juce::dontSendNotification);
+    themeSelector.setTooltip("Choose your Split Sheet Studio skin");
+    styleComboBox(themeSelector, "Choose skin", palette);
+    themeSelector.onChange = [this]
+    {
+        applyTheme(static_cast<SplitSheetTheme>(themeSelector.getSelectedId()), true);
+    };
 
     settingsButton.addListener(this);
     readyButton.addListener(this);
@@ -558,7 +740,7 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     submitButton.addListener(this);
     logoutButton.addListener(this);
 
-    for (auto* component : std::array<juce::Component*, 34>{
+    for (auto* component : std::array<juce::Component*, 35>{
              &titleLabel, &subtitleLabel, &statusBadgeLabel, &statusLabel, &settingsButton,
              &baseUrlLabel, &baseUrlEditor, &readyButton, &emailLabel, &emailEditor,
              &passwordLabel, &passwordEditor, &loginButton, &createAccountButton,
@@ -566,7 +748,7 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
              &contributorsStepButton, &reviewStepButton, &welcomeLabel, &songTitleLabel,
              &songTitleEditor, &alternateTitleLabel, &alternateTitleEditor, &dateLabel,
              &dateEditor, &sessionLocationLabel, &sessionLocationEditor, &iswcLabel,
-             &iswcEditor, &isrcLabel, &isrcEditor, &notesLabel, &notesEditor })
+             &iswcEditor, &isrcLabel, &isrcEditor, &notesLabel, &notesEditor, &themeSelector })
     {
         addAndMakeVisible(*component);
     }
@@ -601,12 +783,21 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     nextStepButton.setButtonText("Continue  >");
     submitButton.setButtonText("Send Split Sheet  >");
 
-    updateStatus("Ready to connect", neutralColour);
-    setSize(1000, 760);
+    updateStatus("Ready to connect", palette.neutral);
+    setResizable(true, false);
+    setResizeLimits(loginMinEditorWidth, loginMinEditorHeight, maxEditorWidth, maxEditorHeight);
+    setSize(defaultEditorWidth, defaultEditorHeight);
 
-    checkForUpdates();
-    restoreSessionIfNeeded();
+    if (backendScreenshotMode)
+        populateDemoScreenshotState();
+    else
+    {
+        checkForUpdates();
+        restoreSessionIfNeeded();
+    }
+
     refreshViewState();
+    maybeGenerateBackendScreenshots();
 }
 
 SplitSheetStudioEditor::~SplitSheetStudioEditor()
@@ -634,36 +825,132 @@ SplitSheetStudioEditor::~SplitSheetStudioEditor()
     }
 }
 
+void SplitSheetStudioEditor::applyTheme(SplitSheetTheme theme, bool persist)
+{
+    if (theme < SplitSheetTheme::bronze || theme > SplitSheetTheme::plush)
+        theme = SplitSheetTheme::bronze;
+
+    currentTheme = theme;
+    palette = paletteForTheme(theme);
+    premiumLookAndFeel->setPalette(palette);
+    themeSelector.setSelectedId(static_cast<int>(theme), juce::dontSendNotification);
+    restyleControls();
+
+    if (persist)
+        processor.setThemeKey(keyForTheme(theme));
+
+    repaint();
+    contributorsCanvas->repaint();
+}
+
+void SplitSheetStudioEditor::restyleControls()
+{
+    titleLabel.setColour(juce::Label::textColourId, palette.primaryText);
+    subtitleLabel.setColour(juce::Label::textColourId, palette.secondaryText);
+    statusLabel.setColour(juce::Label::textColourId, palette.secondaryText);
+    statusBadgeLabel.setColour(juce::Label::textColourId, palette.primaryText);
+    welcomeLabel.setColour(juce::Label::textColourId, palette.primaryText);
+    contributorsHintLabel.setColour(juce::Label::textColourId, palette.secondaryText);
+    totalsLabel.setColour(juce::Label::textColourId, palette.secondaryText);
+    reviewSummaryLabel.setColour(juce::Label::textColourId, palette.secondaryText);
+    validationLabel.setColour(juce::Label::textColourId, palette.secondaryText);
+    updateNoticeLabel.setColour(juce::Label::textColourId, palette.accent);
+
+    for (auto* label : std::array<juce::Label*, 15>{
+             &baseUrlLabel, &emailLabel, &passwordLabel, &songTitleLabel, &alternateTitleLabel,
+             &dateLabel, &sessionLocationLabel, &iswcLabel, &isrcLabel, &notesLabel,
+             &contributorsLabel, &recipientsLabel, &additionalRecipientsLabel, &agreementsLabel,
+             &reviewSummaryTitleLabel })
+    {
+        styleLabel(*label, palette);
+    }
+
+    styleEditor(baseUrlEditor, "https://app.splitsheetstudio.com", palette);
+    styleEditor(emailEditor, "name@example.com", palette);
+    styleEditor(passwordEditor, "Password", palette);
+    styleEditor(songTitleEditor, "Song title", palette);
+    styleEditor(alternateTitleEditor, "Alternate title", palette);
+    styleEditor(dateEditor, "YYYY-MM-DD", palette);
+    styleEditor(sessionLocationEditor, "City, studio, or room", palette);
+    styleEditor(iswcEditor, "ISWC", palette);
+    styleEditor(isrcEditor, "ISRC", palette);
+    styleEditor(notesEditor, "Session notes", palette, true);
+    styleEditor(additionalRecipientOneEditor, "email@example.com", palette);
+    styleEditor(additionalRecipientTwoEditor, "email@example.com", palette);
+
+    styleToggle(inviteToggle, palette);
+    styleToggle(supersedesPreviousToggle, palette);
+    styleToggle(allPartiesAgreeToggle, palette);
+    for (auto& button : recipientButtons)
+        styleToggle(*button, palette);
+
+    styleButton(settingsButton, palette);
+    styleButton(readyButton, palette);
+    styleButton(loginButton, palette, palette.accent, palette.card);
+    styleButton(createAccountButton, palette);
+    styleButton(forgotPasswordButton, palette);
+    styleButton(updateDownloadButton, palette, palette.panel, palette.primaryText);
+    styleButton(addContributorButton, palette);
+    styleButton(setEqualSplitsButton, palette);
+    styleButton(nextStepButton, palette);
+    styleButton(submitButton, palette, palette.accent, palette.card);
+    styleButton(logoutButton, palette);
+    styleStepButton(songStepButton, currentStep == Step::song, palette);
+    styleStepButton(contributorsStepButton, currentStep == Step::contributors, palette);
+    styleStepButton(reviewStepButton, currentStep == Step::review, palette);
+    styleComboBox(themeSelector, "Choose skin", palette);
+
+    for (auto& row : contributorRows)
+    {
+        row->titleLabel->setColour(juce::Label::textColourId, palette.primaryText);
+        row->signatureLabel->setColour(juce::Label::textColourId, palette.secondaryText);
+        styleEditor(*row->legalName, "Legal name", palette);
+        styleComboBox(*row->role, "Role", palette);
+        styleEditor(*row->address, "Address", palette);
+        styleEditor(*row->phone, "Phone", palette);
+        styleEditor(*row->email, "Email", palette);
+        styleEditor(*row->pro, "PRO", palette);
+        styleEditor(*row->ipi, "IPI #", palette);
+        styleEditor(*row->publisherName, "Publisher name", palette);
+        styleEditor(*row->publisherIpi, "Publisher IPI #", palette);
+        styleEditor(*row->writerShare, "Writer share %", palette);
+        styleEditor(*row->publisherShare, "Publisher share %", palette);
+        styleEditor(*row->typedSignatureName, "Typed signature name", palette);
+        row->signaturePad->setPalette(palette);
+        styleButton(*row->clearSignatureButton, palette);
+        styleButton(*row->removeButton, palette);
+    }
+}
+
 void SplitSheetStudioEditor::paint(juce::Graphics& graphics)
 {
     auto bounds = getLocalBounds().toFloat();
-    graphics.fillAll(backgroundColour);
+    graphics.fillAll(palette.background);
 
     if (!isAuthenticated())
     {
-        juce::ColourGradient bronzeGradient(juce::Colour::fromRGB(102, 70, 51), bounds.getCentreX(), 0.0f,
-                                             juce::Colour::fromRGB(25, 15, 11), bounds.getCentreX(), bounds.getBottom(), false);
-        bronzeGradient.addColour(0.42, juce::Colour::fromRGB(68, 45, 33));
-        bronzeGradient.addColour(0.76, juce::Colour::fromRGB(40, 25, 18));
-        graphics.setGradientFill(bronzeGradient);
+        juce::ColourGradient skinGradient(palette.panel.brighter(0.18f), bounds.getCentreX(), 0.0f,
+                                           palette.background.darker(0.12f), bounds.getCentreX(), bounds.getBottom(), false);
+        skinGradient.addColour(0.42, palette.panel);
+        skinGradient.addColour(0.76, palette.card);
+        graphics.setGradientFill(skinGradient);
         graphics.fillRoundedRectangle(bounds.reduced(10.0f), 16.0f);
 
-        const auto bronzeTexture = juce::ImageCache::getFromMemory(BinaryData::bronzetexture_png,
-                                                                   BinaryData::bronzetexture_pngSize);
-        if (bronzeTexture.isValid())
+        const auto skinTexture = textureForTheme(currentTheme);
+        if (skinTexture.isValid())
         {
             graphics.saveState();
-            graphics.setOpacity(0.16f);
-            graphics.drawImageWithin(bronzeTexture, 10, 10, getWidth() - 20, getHeight() - 20,
+            graphics.setOpacity(palette.textureOpacity);
+            graphics.drawImageWithin(skinTexture, 10, 10, getWidth() - 20, getHeight() - 20,
                                      juce::RectanglePlacement::fillDestination);
             graphics.restoreState();
         }
 
-        graphics.setColour(accentColour.withAlpha(0.035f));
+        graphics.setColour(palette.accent.withAlpha(0.035f));
         for (float y = 16.0f; y < bounds.getBottom() - 12.0f; y += 6.0f)
             graphics.drawHorizontalLine(static_cast<int>(y), 12.0f, bounds.getRight() - 12.0f);
 
-        graphics.setColour(accentColour.withAlpha(0.24f));
+        graphics.setColour(palette.accent.withAlpha(0.24f));
         juce::Path leftFacet;
         leftFacet.startNewSubPath(12.0f, 150.0f);
         leftFacet.lineTo(185.0f, 150.0f);
@@ -675,7 +962,7 @@ void SplitSheetStudioEditor::paint(juce::Graphics& graphics)
         rightFacet.lineTo(bounds.getRight() - 245.0f, bounds.getBottom() - 16.0f);
         graphics.strokePath(rightFacet, juce::PathStrokeType(1.0f));
 
-        graphics.setColour(taupeColour.withAlpha(0.48f));
+        graphics.setColour(palette.secondaryText.withAlpha(0.48f));
         graphics.drawRoundedRectangle(bounds.reduced(10.0f), 16.0f, 1.0f);
         auto topAccent = bounds.reduced(10.0f).removeFromTop(4.0f);
         juce::ColourGradient accentGradient(juce::Colour::fromRGB(255, 221, 178), topAccent.getX(), topAccent.getY(),
@@ -684,38 +971,35 @@ void SplitSheetStudioEditor::paint(juce::Graphics& graphics)
         graphics.fillRoundedRectangle(topAccent, 3.0f);
 
         auto markArea = juce::Rectangle<float>(0.0f, 0.0f, 70.0f, 70.0f).withCentre(juce::Point<float>(bounds.getCentreX(), 54.0f));
-        drawBrandMark(graphics, markArea);
-        graphics.setColour(ivoryColour);
+        drawBrandMark(graphics, markArea, palette);
+        graphics.setColour(palette.primaryText);
         graphics.setFont(juce::FontOptions(21.0f, juce::Font::bold));
         graphics.drawFittedText("S P L I T S H E E T   S T U D I O", juce::Rectangle<int>(130, 94, getWidth() - 260, 28), juce::Justification::centred, 1);
-        graphics.setColour(subduedText);
+        graphics.setColour(palette.secondaryText);
         graphics.setFont(juce::FontOptions(10.0f, juce::Font::plain));
-        graphics.drawFittedText("RIGHTS CLARITY FOR REAL STUDIO SESSIONS", juce::Rectangle<int>(220, 124, getWidth() - 440, 18), juce::Justification::centred, 1);
-        graphics.setColour(accentColour);
-        graphics.setFont(juce::FontOptions(8.5f, juce::Font::bold));
-        graphics.drawFittedText("POWERED BY BLAK MARIGOLD", juce::Rectangle<int>(300, 143, getWidth() - 600, 16), juce::Justification::centred, 1);
+        graphics.drawFittedText("Rights Clarity for Music Projects", juce::Rectangle<int>(220, 124, getWidth() - 440, 18), juce::Justification::centred, 1);
 
         auto loginCard = juce::Rectangle<int>(0, 0, 520, updateAvailable ? 500 : 440).withCentre(juce::Point<int>(getWidth() / 2, updateAvailable ? 410 : 390));
-        juce::ColourGradient cardGradient(juce::Colour::fromRGB(105, 76, 58), static_cast<float>(loginCard.getX()), static_cast<float>(loginCard.getY()),
-                                          juce::Colour::fromRGB(52, 36, 28), static_cast<float>(loginCard.getRight()), static_cast<float>(loginCard.getBottom()), false);
+        juce::ColourGradient cardGradient(palette.panel.brighter(0.12f), static_cast<float>(loginCard.getX()), static_cast<float>(loginCard.getY()),
+                                          palette.card, static_cast<float>(loginCard.getRight()), static_cast<float>(loginCard.getBottom()), false);
         graphics.setGradientFill(cardGradient);
         graphics.fillRoundedRectangle(loginCard.toFloat(), 14.0f);
-        graphics.setColour(juce::Colour::fromRGB(255, 200, 143).withAlpha(0.68f));
+        graphics.setColour(palette.accent.withAlpha(0.68f));
         graphics.drawRoundedRectangle(loginCard.toFloat(), 14.0f, 1.0f);
         graphics.setColour(juce::Colours::black.withAlpha(0.32f));
         graphics.drawRoundedRectangle(loginCard.toFloat().translated(0.0f, 4.0f), 14.0f, 4.0f);
 
-        graphics.setColour(ivoryColour);
+        graphics.setColour(palette.primaryText);
         graphics.setFont(juce::FontOptions(15.0f, juce::Font::bold));
         graphics.drawFittedText("S I G N   I N", juce::Rectangle<int>(loginCard.getX() + 32, loginCard.getY() + 22, loginCard.getWidth() - 64, 22), juce::Justification::centred, 1);
-        graphics.setColour(accentColour.withAlpha(0.5f));
+        graphics.setColour(palette.accent.withAlpha(0.5f));
         graphics.drawHorizontalLine(loginCard.getY() + 54, static_cast<float>(loginCard.getX() + 42), static_cast<float>(loginCard.getRight() - 42));
         graphics.drawHorizontalLine(loginCard.getY() + 301, static_cast<float>(loginCard.getX() + 38), static_cast<float>(getWidth() / 2 - 22));
         graphics.drawHorizontalLine(loginCard.getY() + 301, static_cast<float>(getWidth() / 2 + 22), static_cast<float>(loginCard.getRight() - 38));
-        graphics.setColour(ivoryColour.withAlpha(0.86f));
+        graphics.setColour(palette.primaryText.withAlpha(0.86f));
         graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
         graphics.drawFittedText("OR", juce::Rectangle<int>(getWidth() / 2 - 18, loginCard.getY() + 292, 36, 18), juce::Justification::centred, 1);
-        graphics.setColour(accentColour.withAlpha(0.85f));
+        graphics.setColour(palette.accent.withAlpha(0.85f));
         graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
         graphics.drawFittedText("BLAK MARIGOLD STUDIO  |  SESSION RIGHTS SYSTEM",
                                 juce::Rectangle<int>(loginCard.getX() + 30, loginCard.getBottom() - 25, loginCard.getWidth() - 60, 14),
@@ -723,34 +1007,44 @@ void SplitSheetStudioEditor::paint(juce::Graphics& graphics)
         return;
     }
 
-    juce::ColourGradient gradient(panelColour, bounds.getX(), bounds.getY(),
-                                  juce::Colour::fromRGB(25, 15, 11), bounds.getRight(), bounds.getBottom(),
+    juce::ColourGradient gradient(palette.panel, bounds.getX(), bounds.getY(),
+                                  palette.background, bounds.getRight(), bounds.getBottom(),
                                   false);
     graphics.setGradientFill(gradient);
     graphics.fillRoundedRectangle(bounds.reduced(10.0f), 16.0f);
 
-    graphics.setColour(taupeColour.withAlpha(0.42f));
+    const auto skinTexture = textureForTheme(currentTheme);
+    if (skinTexture.isValid())
+    {
+        graphics.saveState();
+        graphics.setOpacity(palette.textureOpacity * 0.72f);
+        graphics.drawImageWithin(skinTexture, 10, 10, getWidth() - 20, getHeight() - 20,
+                                 juce::RectanglePlacement::fillDestination);
+        graphics.restoreState();
+    }
+
+    graphics.setColour(palette.secondaryText.withAlpha(0.42f));
     graphics.drawRoundedRectangle(bounds.reduced(10.0f), 16.0f, 1.0f);
 
     auto topAccent = bounds.reduced(10.0f).removeFromTop(5.0f);
-    graphics.setColour(accentColour);
+    graphics.setColour(palette.accent);
     graphics.fillRoundedRectangle(topAccent.removeFromLeft(318.0f), 3.0f);
 
-    drawBrandMark(graphics, juce::Rectangle<float>(26.0f, 23.0f, 44.0f, 44.0f));
-    graphics.setColour(taupeColour.withAlpha(0.7f));
+    drawBrandMark(graphics, juce::Rectangle<float>(26.0f, 23.0f, 44.0f, 44.0f), palette);
+    graphics.setColour(palette.secondaryText.withAlpha(0.7f));
     graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
     graphics.drawFittedText("BLAK MARIGOLD STUDIO  |  SESSION RIGHTS SYSTEM",
                             juce::Rectangle<int>(getWidth() - 330, 26, 300, 14),
                             juce::Justification::centredRight, 1);
-    graphics.setColour(taupeColour.withAlpha(0.18f));
+    graphics.setColour(palette.secondaryText.withAlpha(0.18f));
     graphics.drawHorizontalLine(80, 24.0f, static_cast<float>(getWidth() - 24));
 
     auto contentArea = getLocalBounds().reduced(24);
     contentArea.removeFromTop(168 + (settingsVisible ? 68 : 0));
     contentArea.removeFromBottom(58);
-    graphics.setColour(sectionColour.withAlpha(0.88f));
+    graphics.setColour(palette.section.withAlpha(0.91f));
     graphics.fillRoundedRectangle(contentArea.toFloat(), 14.0f);
-    graphics.setColour(taupeColour.withAlpha(0.22f));
+    graphics.setColour(palette.secondaryText.withAlpha(0.22f));
     graphics.drawRoundedRectangle(contentArea.toFloat(), 14.0f, 1.0f);
 }
 
@@ -758,6 +1052,7 @@ void SplitSheetStudioEditor::resized()
 {
     if (!isAuthenticated())
     {
+        themeSelector.setBounds(getWidth() - 142, 26, 108, 28);
         auto loginCard = juce::Rectangle<int>(0, 0, 520, 440).withCentre(juce::Point<int>(getWidth() / 2, 390));
         auto loginArea = loginCard.reduced(32);
         loginArea.removeFromTop(58);
@@ -798,6 +1093,8 @@ void SplitSheetStudioEditor::resized()
     statusBadgeLabel.setBounds(statusRow.removeFromLeft(92));
     statusRow.removeFromLeft(10);
     settingsButton.setBounds(statusRow.removeFromRight(170));
+    statusRow.removeFromRight(8);
+    themeSelector.setBounds(statusRow.removeFromRight(108));
     statusRow.removeFromRight(10);
     if (updateAvailable)
     {
@@ -966,7 +1263,7 @@ void SplitSheetStudioEditor::buttonClicked(juce::Button* button)
     {
         juce::Component::SafePointer<SplitSheetStudioEditor> safeThis(this);
         processor.getApiClient().setBaseUrl(baseUrlEditor.getText());
-        updateStatus("Checking connection...", warningColour);
+        updateStatus("Checking connection...", palette.warning);
         setBusy(true);
 
         processor.getApiClient().fetchReady([safeThis](SplitSheetApiClient::ReadyResponse response)
@@ -976,7 +1273,7 @@ void SplitSheetStudioEditor::buttonClicked(juce::Button* button)
 
             auto& editor = *safeThis;
             editor.updateStatus(response.ok ? "Connection is ready." : "Could not reach SplitSheet.",
-                                response.ok ? successColour : errorColour);
+                                response.ok ? editor.palette.success : editor.palette.error);
             editor.setBusy(false);
         });
         return;
@@ -1117,30 +1414,32 @@ void SplitSheetStudioEditor::buildContributorRow()
     row->removeButton = std::make_unique<juce::TextButton>("X");
 
     row->titleLabel->setJustificationType(juce::Justification::centredLeft);
-    row->titleLabel->setColour(juce::Label::textColourId, juce::Colours::white);
+    row->titleLabel->setColour(juce::Label::textColourId, palette.primaryText);
     row->titleLabel->setFont(juce::FontOptions(13.5f, juce::Font::bold));
 
     row->signatureLabel->setText("Draw signature", juce::dontSendNotification);
-    styleLabel(*row->signatureLabel, 12.5f, true, subduedText);
+    styleLabel(*row->signatureLabel, palette, 12.5f, true);
+    row->signatureLabel->setColour(juce::Label::textColourId, palette.secondaryText);
 
-    styleEditor(*row->legalName, "Legal name");
-    styleComboBox(*row->role, "Role");
+    styleEditor(*row->legalName, "Legal name", palette);
+    styleComboBox(*row->role, "Role", palette);
     row->role->addItem("Writer", 1);
     row->role->addItem("Producer", 2);
     row->role->addItem("Artist", 3);
     row->role->addItem("Composer", 4);
     row->role->addItem("Songwriter", 5);
     row->role->addItem("Other", 6);
-    styleEditor(*row->address, "Address");
-    styleEditor(*row->phone, "Phone");
-    styleEditor(*row->email, "Email");
-    styleEditor(*row->pro, "PRO");
-    styleEditor(*row->ipi, "IPI #");
-    styleEditor(*row->publisherName, "Publisher name");
-    styleEditor(*row->publisherIpi, "Publisher IPI #");
-    styleEditor(*row->writerShare, "Writer share %");
-    styleEditor(*row->publisherShare, "Publisher share %");
-    styleEditor(*row->typedSignatureName, "Typed signature name");
+    styleEditor(*row->address, "Address", palette);
+    styleEditor(*row->phone, "Phone", palette);
+    styleEditor(*row->email, "Email", palette);
+    styleEditor(*row->pro, "PRO", palette);
+    styleEditor(*row->ipi, "IPI #", palette);
+    styleEditor(*row->publisherName, "Publisher name", palette);
+    styleEditor(*row->publisherIpi, "Publisher IPI #", palette);
+    styleEditor(*row->writerShare, "Writer share %", palette);
+    styleEditor(*row->publisherShare, "Publisher share %", palette);
+    styleEditor(*row->typedSignatureName, "Typed signature name", palette);
+    row->signaturePad->setPalette(palette);
 
     row->writerShare->setInputRestrictions(6, "0123456789.");
     row->publisherShare->setInputRestrictions(6, "0123456789.");
@@ -1165,8 +1464,8 @@ void SplitSheetStudioEditor::buildContributorRow()
     row->publisherShare->onTextChange = onChange;
     row->typedSignatureName->onTextChange = onChange;
 
-    styleButton(*row->clearSignatureButton);
-    styleButton(*row->removeButton);
+    styleButton(*row->clearSignatureButton, palette);
+    styleButton(*row->removeButton, palette);
     row->clearSignatureButton->addListener(this);
     row->removeButton->addListener(this);
 
@@ -1211,9 +1510,14 @@ void SplitSheetStudioEditor::removeContributorRow(int index)
 void SplitSheetStudioEditor::refreshViewState()
 {
     const auto authed = isAuthenticated();
-    const auto targetHeight = authed ? 760 : (updateAvailable ? 700 : 650);
-    if (getWidth() != 1000 || getHeight() != targetHeight)
-        setSize(1000, targetHeight);
+    const auto minWidth = authed ? authedMinEditorWidth : loginMinEditorWidth;
+    const auto minHeight = authed ? authedMinEditorHeight : (updateAvailable ? loginUpdateMinEditorHeight : loginMinEditorHeight);
+    setResizeLimits(minWidth, minHeight, maxEditorWidth, maxEditorHeight);
+
+    const auto targetWidth = juce::jmax(getWidth(), minWidth);
+    const auto targetHeight = juce::jmax(getHeight(), minHeight);
+    if (targetWidth != getWidth() || targetHeight != getHeight())
+        setSize(targetWidth, targetHeight);
 
     titleLabel.setVisible(authed);
     subtitleLabel.setVisible(authed);
@@ -1233,6 +1537,7 @@ void SplitSheetStudioEditor::refreshViewState()
     forgotPasswordButton.setVisible(!authed);
     updateNoticeLabel.setVisible(updateAvailable);
     updateDownloadButton.setVisible(updateAvailable);
+    themeSelector.setVisible(true);
 
     songStepButton.setVisible(authed);
     contributorsStepButton.setVisible(authed);
@@ -1335,7 +1640,7 @@ void SplitSheetStudioEditor::checkForUpdates()
             const juce::String version = response.latestVersion.isNotEmpty() ? response.latestVersion : "latest";
             editor.updateNoticeLabel.setText(prefix + "Split Sheet Studio " + version, juce::dontSendNotification);
             editor.updateDownloadButton.setButtonText(response.updateRequired ? "UPDATE REQUIRED" : "DOWNLOAD UPDATE");
-            editor.updateStatus(prefix + version, response.updateRequired ? errorColour : warningColour);
+            editor.updateStatus(prefix + version, response.updateRequired ? editor.palette.error : editor.palette.warning);
         }
         else
         {
@@ -1352,7 +1657,7 @@ void SplitSheetStudioEditor::restoreSessionIfNeeded()
         return;
 
     restoringSession = true;
-    updateStatus("Restoring session...", warningColour);
+    updateStatus("Restoring session...", palette.warning);
     setBusy(true);
 
     juce::Component::SafePointer<SplitSheetStudioEditor> safeThis(this);
@@ -1372,12 +1677,12 @@ void SplitSheetStudioEditor::restoreSessionIfNeeded()
             editor.processor.setUserEmail(response.userEmail);
             editor.processor.setDisplayName(response.displayName);
             editor.updateStatus("Signed in as " + (response.displayName.isNotEmpty() ? response.displayName : response.userEmail),
-                                successColour);
+                                editor.palette.success);
         }
         else
         {
             editor.processor.clearSession();
-            editor.updateStatus("Sign in to continue.", neutralColour);
+            editor.updateStatus("Sign in to continue.", editor.palette.neutral);
         }
 
         editor.setBusy(false);
@@ -1388,7 +1693,7 @@ void SplitSheetStudioEditor::restoreSessionIfNeeded()
 void SplitSheetStudioEditor::runLogin()
 {
     processor.getApiClient().setBaseUrl(baseUrlEditor.getText());
-    updateStatus("Signing in...", warningColour);
+    updateStatus("Signing in...", palette.warning);
     setBusy(true);
 
     juce::Component::SafePointer<SplitSheetStudioEditor> safeThis(this);
@@ -1407,13 +1712,13 @@ void SplitSheetStudioEditor::runLogin()
             editor.processor.setDisplayName(response.displayName);
             editor.passwordEditor.clear();
             editor.updateStatus("Signed in as " + (response.displayName.isNotEmpty() ? response.displayName : response.userEmail),
-                                successColour);
+                                editor.palette.success);
             editor.refreshViewState();
         }
         else
         {
             editor.updateStatus(response.errorMessage.isNotEmpty() ? response.errorMessage : "Sign in failed",
-                                errorColour);
+                                editor.palette.error);
         }
 
         editor.setBusy(false);
@@ -1425,7 +1730,7 @@ void SplitSheetStudioEditor::runLogout()
     const auto refreshToken = processor.getRefreshToken();
     processor.clearSession();
     refreshViewState();
-    updateStatus("Signed out.", neutralColour);
+    updateStatus("Signed out.", palette.neutral);
 
     if (refreshToken.isEmpty())
         return;
@@ -1442,7 +1747,7 @@ void SplitSheetStudioEditor::submitSplitSheet()
         return;
     }
 
-    updateStatus("Sending split sheet...", warningColour);
+    updateStatus("Sending split sheet...", palette.warning);
     setBusy(true);
 
     const auto payload = buildSubmissionPayload();
@@ -1456,13 +1761,13 @@ void SplitSheetStudioEditor::submitSplitSheet()
         auto& editor = *safeThis;
         if (response.ok)
         {
-            editor.updateStatus("Split sheet sent for " + response.songTitle, successColour);
+            editor.updateStatus("Split sheet sent for " + response.songTitle, editor.palette.success);
             editor.resetForm();
         }
         else
         {
             editor.updateStatus(response.errorMessage.isNotEmpty() ? response.errorMessage : "Could not send split sheet",
-                                errorColour);
+                                editor.palette.error);
         }
 
         editor.setBusy(false);
@@ -1520,9 +1825,9 @@ void SplitSheetStudioEditor::switchStep(Step step)
 
 void SplitSheetStudioEditor::updateStepButtons()
 {
-    styleStepButton(songStepButton, currentStep == Step::song);
-    styleStepButton(contributorsStepButton, currentStep == Step::contributors);
-    styleStepButton(reviewStepButton, currentStep == Step::review);
+    styleStepButton(songStepButton, currentStep == Step::song, palette);
+    styleStepButton(contributorsStepButton, currentStep == Step::contributors, palette);
+    styleStepButton(reviewStepButton, currentStep == Step::review, palette);
 }
 
 void SplitSheetStudioEditor::updateContributorTitles()
@@ -1615,7 +1920,7 @@ void SplitSheetStudioEditor::refreshRecipientButtons()
     while (recipientButtons.size() < contributorRows.size())
     {
         auto button = std::make_unique<juce::ToggleButton>();
-        styleToggle(*button);
+        styleToggle(*button, palette);
         const auto index = recipientButtons.size();
         button->onClick = [this, index]
         {
@@ -1695,6 +2000,138 @@ void SplitSheetStudioEditor::refreshSubmitState()
                             juce::dontSendNotification);
     totalsLabel.setText("Writer total: " + formatPercent(writerTotal()) + "   |   Publisher total: " + formatPercent(publisherTotal()),
                         juce::dontSendNotification);
+}
+
+void SplitSheetStudioEditor::maybeGenerateBackendScreenshots()
+{
+    if (!backendScreenshotMode || backendScreenshotQueued)
+        return;
+
+    backendScreenshotQueued = true;
+    juce::Component::SafePointer<SplitSheetStudioEditor> safeThis(this);
+    juce::MessageManager::callAsync([safeThis]
+    {
+        if (safeThis == nullptr)
+            return;
+
+        auto& editor = *safeThis;
+        if (!editor.backendScreenshotDir.exists())
+            editor.backendScreenshotDir.createDirectory();
+
+        if (auto* topLevel = editor.getTopLevelComponent())
+            topLevel->setTopLeftPosition(-30000, -30000);
+
+        editor.populateDemoScreenshotState();
+
+        editor.switchStep(Step::song);
+        editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile("plugin-song.png"),
+                                          screenshotSongWidth, screenshotSongHeight);
+
+        editor.switchStep(Step::contributors);
+        editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile("plugin-contributors.png"),
+                                          screenshotContributorsWidth, screenshotContributorsHeight);
+
+        editor.switchStep(Step::review);
+        editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile("plugin-review-send.png"),
+                                          screenshotReviewWidth, screenshotReviewHeight);
+
+        juce::Timer::callAfterDelay(150, []
+        {
+            if (auto* app = juce::JUCEApplicationBase::getInstance())
+                app->systemRequestedQuit();
+        });
+    });
+}
+
+void SplitSheetStudioEditor::populateDemoScreenshotState()
+{
+    processor.getApiClient().setBaseUrl("https://app.splitsheetstudio.com");
+    processor.setAccessToken("demo-access-token");
+    processor.setRefreshToken("demo-refresh-token");
+    processor.setUserEmail("blakmarigold@gmail.com");
+    processor.setDisplayName("Blak Marigold");
+    applyTheme(SplitSheetTheme::speakeasy, false);
+    updateStatus("Signed in as Blak Marigold", palette.success);
+
+    songTitleEditor.setText("Midnight Rights Session", juce::dontSendNotification);
+    alternateTitleEditor.setText("Midnight Rights Session (Collab Mix)", juce::dontSendNotification);
+    dateEditor.setText("2026-08-24", juce::dontSendNotification);
+    sessionLocationEditor.setText("Blak Marigold Studio", juce::dontSendNotification);
+    iswcEditor.setText("T-123.456.789-Z", juce::dontSendNotification);
+    isrcEditor.setText("US-S1Z-26-00042", juce::dontSendNotification);
+    notesEditor.setText("Remote feature workflow demo. Invite-based signatures, final delivery after all approvals.", juce::dontSendNotification);
+    additionalRecipientOneEditor.clear();
+    additionalRecipientTwoEditor.clear();
+    inviteToggle.setToggleState(true, juce::dontSendNotification);
+    supersedesPreviousToggle.setToggleState(true, juce::dontSendNotification);
+    allPartiesAgreeToggle.setToggleState(true, juce::dontSendNotification);
+
+    while (contributorRows.size() < 2)
+        buildContributorRow();
+
+    while (contributorRows.size() > 2)
+        removeContributorRow(static_cast<int>(contributorRows.size()) - 1);
+
+    if (contributorRows.size() >= 2)
+    {
+        auto& rowOne = *contributorRows[0];
+        rowOne.legalName->setText("Blak Marigold", juce::dontSendNotification);
+        rowOne.role->setSelectedId(2, juce::dontSendNotification);
+        rowOne.address->setText("Austin, TX", juce::dontSendNotification);
+        rowOne.phone->setText("512-555-0142", juce::dontSendNotification);
+        rowOne.email->setText("blakmarigold@gmail.com", juce::dontSendNotification);
+        rowOne.pro->setText("ASCAP", juce::dontSendNotification);
+        rowOne.ipi->setText("00123456789", juce::dontSendNotification);
+        rowOne.publisherName->setText("Marigold Rights Group", juce::dontSendNotification);
+        rowOne.publisherIpi->setText("00987654321", juce::dontSendNotification);
+        rowOne.writerShare->setText("50", juce::dontSendNotification);
+        rowOne.publisherShare->setText("50", juce::dontSendNotification);
+        rowOne.typedSignatureName->setText("Blak Marigold", juce::dontSendNotification);
+
+        auto& rowTwo = *contributorRows[1];
+        rowTwo.legalName->setText("Michael Smith", juce::dontSendNotification);
+        rowTwo.role->setSelectedId(3, juce::dontSendNotification);
+        rowTwo.address->setText("Atlanta, GA", juce::dontSendNotification);
+        rowTwo.phone->setText("404-555-0188", juce::dontSendNotification);
+        rowTwo.email->setText("blakmarigoldbiz@gmail.com", juce::dontSendNotification);
+        rowTwo.pro->setText("BMI", juce::dontSendNotification);
+        rowTwo.ipi->setText("00111222333", juce::dontSendNotification);
+        rowTwo.publisherName->setText("Night Signal Publishing", juce::dontSendNotification);
+        rowTwo.publisherIpi->setText("00999111222", juce::dontSendNotification);
+        rowTwo.writerShare->setText("50", juce::dontSendNotification);
+        rowTwo.publisherShare->setText("50", juce::dontSendNotification);
+        rowTwo.typedSignatureName->setText("Michael Smith", juce::dontSendNotification);
+    }
+
+    recipientSelections.assign(contributorRows.size(), true);
+    refreshRecipientButtons();
+    refreshContributorCanvas();
+    refreshReviewSummary();
+    refreshSubmitState();
+}
+
+void SplitSheetStudioEditor::writeCurrentStepScreenshot(const juce::File& outputFile, int width, int height)
+{
+    setSize(width, height);
+    refreshViewState();
+    resized();
+    repaint();
+
+    if (currentStep == Step::contributors)
+        contributorsViewport.setViewPosition(0, 0);
+
+    const auto snapshot = createComponentSnapshot(getLocalBounds(), true, 1.5f);
+    if (!snapshot.isValid())
+        return;
+
+    outputFile.getParentDirectory().createDirectory();
+    juce::FileOutputStream output(outputFile);
+    if (!output.openedOk())
+        return;
+
+    juce::PNGImageFormat png;
+    png.writeImageToStream(snapshot, output);
+    output.flush();
 }
 
 void SplitSheetStudioEditor::resetForm()
