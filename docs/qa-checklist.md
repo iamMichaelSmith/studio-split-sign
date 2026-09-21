@@ -2,7 +2,6 @@
 
 ## Goal
 Use this checklist to validate the phase-one Split Sheet Studio signature workflow quickly and consistently.
-
 Latest automated evidence: [September 2 release-validation report](./release-validation-2026-09-02.md). Its passing backend tests do not mark the manual native-client or production-delivery items below complete.
 
 ## Pre-check
