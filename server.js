@@ -704,6 +704,21 @@ function drawPdfHeader(pdf, title, subtitle) {
   pdf.moveDown(3.8);
 }
 
+function drawPdfFooter(pdf, docJson, pageNumber) {
+  const left = pdf.page.margins.left;
+  const width = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
+  const footerY = pdf.page.height - pdf.page.margins.bottom - 12;
+  const label = `Split Sheet Studio | ${safeText(docJson.id)} | Page ${pageNumber}`;
+
+  pdf.save();
+  pdf.fontSize(6.8).fillColor("#777777").text(label, left, footerY, {
+    width,
+    align: "center",
+    lineBreak: false
+  });
+  pdf.restore();
+}
+
 function drawSectionHeading(pdf, title) {
   ensurePdfSpace(pdf, 22);
   const headingTop = pdf.y + 2;
@@ -723,11 +738,17 @@ function drawKeyValueGrid(pdf, rows = []) {
   const colWidth = (usableWidth - colGap) / 2;
   const startX = pdf.page.margins.left;
   const rightX = startX + colWidth + colGap;
-  const rowHeight = 24;
 
   for (let index = 0; index < rows.length; index += 2) {
-    ensurePdfSpace(pdf, rowHeight + 10);
     const pair = rows.slice(index, index + 2);
+    const rowHeight = Math.max(24, ...pair.map((item) => {
+      const valueHeight = pdf.heightOfString(safeText(item.value), {
+        width: colWidth - 18,
+        lineGap: 1
+      });
+      return Math.ceil(valueHeight) + 17;
+    }));
+    ensurePdfSpace(pdf, rowHeight + 10);
     const rowTop = pdf.y;
 
     pair.forEach((item, offset) => {
@@ -735,7 +756,10 @@ function drawKeyValueGrid(pdf, rows = []) {
       pdf.save();
       pdf.roundedRect(x, rowTop, colWidth, rowHeight, 6).fillAndStroke("#f7f2e7", "#d7c49b");
       pdf.fillColor("#6b5b3a").fontSize(6.5).text(item.label, x + 9, rowTop + 4, { width: colWidth - 18 });
-      pdf.fillColor("#111111").fontSize(8.5).text(item.value, x + 9, rowTop + 12, { width: colWidth - 18 });
+      pdf.fillColor("#111111").fontSize(8.5).text(safeText(item.value), x + 9, rowTop + 12, {
+        width: colWidth - 18,
+        lineGap: 1
+      });
       pdf.restore();
     });
 
@@ -826,13 +850,12 @@ function drawContributorGrid(pdf, contributors, options = {}) {
   const totalWidth = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
   const cardWidth = (totalWidth - gap) / 2;
   const top = pdf.y;
-  const cardHeight = 138;
+  const cardHeight = 122;
   ensurePdfSpace(pdf, cardHeight + 4);
 
   contributors.forEach((contributor, index) => {
     const signed = Boolean(contributor.signedAt);
     const statusLabel = signed ? "Signed" : (options.pendingSummary ? "Awaiting signature" : "Pending");
-    const signatureBuffer = signatureImageBuffer(contributor.signatureData);
     const x = left + (index * (cardWidth + gap));
 
     pdf.save();
@@ -843,44 +866,31 @@ function drawContributorGrid(pdf, contributors, options = {}) {
     pdf.fillColor("#111111").fontSize(9.2).text(safeText(contributor.legalName), x + 12, top + 31, { width: cardWidth - 24 });
     pdf.fillColor(signed ? "#1f5f35" : "#8a6d1d").fontSize(7.2).text(statusLabel, x + cardWidth - 78, top + 14, { width: 66, align: "right" });
 
+    const shareLine = includesMasterRights(normalizeRightsScope(options.rightsScope))
+      ? `Writer ${formatPercent(contributor.writerShare)} | Publisher ${formatPercent(contributor.publisherShare)} | Master ${formatPercent(contributor.masterShare)}`
+      : `Writer ${formatPercent(contributor.writerShare)} | Publisher ${formatPercent(contributor.publisherShare)}`;
     const lines = [
       `Role: ${safeText(contributor.role)}`,
       `Email: ${safeText(contributor.email)}`,
-      `Phone: ${safeText(contributor.phone)}`,
-      `PRO / IPI: ${safeText(contributor.pro)} / ${safeText(contributor.ipi)}`,
-      `Pub / IPI: ${safeText(contributor.publisherName)} / ${safeText(contributor.publisherIpi)}`,
-      `Shares: W ${formatPercent(contributor.writerShare)} / P ${formatPercent(contributor.publisherShare)}`
+      shareLine,
+      `Signed: ${formatIsoLabel(contributor.signedAt)}`
     ];
-    pdf.fillColor("#222222").fontSize(7).text(lines.join("\n"), x + 12, top + 45, {
+    pdf.fillColor("#222222").fontSize(7.2).text(lines.join("\n"), x + 12, top + 47, {
       width: cardWidth - 24,
-      lineGap: 1.5
+      lineGap: 2
     });
 
-    pdf.moveTo(x + 12, top + 94).lineTo(x + cardWidth - 12, top + 94).strokeColor("#e2d8bd").stroke();
-    pdf.fillColor("#6b5b3a").fontSize(6.2).text("EXECUTED BY", x + 12, top + 99, { width: 110 });
-    pdf.moveTo(x + 12, top + 121).lineTo(x + cardWidth - 12, top + 121).strokeColor("#6f6f6f").lineWidth(0.8).stroke();
-    pdf.fillColor("#111111").fontSize(7.4).text(safeText(contributor.typedSignatureName || contributor.legalName), x + 12, top + 108, {
+    pdf.moveTo(x + 12, top + 91).lineTo(x + cardWidth - 12, top + 91).strokeColor("#e2d8bd").stroke();
+    pdf.fillColor("#6b5b3a").fontSize(6.2).text("EXECUTED BY", x + 12, top + 97, { width: 110 });
+    pdf.moveTo(x + 12, top + 113).lineTo(x + cardWidth - 12, top + 113).strokeColor("#6f6f6f").lineWidth(0.8).stroke();
+    pdf.fillColor("#111111").fontSize(7.6).text(safeText(contributor.typedSignatureName || contributor.legalName), x + 12, top + 101, {
       width: cardWidth - 24,
       align: "center"
     });
-    pdf.fontSize(6).fillColor("#666666").text("Typed name / electronic signature", x + 12, top + 123, {
+    pdf.fontSize(6).fillColor("#666666").text("Typed name / electronic signature", x + 12, top + 114, {
       width: cardWidth - 24,
       align: "center"
     });
-    pdf.fontSize(6.2).fillColor("#444444").text(`Date signed: ${formatIsoLabel(contributor.signedAt)}`, x + 12, top + 130, {
-      width: cardWidth - 24
-    });
-
-    if (signatureBuffer) {
-      try {
-        pdf.roundedRect(x + cardWidth - 94, top + 98, 82, 18, 5).fill("#fbf7ee").strokeColor("#d9ccb1").stroke();
-        pdf.image(signatureBuffer, x + cardWidth - 90, top + 100, {
-          fit: [74, 12],
-          align: "right",
-          valign: "center"
-        });
-      } catch {}
-    }
 
     pdf.restore();
   });
@@ -894,14 +904,14 @@ function drawDetailRow(pdf, label, value, x, y, width) {
 }
 
 function drawContributorDetailSection(pdf, contributor, index, rightsScope = "composition") {
-  ensurePdfSpace(pdf, 510);
+  ensurePdfSpace(pdf, 470);
   const left = pdf.page.margins.left;
   const width = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
   const top = pdf.y;
   const signatureBuffer = signatureImageBuffer(contributor.signatureData);
 
   pdf.save();
-  pdf.roundedRect(left, top, width, 510, 10).fillAndStroke("#ffffff", "#c8b68b");
+  pdf.roundedRect(left, top, width, 470, 10).fillAndStroke("#ffffff", "#c8b68b");
   pdf.roundedRect(left + 16, top + 16, 110, 22, 10).fill("#f3ead4");
   pdf.fillColor("#6b5b3a").fontSize(8).text(`CONTRIBUTOR ${index + 1}`, left + 16, top + 23, { width: 110, align: "center" });
   pdf.fillColor("#111111").fontSize(14).text(safeText(contributor.legalName), left + 140, top + 19, { width: width - 156 });
@@ -937,44 +947,44 @@ function drawContributorDetailSection(pdf, contributor, index, rightsScope = "co
   pdf.moveTo(left + 16, signatureTop).lineTo(left + width - 16, signatureTop).strokeColor("#e2d8bd").lineWidth(1).stroke();
   pdf.fillColor("#b8860b").fontSize(10).text("SIGNATURE AND EXECUTION", left + 16, signatureTop + 12, { width: 220 });
 
-  pdf.roundedRect(left + 16, signatureTop + 46, width - 32, 100, 8).fillAndStroke("#fbf7ee", "#d9ccb1");
+  pdf.roundedRect(left + 16, signatureTop + 44, width - 32, 76, 8).fillAndStroke("#fbf7ee", "#d9ccb1");
   pdf.fillColor("#7a6740").fontSize(8).text("Drawn signature on file", left + 30, signatureTop + 58, { width: 180 });
 
   if (signatureBuffer) {
     try {
-      pdf.image(signatureBuffer, left + 30, signatureTop + 76, {
-        fit: [width - 92, 42],
+      pdf.image(signatureBuffer, left + 30, signatureTop + 72, {
+        fit: [width - 92, 38],
         align: "center",
         valign: "center"
       });
     } catch {
-      pdf.fontSize(8).fillColor("#666666").text("Signature image could not be rendered from saved data.", left + 30, signatureTop + 88, {
+      pdf.fontSize(8).fillColor("#666666").text("Signature image could not be rendered from saved data.", left + 30, signatureTop + 82, {
         width: width - 92,
         align: "center"
       });
     }
   } else {
-    pdf.fontSize(8).fillColor("#666666").text("No drawn signature was saved for this contributor.", left + 30, signatureTop + 88, {
+    pdf.fontSize(8).fillColor("#666666").text("No drawn signature was saved for this contributor.", left + 30, signatureTop + 82, {
       width: width - 92,
       align: "center"
     });
   }
 
-  pdf.moveTo(left + 16, signatureTop + 184).lineTo(left + 290, signatureTop + 184).strokeColor("#6f6f6f").lineWidth(0.8).stroke();
-  pdf.fillColor("#111111").fontSize(10).text(safeText(contributor.typedSignatureName || contributor.legalName), left + 16, signatureTop + 163, {
+  pdf.moveTo(left + 16, signatureTop + 157).lineTo(left + 290, signatureTop + 157).strokeColor("#6f6f6f").lineWidth(0.8).stroke();
+  pdf.fillColor("#111111").fontSize(10).text(safeText(contributor.typedSignatureName || contributor.legalName), left + 16, signatureTop + 136, {
     width: 274,
     align: "center"
   });
-  pdf.fontSize(7).fillColor("#666666").text("Typed name / electronic signature", left + 16, signatureTop + 187, {
+  pdf.fontSize(7).fillColor("#666666").text("Typed name / electronic signature", left + 16, signatureTop + 160, {
     width: 274,
     align: "center"
   });
-  drawDetailRow(pdf, "Signed At", formatIsoLabel(contributor.signedAt), left + 330, signatureTop + 155, 180);
-  drawDetailRow(pdf, "Email Confirmation", contributor.email, left + 330, signatureTop + 195, 180);
-  drawDetailRow(pdf, "Agreement Confirmed", formatIsoLabel(contributor.agreementAcceptedAt), left + 16, signatureTop + 215, 250);
+  drawDetailRow(pdf, "Signed At", formatIsoLabel(contributor.signedAt), left + 330, signatureTop + 132, 180);
+  drawDetailRow(pdf, "Email Confirmation", contributor.email, left + 330, signatureTop + 172, 180);
+  drawDetailRow(pdf, "Agreement Confirmed", formatIsoLabel(contributor.agreementAcceptedAt), left + 16, signatureTop + 194, 250);
 
   pdf.restore();
-  pdf.y = top + 526;
+  pdf.y = top + 486;
 }
 
 function renderSplitSheetPdf(pdf, docJson, options = {}) {
@@ -983,6 +993,13 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
   const totals = splitTotals(contributors);
   const auditChecksum = checksumFor(docJson);
   const packetLabel = options.pendingSummary ? "Signature Packet Summary" : "Final Executed Split Sheet";
+  let pageNumber = 1;
+  const finishPage = () => drawPdfFooter(pdf, docJson, pageNumber);
+  const nextPage = () => {
+    finishPage();
+    pdf.addPage();
+    pageNumber += 1;
+  };
 
   drawPdfHeader(
     pdf,
@@ -1037,22 +1054,32 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
   drawKeyValueGrid(pdf, ownershipRows);
 
   drawSectionHeading(pdf, "Contributor Snapshot");
-  drawContributorGrid(pdf, contributors, options);
+  drawContributorGrid(pdf, contributors, { ...options, rightsScope: payload.rightsScope });
 
-  ensurePdfSpace(pdf, 56);
-  pdf.roundedRect(summaryLeft, pdf.y + 4, pdf.page.width - pdf.page.margins.left - pdf.page.margins.right, 42, 8)
+  ensurePdfSpace(pdf, 72);
+  pdf.roundedRect(summaryLeft, pdf.y + 4, pdf.page.width - pdf.page.margins.left - pdf.page.margins.right, 58, 8)
     .fillAndStroke("#111111", "#d7c49b");
   pdf.fillColor("#d4af37").fontSize(7).text("PACKET CONTENTS", summaryLeft + 14, pdf.y + 14, { width: 140 });
   pdf.fillColor("#ffffff").fontSize(8.5).text(
-    "Detailed contributor signature pages, agreement language, and execution audit follow this summary.",
+    [
+      `${contributors.length} contributor signature page${contributors.length === 1 ? "" : "s"}`,
+      "Agreement language",
+      "Execution audit and checksum"
+    ].join(" | "),
     summaryLeft + 14,
     pdf.y + 25,
     { width: pdf.page.width - pdf.page.margins.left - pdf.page.margins.right - 28 }
   );
-  pdf.y += 58;
+  pdf.fillColor("#d8d8d8").fontSize(7.5).text(
+    "This packet is the locked record for the completed split sheet. Use a revised split sheet for future changes.",
+    summaryLeft + 14,
+    pdf.y + 42,
+    { width: pdf.page.width - pdf.page.margins.left - pdf.page.margins.right - 28 }
+  );
+  pdf.y += 74;
 
   contributors.forEach((contributor, index) => {
-    pdf.addPage();
+    nextPage();
     drawPdfHeader(
       pdf,
       "Contributor Signature Packet",
@@ -1062,7 +1089,7 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
     drawContributorDetailSection(pdf, contributor, index, payload.rightsScope);
   });
 
-  pdf.addPage();
+  nextPage();
   drawPdfHeader(
     pdf,
     "Agreement Language",
@@ -1103,12 +1130,7 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
     { label: "Record checksum", value: auditChecksum }
   ]);
 
-  pdf.fontSize(7).fillColor("#666666").text(
-    "Blak Marigold Studio | blakmarigold.com | splitsheet delivery record",
-    pdf.page.margins.left,
-    pdf.page.height - pdf.page.margins.bottom - 8,
-    { width: pdf.page.width - pdf.page.margins.left - pdf.page.margins.right, align: "center" }
-  );
+  finishPage();
 
   return { auditChecksum };
 }
@@ -1707,10 +1729,8 @@ async function sendCompletedSplitSheetPacket(doc, { title = "Split Sheet Complet
     ...(doc.payload?.recipientEmails || [])
   ]);
   const finalPdf = splitPdfPath(doc.id);
-  if (!fs.existsSync(finalPdf)) {
-    const { auditChecksum } = await generateFinalSplitPdf(doc);
-    doc.payload.auditChecksum = auditChecksum;
-  }
+  const { auditChecksum } = await generateFinalSplitPdf(doc);
+  doc.payload.auditChecksum = auditChecksum;
   const emailResult = await sendEmail({
     subject: `${subjectPrefix} - ${doc.payload.songTitle} (v${doc.payload.version})`,
     to: recipients,
