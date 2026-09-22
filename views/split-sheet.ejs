@@ -259,11 +259,14 @@ function add(prefill){
   <div class="row"><div><label>IPI #</label><input name="ipi" required></div><div><label>Publisher name</label><input name="publisherName" required></div></div>
   <div class="row"><div><label>Publisher IPI #</label><input name="publisherIpi" required></div><div class="composition-field"><label>Writer share %</label><input type="number" step="0.01" name="writerShare" required></div></div>
   <div class="row"><div class="composition-field"><label>Publisher share %</label><input type="number" step="0.01" name="publisherShare" required></div><div class="master-field" style="display:none"><label>Master recording share %</label><input type="number" step="0.01" name="masterShare"></div></div>
-  <div><label>Typed signature name</label><input name="typedSignatureName" id="typed${i}" placeholder="First Last"></div>
-  <div><label>Signature preview (cursive)</label><div class="typed-signature-preview" id="typedPreview${i}">First Last</div></div>
-  <h4>Draw signature</h4>
-  <div class="sig-wrap"><canvas id="sig${i}" class="sig"></canvas><span class="sig-hint" id="sig${i}-hint">sign</span></div>
-  <input type="hidden" id="sigData${i}" name="signatureData"><button type="button" id="clear${i}">Clear signature</button>
+  <div class="local-signature-fields">
+    <div><label>Typed signature name</label><input name="typedSignatureName" id="typed${i}" placeholder="First Last"></div>
+    <div><label>Signature preview (cursive)</label><div class="typed-signature-preview" id="typedPreview${i}">First Last</div></div>
+    <h4>Draw signature</h4>
+    <div class="sig-wrap"><canvas id="sig${i}" class="sig"></canvas><span class="sig-hint" id="sig${i}-hint">sign</span></div>
+    <input type="hidden" id="sigData${i}" name="signatureData"><button type="button" id="clear${i}">Clear signature</button>
+  </div>
+  <p class="small remote-signature-note" style="display:none;">This contributor will sign once from their secure email link.</p>
   </details>`);
   wirePad(`sig${i}`,`sigData${i}`,`clear${i}`);
 
@@ -292,6 +295,7 @@ function add(prefill){
   idx++;
   renderCollaboratorSelectors(prefill ? collaboratorKey(prefill) : '');
   updateRightsFields();
+  updateSignatureFields();
   updateTotals();
 }
 
@@ -335,6 +339,7 @@ function num(n){ return Number(n||0); }
 function currentRightsScope(){ return document.getElementById('rightsScope').value || 'composition'; }
 function includesComposition(){ return currentRightsScope() !== 'master'; }
 function includesMaster(){ return currentRightsScope() !== 'composition'; }
+function collectByInviteEnabled(){ return !!document.getElementById('collectByInvite') && document.getElementById('collectByInvite').checked; }
 
 function updateRightsFields(){
   document.querySelectorAll('.composition-field').forEach((wrap)=>{
@@ -346,6 +351,22 @@ function updateRightsFields(){
     const input = wrap.querySelector('input'); if(input) input.required = includesMaster();
   });
   document.getElementById('masterTotalWrap').style.display = includesMaster() ? '' : 'none';
+}
+
+function updateSignatureFields(){
+  const remote = collectByInviteEnabled();
+  document.querySelectorAll('.contributor-card').forEach((card) => {
+    const local = card.querySelector('.local-signature-fields');
+    const note = card.querySelector('.remote-signature-note');
+    if(local) local.style.display = remote ? 'none' : '';
+    if(note) note.style.display = remote ? '' : 'none';
+    card.querySelectorAll('[name="typedSignatureName"],[name="signatureData"]').forEach((input) => {
+      input.disabled = remote;
+    });
+    card.querySelectorAll('.local-signature-fields button').forEach((button) => {
+      button.disabled = remote;
+    });
+  });
 }
 
 function totalsAreValid(){
@@ -419,7 +440,8 @@ function renderReview(){
     const compositionText = includesComposition() ? `Writer ${writer[i]||0}% / Publisher ${publisher[i]||0}%` : '';
     const masterText = includesMaster() ? `${compositionText ? ' / ' : ''}Master ${master[i]||0}%` : '';
     const email = getVals('email')[i] || '';
-    html += `<li><b>${names[i]||email||'(missing name)'}</b> (${roles[i]||'role pending'}) - ${compositionText}${masterText} - Typed: ${typed[i]||'pending'} - Drawn: ${drawn[i]?'yes':'pending'}</li>`;
+    const signatureText = collectByInviteEnabled() ? 'Signature: secure link' : `Typed: ${typed[i]||'missing'} - Drawn: ${drawn[i]?'yes':'no'}`;
+    html += `<li><b>${names[i]||email||'(missing name)'}</b> (${roles[i]||'role pending'}) - ${compositionText}${masterText} - ${signatureText}</li>`;
   }
   html += `</ul>`;
   document.getElementById('reviewSummary').innerHTML = html;
@@ -428,7 +450,7 @@ function renderReview(){
   const w = Number(document.getElementById('writerTotal').textContent || 0);
   const p = Number(document.getElementById('publisherTotal').textContent || 0);
   const m = Number(document.getElementById('masterTotal').textContent || 0);
-  const collectByInvite = !!document.getElementById('collectByInvite') && document.getElementById('collectByInvite').checked;
+  const collectByInvite = collectByInviteEnabled();
   const hasDrawn = drawn.every(Boolean) && drawn.length >= 2;
   const hasTyped = typed.every(v=>String(v||'').trim().length>1) && typed.length>=1;
   const checkedRecipients = Array.from(document.querySelectorAll('input[name="recipientEmails"][type="checkbox"]:checked')).length;
@@ -455,7 +477,7 @@ function fieldLabel(el){
 
 function firstInvalidRequiredField(){
   const form = document.getElementById('splitForm');
-  const collectByInvite = !!document.getElementById('collectByInvite') && document.getElementById('collectByInvite').checked;
+  const collectByInvite = collectByInviteEnabled();
   return Array.from(form.querySelectorAll('[required]')).find((el) => {
     if(el.disabled || el.type === 'hidden') return false;
     if(collectByInvite && INVITE_OPTIONAL_FIELDS.has(el.name)) return false;
@@ -498,7 +520,7 @@ document.querySelectorAll('.step-tab').forEach(btn=> btn.addEventListener('click
 document.addEventListener('change', (e)=>{
   if(e.target && e.target.matches('input[name="recipientEmails"][type="checkbox"]')) renderReview();
   if(e.target && e.target.id === 'allAgree') renderReview();
-  if(e.target && e.target.id === 'collectByInvite') renderReview();
+  if(e.target && e.target.id === 'collectByInvite') { updateSignatureFields(); renderReview(); }
   if(e.target && e.target.id === 'rightsScope') { updateRightsFields(); updateTotals(); }
   saveDraft();
 });
@@ -535,5 +557,6 @@ if(!applyServerPrefill(SERVER_PREFILL)){
   restoreDraft();
 }
 updateRightsFields();
+updateSignatureFields();
 updateTotals();
 </script></body></html>
