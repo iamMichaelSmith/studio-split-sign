@@ -71,7 +71,7 @@ const s3Region = process.env.S3_REGION || process.env.AWS_REGION || "us-east-1";
 const s3Prefix = String(process.env.S3_PREFIX || "final-pdfs/").replace(/^\/+/, "").replace(/\/+$/, "");
 const authDebugTokens = String(process.env.AUTH_DEBUG_TOKENS || "false").toLowerCase() === "true";
 const requireEmailVerification = String(process.env.REQUIRE_EMAIL_VERIFICATION || "false").toLowerCase() === "true";
-const supportEmail = process.env.SUPPORT_EMAIL || process.env.NOTIFY_EMAIL || process.env.REPLY_TO_EMAIL || "blakmarigold@gmail.com";
+const supportEmail = process.env.SUPPORT_EMAIL || "Contact@blakmarigold.com";
 const rawStripeSecretKey = String(process.env.STRIPE_SECRET_KEY || "").trim();
 const rawStripeWebhookSecret = String(process.env.STRIPE_WEBHOOK_SECRET || "").trim();
 const stripeSecretKey = /^(disabled|unset|none|null)$/i.test(rawStripeSecretKey) ? "" : rawStripeSecretKey;
@@ -1547,11 +1547,11 @@ async function sendPluginInstaller(res) {
 async function sendMacPluginInstaller(res) {
   if (!macPluginDownloadEnabled) {
     return res.status(503).render("auth-message", {
-      title: "Mac beta coming soon",
-      message: "The macOS Audio Unit beta is prepared but not publicly testable yet.",
+      title: "Mac download coming soon",
+      message: "The macOS Audio Unit version is prepared but not publicly available yet.",
       details: "It must be built on macOS, signed with an Apple Developer ID, notarized, and validated in Logic Pro before this download is enabled.",
-      actionHref: "/beta#mac-beta",
-      actionLabel: "View Mac beta status",
+      actionHref: "/beta",
+      actionLabel: "View Windows plugin downloads",
       debugLink: null
     });
   }
@@ -1584,10 +1584,10 @@ async function sendMacPluginInstaller(res) {
 
   return res.status(503).render("auth-message", {
     title: "Mac installer unavailable",
-    message: "The Mac beta is enabled, but its installer source is not configured.",
+    message: "The Mac download is enabled, but its installer source is not configured.",
     details: "Set MAC_PLUGIN_DOWNLOAD_URL, MAC_PLUGIN_DOWNLOAD_PATH, or the Mac S3 download settings.",
-    actionHref: "/beta#mac-beta",
-    actionLabel: "View Mac beta status",
+    actionHref: "/beta",
+    actionLabel: "View Windows plugin downloads",
     debugLink: null
   });
 }
@@ -2330,7 +2330,7 @@ app.get("/llms.txt", publicPageLimiter, (req, res) => {
     `- Homepage: ${marketingSiteUrl("/")}`,
     `- Pricing: ${marketingSiteUrl("/pricing")}`,
     `- Blog: ${marketingSiteUrl("/blog")}`,
-    `- Beta downloads: ${marketingSiteUrl("/beta")}`,
+    `- Windows plugin downloads: ${marketingSiteUrl("/beta")}`,
     `- Support: ${marketingSiteUrl("/support")}`,
     "",
     "## Blog Guides",

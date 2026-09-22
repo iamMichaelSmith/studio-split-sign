@@ -227,7 +227,7 @@
               <% } %>
             <% } else if (plan.monthlyPriceUsdCents > 0) { %>
               <a class="button-link" href="<%= pricingUrl %>">Upgrade to <%= plan.name %></a>
-              <p class="small">Checkout is not connected yet. This button will route to Stripe when billing is enabled.</p>
+              <p class="small">Paid checkout is temporarily unavailable in this environment. Please try again shortly or contact support.</p>
             <% } else { %>
               <a class="button-link button-link-secondary" href="<%= splitSheetUrl %>">Start free</a>
             <% } %>

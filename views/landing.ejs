@@ -27,7 +27,7 @@
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Windows 10, Windows 11",
     "description": "Music split sheet software for composition and master ownership, remote signatures, and final PDF delivery.",
-    "offers": { "@type": "AggregateOffer", "lowPrice": "0.00", "highPrice": "19.00", "offerCount": "3", "priceCurrency": "USD", "availability": "https://schema.org/<%= stripeEnabled ? 'InStock' : 'PreOrder' %>" },
+    "offers": { "@type": "AggregateOffer", "lowPrice": "0.00", "highPrice": "19.00", "offerCount": "3", "priceCurrency": "USD", "availability": "https://schema.org/InStock" },
     "brand": { "@type": "Brand", "name": "Blak Marigold Studio" }
   }
   </script>
@@ -126,11 +126,11 @@
       </div></section>
 
       <section id="plugin" class="premium-section premium-container plugin-showcase">
-        <div class="plugin-showcase-copy"><div class="section-kicker">Inside your DAW</div><h2>Finish the paperwork where the music was made.</h2><p>The Windows VST3 connects to the same hosted account as the web app. The standalone Windows app uses the same workflow and does not need to stay open while the plugin runs.</p><div class="compatibility-row"><span>WINDOWS VST3</span><span>64-BIT WINDOWS DAWS</span><span>STANDALONE APP</span></div><div class="hero-actions"><a class="premium-button premium-button-primary" href="/beta#windows-beta">Download Windows beta</a></div></div>
+        <div class="plugin-showcase-copy"><div class="section-kicker">Inside your DAW</div><h2>Finish the paperwork where the music was made.</h2><p>The Windows VST3 connects to the same hosted account as the web app. The standalone Windows app uses the same workflow and does not need to stay open while the plugin runs.</p><div class="compatibility-row"><span>WINDOWS VST3</span><span>64-BIT WINDOWS DAWS</span><span>STANDALONE APP</span></div><div class="hero-actions"><a class="premium-button premium-button-primary" href="/beta#windows-beta">Download Windows plugin</a></div></div>
         <div class="studio-quote"><div class="quote-mark">“</div><blockquote>The best split-sheet workflow is the one artists will actually finish before everyone leaves.</blockquote><p>Built by Blak Marigold Studio<br><span>Manor / Austin, Texas</span></p></div>
       </section>
 
-      <section class="premium-section remote-section"><div class="premium-container remote-grid"><div class="remote-visual"><div class="city-node"><i></i><strong>Studio A</strong><small>Producer signed</small></div><div class="route-line"><span>Secure invite</span></div><div class="city-node"><i></i><strong>Studio B</strong><small>Artist signs remotely</small></div></div><div><div class="section-kicker">Made for remote collaboration</div><h2>Different studios. Different states. One final agreement.</h2><p>Send each contributor a secure review link. The split stays pending until everyone confirms. After the final signature, the completed packet is automatically delivered to every selected recipient.</p></div></div></section>
+      <section class="premium-section remote-section"><div class="premium-container remote-grid"><div class="remote-visual"><div class="city-node"><i></i><strong>Studio A</strong><small>Producer signed</small></div><div class="route-line"><span>Secure invite</span></div><div class="city-node"><i></i><strong>Studio B</strong><small>Artist signs remotely</small></div></div><div><div class="section-kicker">Made for remote collaboration</div><h2>Different studios. Different states. One final agreement.</h2><p>Send each contributor a secure review link. The split stays pending until everyone confirms, with reminder emails nudging pending collaborators a few times until they sign. After the final signature, the completed packet is automatically delivered to every selected recipient.</p></div></div></section>
 
       <section class="premium-section premium-container launch-card"><div><div class="section-kicker">Launch pricing</div><h2>Put rights clarity in every session.</h2><p>Start free with 3 completed split sheets per month. Upgrade to Creator at $7/month or Studio at $19/month when sessions become regular. The Windows VST3 plugin and standalone app are included with both paid packages.</p></div><div class="launch-price"><span>Creator starts at</span><strong>$7/mo</strong><a class="premium-button premium-button-primary" href="/pricing"><%= stripeEnabled ? 'Choose a package' : 'View launch packages' %></a></div></section>
 

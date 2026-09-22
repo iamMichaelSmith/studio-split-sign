@@ -109,7 +109,8 @@ async function main() {
     }
     if (!pricingHtml.includes('Website workflow only')) throw new Error('pricing page should describe Free as website-only');
     if (!pricingHtml.includes('No VST3 plugin download')) throw new Error('pricing page should exclude plugin downloads from Free');
-    if (!pricingHtml.includes('No Stripe checkout required')) throw new Error('pricing page should not require Stripe for Free');
+    if (!pricingHtml.includes('No paid checkout required')) throw new Error('pricing page should not require paid checkout for Free');
+    if (!pricingHtml.includes('Pending signers get reminder emails')) throw new Error('pricing page should mention signer reminders');
     if (pricingHtml.includes('$29')) throw new Error('pricing page should not advertise a separate plugin license');
 
     const separatePluginCheckout = await fetch(`http://127.0.0.1:${port}/buy/plugin`, {
@@ -129,11 +130,13 @@ async function main() {
       throw new Error('unsigned Stripe webhook rejection reason mismatch');
     }
 
-    const beta = await fetch(`http://127.0.0.1:${port}/beta`);
-    if (!beta.ok) throw new Error('beta page failed');
-    const betaHtml = await beta.text();
-    if (!betaHtml.includes('Windows VST3')) throw new Error('windows beta label missing');
-    if (betaHtml.includes('Mac AU beta')) throw new Error('public beta page should be Windows-only');
+    const pluginDownload = await fetch(`http://127.0.0.1:${port}/beta`);
+    if (!pluginDownload.ok) throw new Error('plugin download page failed');
+    const pluginDownloadHtml = await pluginDownload.text();
+    if (!pluginDownloadHtml.includes('Windows VST3')) throw new Error('windows plugin label missing');
+    for (const staleCopy of ['Public beta', 'Known beta limits', 'Stripe can stay disabled', 'Mac AU beta']) {
+      if (pluginDownloadHtml.includes(staleCopy)) throw new Error(`plugin download page has stale copy: ${staleCopy}`);
+    }
 
     const support = await fetch(`http://127.0.0.1:${port}/support`);
     if (!support.ok || !(await support.text()).includes('Keep the session moving')) throw new Error('support page failed');
@@ -152,10 +155,10 @@ async function main() {
     if (!sitemap.ok || !(await sitemap.text()).includes('/blog/what-is-a-split-sheet-in-music')) throw new Error('sitemap failed');
 
     const securityTxt = await fetch(`http://127.0.0.1:${port}/.well-known/security.txt`);
-    if (!securityTxt.ok || !(await securityTxt.text()).includes('Contact: mailto:')) throw new Error('security.txt failed');
+    if (!securityTxt.ok || !(await securityTxt.text()).includes('Contact: mailto:Contact@blakmarigold.com')) throw new Error('security.txt failed');
 
-    const macBetaDownload = await fetch(`http://127.0.0.1:${port}/downloads/plugin/mac/latest`);
-    if (macBetaDownload.status !== 503) throw new Error('unreleased mac beta download should stay disabled');
+    const macDownload = await fetch(`http://127.0.0.1:${port}/downloads/plugin/mac/latest`);
+    if (macDownload.status !== 503) throw new Error('unreleased mac download should stay disabled');
 
     const blog = await fetch(`http://127.0.0.1:${port}/blog`);
     if (!blog.ok) throw new Error('blog index failed');
