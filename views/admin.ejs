@@ -34,8 +34,40 @@
       </div>
       <div class="card">
         <div class="stat-label">Email failures</div>
-        <div class="stat-value"><%= docs.filter((doc) => doc.type === 'split-sheet' && doc.payload?.completionEmailDelivery && !doc.payload.completionEmailDelivery.ok).length %></div>
+        <div class="stat-value"><%= docs.filter((doc) => doc.type === 'split-sheet' && doc.emailIssues && doc.emailIssues.length).length %></div>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="timeline-top">
+        <div>
+          <h2>Email and Signature Attention</h2>
+          <p class="small">Use this queue before launch checks. It highlights failed proposal emails, invite emails, final packet delivery, and pending signatures.</p>
+        </div>
+      </div>
+      <% const attentionDocs = docs.filter((doc) => doc.type === 'split-sheet' && ((doc.emailIssues && doc.emailIssues.length) || (doc.signerStats && doc.signerStats.pending > 0))); %>
+      <% if (!attentionDocs.length) { %>
+        <p class="small">No email or signature issues need attention right now.</p>
+      <% } %>
+      <% attentionDocs.slice(0, 12).forEach((doc) => { %>
+        <div class="timeline-item">
+          <b><%= doc.payload?.songTitle || doc.id %></b>
+          <div class="small">
+            Status: <%= doc.status %>
+            <% if (doc.signerStats) { %> · Pending signatures: <%= doc.signerStats.pending %><% } %>
+            <% if (doc.emailIssues && doc.emailIssues.length) { %> · Email issues: <%= doc.emailIssues.join(", ") %><% } %>
+          </div>
+          <div class="inline-actions">
+            <a href="/admin/split/<%= doc.id %>">Open signer timeline</a>
+            <% if (doc.signerStats && doc.signerStats.pending > 0) { %>
+              <form method="post" action="/admin/split/<%= doc.id %>/remind"><button type="submit">Resend pending links</button></form>
+            <% } %>
+            <% if (doc.status === 'completed') { %>
+              <form method="post" action="/admin/split/<%= doc.id %>/resend-final"><button type="submit">Resend final packet</button></form>
+            <% } %>
+          </div>
+        </div>
+      <% }) %>
     </div>
 
     <div class="card">
@@ -101,6 +133,9 @@
             <% } %>
             <% if (doc.payload?.completionEmailDelivery) { %>
               · Final email: <b><%= doc.payload.completionEmailDelivery.ok ? 'sent' : 'failed' %></b>
+            <% } %>
+            <% if (doc.emailIssues && doc.emailIssues.length) { %>
+              · Email issues: <b><%= doc.emailIssues.join(", ") %></b>
             <% } %>
           </div>
           <div class="inline-actions">

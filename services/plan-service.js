@@ -27,7 +27,7 @@ const PLAN_DEFINITIONS = {
     compareAtPriceLabel: "$10/mo",
     annualCompareAtPriceLabel: "$100/yr",
     discountLabel: "Launch deal",
-    description: "For artists, producers, and songwriters using split sheets regularly. Includes the Windows VST3 plugin and standalone app."
+    description: "For artists, producers, and songwriters using split sheets regularly. Includes approved collaborator profiles, the Windows VST3 plugin, and standalone app."
   },
   studio_pro: {
     key: "studio_pro",
@@ -42,7 +42,7 @@ const PLAN_DEFINITIONS = {
     compareAtPriceLabel: "$30/mo",
     annualCompareAtPriceLabel: "$300/yr",
     discountLabel: "Launch deal",
-    description: "For studios, engineers, managers, and regular session workflows. Includes the Windows VST3 plugin and standalone app."
+    description: "For studios, engineers, managers, and regular session workflows. Includes approved collaborator profiles, the Windows VST3 plugin, and standalone app."
   }
 };
 

@@ -20,8 +20,8 @@
     </div>
 
     <nav class="account-tabs" aria-label="Account sections">
-      <% for (const tab of ["overview", "vault", "resources", "vst", "plans"]) { %>
-        <a class="account-tab<%= accountTab === tab ? " active" : "" %>" href="/account?tab=<%= tab %>"<% if (accountTab === tab) { %> aria-current="page"<% } %>><%= tab === "vst" ? "VST" : tab.charAt(0).toUpperCase() + tab.slice(1) %></a>
+      <% for (const tab of ["overview", "vault", "collaborators", "resources", "vst", "plans"]) { %>
+        <a class="account-tab<%= accountTab === tab ? " active" : "" %>" href="/account?tab=<%= tab %>"<% if (accountTab === tab) { %> aria-current="page"<% } %>><%= tab === "vst" ? "VST" : (tab === "collaborators" ? "Collaborators" : tab.charAt(0).toUpperCase() + tab.slice(1)) %></a>
       <% } %>
     </nav>
 
@@ -64,6 +64,12 @@
         <p class="small">Bring splitsheets, credits, and session ownership into your Windows DAW workflow.</p>
         <p><a class="button-link button-link-secondary" href="/account?tab=vst">Get plugin</a></p>
       </div>
+      <div class="card">
+        <div class="stat-label">Approved collaborators</div>
+        <div class="stat-value"><%= approvedCollaborators.profiles.length %></div>
+        <p class="small"><%= approvedCollaborators.enabled ? "Reusable profiles are saved after collaborators sign." : "Included with Creator and Studio after a collaborator signs." %></p>
+        <p><a class="button-link button-link-secondary" href="/account?tab=collaborators">Manage collaborators</a></p>
+      </div>
     </div>
     <% } %>
 
@@ -83,7 +89,11 @@
         <div class="card legal-note">Split sheet permanently deleted.</div>
       <% } %>
       <% if (!splitSheets.length) { %>
-        <p class="small">No split sheets in the vault yet. Start your first split sheet when your session credits are ready.</p>
+        <div class="empty-state">
+          <h3>No split sheets in the vault yet.</h3>
+          <p class="small">Your completed and pending split sheets will live here with view, download, archive, and delete controls.</p>
+          <% if (usage.canCreate) { %><a class="button-link" href="<%= splitSheetUrl %>">Create your first split sheet</a><% } %>
+        </div>
       <% } %>
       <% splitSheets.forEach((doc) => { %>
         <% const songName = (doc.payload && (doc.payload.songTitle || doc.payload.title || doc.payload.song || doc.payload.workTitle)) || "Untitled song"; %>
@@ -115,6 +125,57 @@
     </div>
     <% } %>
 
+    <% if (accountTab === "collaborators") { %>
+    <div id="approved-collaborators" class="card">
+      <div class="timeline-top">
+        <div>
+          <div class="stat-label">Reusable after signing</div>
+          <h2>Approved Collaborators</h2>
+          <p class="small">Collaborators appear here only after they approve and sign a split sheet. This keeps your reuse list clean and verified.</p>
+        </div>
+        <a class="button-link button-link-secondary" href="<%= splitSheetUrl %>">Create split sheet</a>
+      </div>
+      <% if (collaboratorNotice === "deleted") { %>
+        <div class="card legal-note">Approved collaborator deleted.</div>
+      <% } else if (collaboratorNotice === "kept") { %>
+        <div class="card legal-note">Only the selected approved collaborator was kept.</div>
+      <% } %>
+      <% if (!approvedCollaborators.enabled) { %>
+        <div class="empty-state">
+          <h3>Approved collaborator profiles are a Creator and Studio feature.</h3>
+          <p class="small">Upgrade to save reusable profiles after collaborators sign, then autofill them in future sessions.</p>
+          <a class="button-link" href="/account?tab=plans">View plans</a>
+        </div>
+      <% } else if (!approvedCollaborators.profiles.length) { %>
+        <div class="empty-state">
+          <h3>No approved collaborators yet.</h3>
+          <p class="small">Send a split sheet by invite. After a collaborator reviews, fills missing details, and signs, their approved profile will appear here.</p>
+          <a class="button-link" href="<%= splitSheetUrl %>">Send a split sheet</a>
+        </div>
+      <% } %>
+      <% approvedCollaborators.profiles.forEach((profile) => { %>
+        <div class="timeline-item">
+          <div class="timeline-top">
+            <div>
+              <div class="stat-label">Approved profile</div>
+              <b><%= profile.legalName || profile.email %></b>
+              <div class="small"><%= profile.email %><% if (profile.role) { %> · <%= profile.role %><% } %><% if (profile.pro) { %> · <%= profile.pro %><% } %></div>
+              <div class="small">Approved: <%= profile.approvedAt %><% if (profile.sourceSubmissionId) { %> · Source ID <%= profile.sourceSubmissionId %><% } %></div>
+            </div>
+            <div class="vault-actions">
+              <form method="post" action="/account/collaborators/<%= profile.id %>/delete" class="vault-inline-form" onsubmit="return confirm('Delete this approved collaborator profile?');">
+                <button type="submit">Delete</button>
+              </form>
+              <form method="post" action="/account/collaborators/<%= profile.id %>/keep-only" class="vault-inline-form" onsubmit="return confirm('Keep only this collaborator and delete the other approved profiles?');">
+                <button class="secondary-button" type="submit">Keep only</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+    <% } %>
+
     <% if (accountTab === "resources") { %>
     <% if (latestPosts && latestPosts.length) { %>
       <div class="card">
@@ -138,6 +199,22 @@
         </div>
       </div>
     <% } %>
+    <% } %>
+
+    <% if (accountTab === "overview") { %>
+    <div class="card">
+      <div class="timeline-top">
+        <div>
+          <div class="stat-label">Account trust controls</div>
+          <h2>Data and account requests</h2>
+          <p class="small">Need an export, deletion request, or billing/account help? Send a support request from the account email shown above so ownership is easy to verify.</p>
+        </div>
+        <div class="vault-actions">
+          <a href="mailto:<%= supportEmail %>?subject=Split%20Sheet%20Studio%20data%20export%20request&body=Please%20export%20the%20account%20data%20for%20<%= encodeURIComponent(user.email) %>.">Request export</a>
+          <a href="mailto:<%= supportEmail %>?subject=Split%20Sheet%20Studio%20account%20deletion%20request&body=Please%20start%20an%20account%20deletion%20request%20for%20<%= encodeURIComponent(user.email) %>.">Request deletion</a>
+        </div>
+      </div>
+    </div>
     <% } %>
 
     <% if (accountTab === "vst") { %>

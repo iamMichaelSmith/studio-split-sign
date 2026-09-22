@@ -61,12 +61,12 @@
         <button type="button" id="add">Add contributor</button>
         <button type="button" id="setEqual">Set equal splits for all</button>
       </div>
-      <p class="small">Tip: Add everyone who should approve the split. Saved collaborators appear in the selector on each card after you enter them once in this browser.</p>
+      <p class="small">Tip: Add everyone who should approve the split. Approved collaborators appear in the selector after they sign a previous split sheet.</p>
     </div>
     <div class="card collaborator-manager">
       <div class="stat-label">Saved collaborators</div>
       <h3>Manage reusable profiles</h3>
-      <p class="small">These profiles are saved only in this browser. Select a collaborator to remove old test profiles or keep only the collaborator you reuse most.</p>
+      <p class="small">Reusable profiles are added only after a collaborator approves and signs a split sheet. Select a profile to remove old test collaborators or keep only the collaborator you reuse most.</p>
       <div class="row">
         <div><label>Saved profile</label><select id="savedCollaboratorManager" data-draft-ignore="true"><option value="">No saved collaborators yet</option></select></div>
         <div class="collaborator-manager-actions">
@@ -74,7 +74,7 @@
           <button type="button" id="keepOnlySavedCollaborator" class="secondary-button">Keep only selected</button>
         </div>
       </div>
-      <p class="small" id="savedCollaboratorStatus">Saved collaborators will appear here after you enter a contributor once.</p>
+      <p class="small" id="savedCollaboratorStatus">Approved collaborators will appear here after they sign.</p>
     </div>
     <div class="row">
       <button type="button" class="next-step" data-next="3">Review and send</button>
@@ -117,11 +117,12 @@
 <script src="/vendor/signature_pad/signature_pad.umd.min.js"></script>
 <script>
 const DRAFT_KEY = 'splitSheetDraft.v1';
-const COLLABORATOR_KEY = 'splitSheetCollaborators.v1';
 const COLLABORATOR_FIELDS = ['legalName','role','address','phone','email','pro','ipi','publisherName','publisherIpi','typedSignatureName'];
 const INVITE_OPTIONAL_FIELDS = new Set(['legalName','role','address','phone','pro','ipi','publisherName','publisherIpi']);
 const pads = new Map();
 const SERVER_PREFILL = <%- JSON.stringify(typeof prefill !== 'undefined' ? prefill : null).replace(/</g, '\\u003c') %>;
+const APPROVED_COLLABORATORS_ENABLED = <%= approvedCollaborators && approvedCollaborators.enabled ? 'true' : 'false' %>;
+let approvedCollaborators = <%- JSON.stringify(approvedCollaborators && approvedCollaborators.profiles ? approvedCollaborators.profiles : []).replace(/</g, '\\u003c') %>;
 
 function saveDraft(){
   const fields = Array.from(document.querySelectorAll('#splitForm input, #splitForm textarea, #splitForm select')).filter((el) => !el.dataset.draftIgnore);
@@ -156,20 +157,17 @@ function clearDraft(){
 }
 
 function collaboratorKey(profile){
-  return String(profile.email || profile.legalName || profile.phone || '').trim().toLowerCase();
+  return String(profile.id || profile.email || profile.legalName || profile.phone || '').trim().toLowerCase();
 }
 
 function readCollaborators(){
-  try {
-    const parsed = JSON.parse(localStorage.getItem(COLLABORATOR_KEY) || '[]');
-    return Array.isArray(parsed) ? parsed.filter((profile) => profile && collaboratorKey(profile)).slice(0, 80) : [];
-  } catch {
-    return [];
-  }
+  return Array.isArray(approvedCollaborators)
+    ? approvedCollaborators.filter((profile) => profile && collaboratorKey(profile)).slice(0, 80)
+    : [];
 }
 
 function writeCollaborators(profiles){
-  localStorage.setItem(COLLABORATOR_KEY, JSON.stringify(profiles.slice(0, 80)));
+  approvedCollaborators = Array.isArray(profiles) ? profiles.slice(0, 80) : [];
 }
 
 function profileFromCard(card){
@@ -182,17 +180,11 @@ function profileFromCard(card){
 }
 
 function saveCollaboratorFromCard(card){
-  const profile = profileFromCard(card);
-  if(!profile.legalName || (!profile.email && !profile.phone)) return;
-  const key = collaboratorKey(profile);
-  const profiles = readCollaborators().filter((saved) => collaboratorKey(saved) !== key);
-  profiles.unshift({ ...profile, updatedAt: new Date().toISOString() });
-  writeCollaborators(profiles);
-  renderCollaboratorSelectors(key);
+  return;
 }
 
 function saveCollaboratorsFromForm(){
-  document.querySelectorAll('.contributor-card').forEach(saveCollaboratorFromCard);
+  return;
 }
 
 function escapeOptionText(value){
@@ -226,6 +218,14 @@ function renderCollaboratorManager(selectedKey){
   const removeButton = document.getElementById('removeSavedCollaborator');
   const keepButton = document.getElementById('keepOnlySavedCollaborator');
   if(!manager) return;
+  if(!APPROVED_COLLABORATORS_ENABLED) {
+    manager.innerHTML = '<option value="">Upgrade to Creator or Studio</option>';
+    manager.disabled = true;
+    if(removeButton) removeButton.disabled = true;
+    if(keepButton) keepButton.disabled = true;
+    if(status) status.textContent = 'Approved collaborator profiles are included with Creator and Studio plans.';
+    return;
+  }
   const profiles = readCollaborators();
   const currentValue = selectedKey || manager.value;
   const options = profiles.map((profile) => {
@@ -241,28 +241,45 @@ function renderCollaboratorManager(selectedKey){
   if(keepButton) keepButton.disabled = !manager.value;
   if(status) {
     status.textContent = profiles.length
-      ? `${profiles.length} saved collaborator${profiles.length === 1 ? '' : 's'} in this browser.`
-      : 'Saved collaborators will appear here after you enter a contributor once.';
+      ? `${profiles.length} approved collaborator${profiles.length === 1 ? '' : 's'} saved to your account.`
+      : 'Approved collaborators will appear here after they sign a split sheet.';
   }
 }
 
-function removeSavedCollaborator(key){
+async function postCollaboratorAction(key, action){
+  const response = await fetch(`/account/collaborators/${encodeURIComponent(key)}/${action}`, {
+    method: 'POST',
+    headers: { 'accept': 'application/json' }
+  });
+  if(!response.ok) throw new Error('Collaborator update failed.');
+  const result = await response.json();
+  writeCollaborators(result.profiles || []);
+  renderCollaboratorSelectors(action === 'keep-only' ? key : '');
+}
+
+async function removeSavedCollaborator(key){
   if(!key) return;
   const profile = readCollaborators().find((saved) => collaboratorKey(saved) === key);
   const label = profile ? collaboratorOptionLabel(profile) : 'this collaborator';
   if(!confirm(`Delete saved profile for ${label}?`)) return;
-  writeCollaborators(readCollaborators().filter((saved) => collaboratorKey(saved) !== key));
-  renderCollaboratorSelectors('');
+  try {
+    await postCollaboratorAction(key, 'delete');
+  } catch {
+    alert('Could not delete that approved collaborator. Reload and try again.');
+  }
 }
 
-function keepOnlySavedCollaborator(key){
+async function keepOnlySavedCollaborator(key){
   if(!key) return;
   const profile = readCollaborators().find((saved) => collaboratorKey(saved) === key);
   if(!profile) return;
   const label = collaboratorOptionLabel(profile);
-  if(!confirm(`Keep only ${label} and delete all other saved collaborator profiles from this browser?`)) return;
-  writeCollaborators([profile]);
-  renderCollaboratorSelectors(key);
+  if(!confirm(`Keep only ${label} and delete all other approved collaborator profiles from your account?`)) return;
+  try {
+    await postCollaboratorAction(key, 'keep-only');
+  } catch {
+    alert('Could not update approved collaborators. Reload and try again.');
+  }
 }
 
 function applyCollaboratorProfile(card, key){

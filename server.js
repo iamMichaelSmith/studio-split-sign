@@ -20,6 +20,7 @@ const { createRemoteJWKSet, SignJWT, importPKCS8, jwtVerify } = require("jose");
 const { createAuthService, ApiAuthError } = require("./services/auth-service");
 const { createDatabaseService } = require("./services/database-service");
 const { createContactService } = require("./services/contact-service");
+const { createCollaboratorService } = require("./services/collaborator-service");
 const { validateProductionRuntime } = require("./services/runtime-config");
 const { createStorefrontService } = require("./services/storefront-service");
 const { createSubmissionService } = require("./services/submission-service");
@@ -368,6 +369,10 @@ const authService = createAuthService({
   }
 });
 const contactService = createContactService({
+  db: databaseService.client,
+  provider: databaseService.provider
+});
+const collaboratorService = createCollaboratorService({
   db: databaseService.client,
   provider: databaseService.provider
 });
@@ -1393,6 +1398,45 @@ async function sendPasswordResetEmail({ user, token, expiresAt }) {
   };
 }
 
+async function notifyApprovedCollaboratorSaved({ owner, profile, doc }) {
+  if (!owner?.email || !profile?.email) return { ok: false, skipped: true, reason: "missing_owner_or_profile" };
+  return sendEmail({
+    to: [owner.email],
+    subject: `Approved collaborator saved - ${profile.legalName || profile.email}`,
+    html: `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
+      <h2 style="margin:0 0 10px">Approved collaborator saved</h2>
+      <p style="margin:0 0 12px">${escapeHtml(profile.legalName || profile.email)} approved and signed the split sheet for <b>${escapeHtml(doc?.payload?.songTitle || "your song")}</b>.</p>
+      <p style="margin:0 0 12px">Their verified collaborator profile is now available when you create your next split sheet.</p>
+      <p style="margin:0 0 14px"><a href="${baseUrl}/split-sheet">Create another split sheet</a></p>
+      <hr style="border:none;border-top:1px solid #ddd;margin:14px 0" />
+      <p style="margin:0">Split Sheet Studio<br/>Approved collaborators</p>
+    </div>`
+  });
+}
+
+async function saveApprovedCollaboratorFromSignature(doc, signer) {
+  if (!doc?.ownerUserId || !signer?.email) return null;
+  const owner = await authService.getUserById(doc.ownerUserId);
+  if (!owner || !approvedCollaboratorsEnabled(owner)) return null;
+  const profile = await collaboratorService.upsertApprovedProfile({
+    ownerUserId: owner.id,
+    sourceSubmissionId: doc.id,
+    contributor: signer,
+    approvedAt: signer.signedAt || nowIso()
+  });
+  if (profile) {
+    notifyApprovedCollaboratorSaved({ owner, profile, doc })
+      .catch((error) => console.error("Failed to notify approved collaborator save:", error.message || error));
+  }
+  return profile;
+}
+
+async function saveApprovedCollaboratorsFromCompletedSplit(doc) {
+  const contributors = doc?.payload?.contributors || [];
+  const signedContributors = contributors.filter((contributor) => contributor?.signedAt && contributor?.email);
+  await Promise.all(signedContributors.map((contributor) => saveApprovedCollaboratorFromSignature(doc, contributor)));
+}
+
 function formatMoney(amountCents, currency = "usd") {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -1465,6 +1509,19 @@ function socialImageUrl() {
 
 function paidPlanOptions() {
   return Object.values(PLAN_DEFINITIONS).filter((plan) => Number(plan.monthlyPriceUsdCents || 0) > 0);
+}
+
+function approvedCollaboratorsEnabled(user = {}) {
+  return normalizePlanKey(user.planKey) !== "free";
+}
+
+async function approvedCollaboratorViewModel(user) {
+  const enabled = approvedCollaboratorsEnabled(user);
+  const profiles = enabled && user?.id ? await collaboratorService.listProfiles(user.id) : [];
+  return {
+    enabled,
+    profiles
+  };
 }
 
 function normalizeBillingInterval(value) {
@@ -2189,6 +2246,7 @@ async function createSplitSheetSubmission(input, req) {
     saved.payload.auditChecksum = auditChecksum;
     saved.updatedAt = nowIso();
     await saveSubmissionRow(saved);
+    await saveApprovedCollaboratorsFromCompletedSplit(saved);
     ({ emailResult } = await sendCompletedSplitSheetPacket(saved, {
       title: "Split Sheet Completed",
       subjectPrefix: "Split Sheet Complete"
@@ -3210,7 +3268,8 @@ app.get("/account", requireWebAuth, async (req, res) => {
   const usage = await usageSummaryForUser(req.webUser);
   const splitSheets = await listUserSplitSheets(req.webUser);
   const requestedTab = String(req.query.tab || "overview").toLowerCase();
-  const accountTab = ["overview", "vault", "resources", "vst", "plans"].includes(requestedTab)
+  const approvedCollaborators = await approvedCollaboratorViewModel(req.webUser);
+  const accountTab = ["overview", "vault", "collaborators", "resources", "vst", "plans"].includes(requestedTab)
     ? requestedTab
     : "overview";
   return res.render("account", {
@@ -3224,6 +3283,8 @@ app.get("/account", requireWebAuth, async (req, res) => {
     billingNotice: req.query.billing || "",
     accountTab,
     vaultNotice: String(req.query.vault || ""),
+    collaboratorNotice: String(req.query.collaborators || ""),
+    approvedCollaborators,
     pricingUrl: "/pricing",
     splitSheetUrl: "/split-sheet",
     blogUrl: "/blog",
@@ -3301,6 +3362,28 @@ app.post("/account/split-sheets/:id/delete", requireWebAuth, async (req, res) =>
   }
   await submissionStore.deleteSubmission(doc.id);
   return res.redirect("/account?tab=vault&vault=deleted");
+});
+app.post("/account/collaborators/:id/delete", requireWebAuth, async (req, res) => {
+  await collaboratorService.deleteProfile(req.webUser.id, req.params.id);
+  if (String(req.get("accept") || "").includes("application/json")) {
+    return res.json({
+      ok: true,
+      profiles: await collaboratorService.listProfiles(req.webUser.id)
+    });
+  }
+  return res.redirect("/account?tab=collaborators&collaborators=deleted");
+});
+app.post("/account/collaborators/:id/keep-only", requireWebAuth, async (req, res) => {
+  const profile = await collaboratorService.getProfile(req.webUser.id, req.params.id);
+  if (!profile) return apiError(res, 404, "Approved collaborator not found.");
+  await collaboratorService.deleteAllExcept(req.webUser.id, req.params.id);
+  if (String(req.get("accept") || "").includes("application/json")) {
+    return res.json({
+      ok: true,
+      profiles: await collaboratorService.listProfiles(req.webUser.id)
+    });
+  }
+  return res.redirect("/account?tab=collaborators&collaborators=kept");
 });
 app.get("/signup", publicPageLimiter, (req, res) => res.render("auth-signup", {
   error: null,
@@ -3647,9 +3730,22 @@ app.post("/api/split-sheets/:id/signers/:index/resend", requireApiAuth, splitFin
     contributor: splitSignerTimeline(doc)[contributorIndex]
   });
 });
-app.get("/split-sheet", splitSheetPublicLimiter, requireWebAuth, async (req, res) => {
+async function splitSheetRenderModel(req, overrides = {}) {
   const usage = await usageSummaryForUser(req.webUser);
-  return res.render("split-sheet", { error: null, user: req.webUser, usage, prefill: null, revisionSource: null });
+  const approvedCollaborators = await approvedCollaboratorViewModel(req.webUser);
+  return {
+    error: null,
+    user: req.webUser,
+    usage,
+    prefill: null,
+    revisionSource: null,
+    approvedCollaborators,
+    ...overrides
+  };
+}
+
+app.get("/split-sheet", splitSheetPublicLimiter, requireWebAuth, async (req, res) => {
+  return res.render("split-sheet", await splitSheetRenderModel(req));
 });
 
 app.get("/split-sheet/revise/:id/:token", splitSheetPublicLimiter, requireWebAuth, async (req, res) => {
@@ -3670,18 +3766,14 @@ app.get("/split-sheet/revise/:id/:token", splitSheetPublicLimiter, requireWebAut
   if (!expectedToken || expectedToken !== req.params.token) {
     return res.status(404).send("Invalid revision link");
   }
-  const usage = await usageSummaryForUser(req.webUser);
-  return res.render("split-sheet", {
-    error: null,
-    user: req.webUser,
-    usage,
+  return res.render("split-sheet", await splitSheetRenderModel(req, {
     prefill: revisionPrefillFromDoc(doc),
     revisionSource: {
       id: doc.id,
       version: doc.payload?.version || 1,
       songTitle: doc.payload?.songTitle || "Untitled split sheet"
     }
-  });
+  }));
 });
 
 app.post("/split-sheet", splitSheetSubmitLimiter, requireWebAuth, async (req, res) => {
@@ -3700,15 +3792,14 @@ app.post("/split-sheet", splitSheetSubmitLimiter, requireWebAuth, async (req, re
       emailResult
     });
   } catch (error) {
-    const usage = await usageSummaryForUser(req.webUser);
     if (error instanceof ApiAuthError) {
-      return res.status(error.statusCode).render("split-sheet", { error: error.message, user: req.webUser, usage, prefill: null, revisionSource: null });
+      return res.status(error.statusCode).render("split-sheet", await splitSheetRenderModel(req, { error: error.message }));
     }
     if (error instanceof SplitSheetValidationError) {
-      return res.status(error.statusCode).render("split-sheet", { error: error.message, user: req.webUser, usage, prefill: null, revisionSource: null });
+      return res.status(error.statusCode).render("split-sheet", await splitSheetRenderModel(req, { error: error.message }));
     }
     console.error(error);
-    res.status(500).render("split-sheet", { error: "Unexpected server error while saving split sheet.", user: req.webUser, usage, prefill: null, revisionSource: null });
+    res.status(500).render("split-sheet", await splitSheetRenderModel(req, { error: "Unexpected server error while saving split sheet." }));
   }
 });
 
@@ -3875,6 +3966,11 @@ app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) =
       ip: requestIp(req),
       userAgent: req.headers["user-agent"] || ""
     }).catch((error) => console.error("Failed to record remote signature contact:", error.message || error));
+    try {
+      await saveApprovedCollaboratorFromSignature(mutation.doc, mutation.signer);
+    } catch (error) {
+      console.error("Failed to save approved collaborator:", error.message || error);
+    }
   }
 
   let emailResult = mutation.doc.payload?.completionEmailDelivery || null;
@@ -3979,8 +4075,21 @@ app.get("/admin", adminLimiter, requireAdmin, async (req, res) => {
     if (d.type !== "split-sheet") return d;
     const contributors = d.payload?.contributors || [];
     const signedCount = contributors.filter((c) => c.signedAt).length;
+    const emailIssues = [];
+    if (d.payload?.proposalEmailDelivery && !d.payload.proposalEmailDelivery.ok) {
+      emailIssues.push(`proposal:${d.payload.proposalEmailDelivery.reason || "failed"}`);
+    }
+    if (d.payload?.completionEmailDelivery && !d.payload.completionEmailDelivery.ok) {
+      emailIssues.push(`final:${d.payload.completionEmailDelivery.reason || "failed"}`);
+    }
+    contributors.forEach((contributor, index) => {
+      if (contributor.inviteEmailStatus === "failed") {
+        emailIssues.push(`invite #${index + 1}:${contributor.inviteEmailReason || "failed"}`);
+      }
+    });
     return {
       ...d,
+      emailIssues,
       signerStats: {
         total: contributors.length,
         signed: signedCount,

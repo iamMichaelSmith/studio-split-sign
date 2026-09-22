@@ -509,7 +509,7 @@ async function main() {
     const accountPage = await fetch(`http://127.0.0.1:${port}/account`, { headers: { cookie } });
     if (!accountPage.ok) throw new Error('account page failed after login');
     const accountHtml = await accountPage.text();
-    for (const tab of ['Overview', 'Vault', 'Resources', 'VST', 'Plans']) {
+    for (const tab of ['Overview', 'Vault', 'Collaborators', 'Resources', 'VST', 'Plans']) {
       if (!accountHtml.includes(`>${tab}</a>`)) throw new Error(`account page missing ${tab} tab`);
     }
     if (!accountHtml.includes('aria-current="page">Overview</a>')) throw new Error('account should open on Overview');
@@ -517,7 +517,7 @@ async function main() {
     const authenticatedSplitPage = await fetch(`http://127.0.0.1:${port}/split-sheet`, { headers: { cookie } });
     if (!authenticatedSplitPage.ok) throw new Error('authenticated split form failed');
     const authenticatedSplitHtml = await authenticatedSplitPage.text();
-    for (const expectedSplitFormCopy of ['Saved collaborator', 'splitSheetCollaborators.v1', 'Select saved collaborator', 'Manage reusable profiles', 'Keep only selected']) {
+    for (const expectedSplitFormCopy of ['Saved collaborator', 'Approved collaborators will appear here after they sign', 'Select saved collaborator', 'Manage reusable profiles', 'Keep only selected']) {
       if (!authenticatedSplitHtml.includes(expectedSplitFormCopy)) throw new Error(`split form missing saved collaborator UX: ${expectedSplitFormCopy}`);
     }
 
@@ -606,6 +606,13 @@ async function main() {
     const resourcesPage = await fetch(`http://127.0.0.1:${port}/account?tab=resources`, { headers: { cookie } });
     if (!resourcesPage.ok || !(await resourcesPage.text()).includes('Guides for your next session')) {
       throw new Error('account Resources tab failed');
+    }
+
+    const collaboratorsPage = await fetch(`http://127.0.0.1:${port}/account?tab=collaborators`, { headers: { cookie } });
+    if (!collaboratorsPage.ok) throw new Error('account Collaborators tab failed');
+    const collaboratorsHtml = await collaboratorsPage.text();
+    if (!collaboratorsHtml.includes('Approved Collaborators') || !collaboratorsHtml.includes('Creator and Studio feature')) {
+      throw new Error('account Collaborators tab should explain paid approved collaborator profiles');
     }
 
     const vstPage = await fetch(`http://127.0.0.1:${port}/account?tab=vst`, { headers: { cookie } });
@@ -729,6 +736,74 @@ async function main() {
       body: JSON.stringify(validInvitePayload('Free Limit Song 4'))
     });
     if (blockedCreate.status !== 402) throw new Error('free plan should block fourth split sheet request');
+
+    const adminLogin = await fetch(`http://127.0.0.1:${port}/admin/login`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        username: 'admin-user',
+        password: 'admin-pass-123'
+      })
+    });
+    if (adminLogin.status !== 302) throw new Error('admin login for collaborator smoke failed');
+    const adminCookie = (adminLogin.headers.get('set-cookie') || '')
+      .split(/,(?=[^;]+?=)/g)
+      .map((value) => value.split(';')[0])
+      .filter(Boolean)
+      .join('; ');
+    const planUpgrade = await fetch(`http://127.0.0.1:${port}/admin/users/${registered.user.id}/plan`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        cookie: adminCookie
+      },
+      body: new URLSearchParams({ planKey: 'creator' })
+    });
+    if (planUpgrade.status !== 302) throw new Error('creator plan upgrade for collaborator smoke failed');
+
+    const approvedProfileCreate = await fetch(`http://127.0.0.1:${port}/api/split-sheets`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${auth.accessToken}`
+      },
+      body: JSON.stringify({
+        songTitle: 'Approved Collaborator Smoke Song',
+        date: '2026-07-03',
+        allPartiesAgree: true,
+        collectSignaturesByInvite: true,
+        contributors: [
+          { legalName: 'Approved Collaborator One', role: 'Writer', email: 'approved1@example.com', writerShare: 50, publisherShare: 50 },
+          { legalName: 'Approved Collaborator Two', role: 'Producer', email: 'approved2@example.com', writerShare: 50, publisherShare: 50 }
+        ]
+      })
+    });
+    if (!approvedProfileCreate.ok) throw new Error('approved collaborator split create failed');
+    const approvedProfileCreated = await approvedProfileCreate.json();
+    const approvedProfileDetailResponse = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${approvedProfileCreated.splitSheet.id}`, {
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+    if (!approvedProfileDetailResponse.ok) throw new Error('approved collaborator detail failed');
+    const approvedProfileDetail = await approvedProfileDetailResponse.json();
+    const approvedSigner = approvedProfileDetail.splitSheet.payload.contributors[0];
+    const approvedSign = await fetch(`http://127.0.0.1:${port}/split-sheet/sign/${approvedProfileCreated.splitSheet.id}/${approvedSigner.signerToken}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: signerProfileBody(approvedSigner, 0, {
+        legalName: 'Approved Collaborator One',
+        role: 'Writer',
+        agreeToSplits: 'yes'
+      })
+    });
+    if (!approvedSign.ok) throw new Error('approved collaborator signature failed');
+    const splitAfterApproval = await fetch(`http://127.0.0.1:${port}/split-sheet`, { headers: { cookie } });
+    if (!splitAfterApproval.ok) throw new Error('split form after approved collaborator failed');
+    const splitAfterApprovalHtml = await splitAfterApproval.text();
+    if (!splitAfterApprovalHtml.includes('Approved Collaborator One') || !splitAfterApprovalHtml.includes('approved1@example.com')) {
+      throw new Error('approved collaborator should appear on future split sheet forms after signing');
+    }
 
     const refresh = await fetch(`http://127.0.0.1:${port}/api/auth/refresh`, {
       method: 'POST',
