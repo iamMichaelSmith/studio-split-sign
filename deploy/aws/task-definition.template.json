@@ -47,7 +47,7 @@
         { "name": "FROM_EMAIL", "value": "no-reply@splitsheetstudio.com" },
         { "name": "REPLY_TO_EMAIL", "value": "blakmarigold@gmail.com" },
         { "name": "NOTIFY_EMAIL", "value": "blakmarigold@gmail.com" },
-        { "name": "SUPPORT_EMAIL", "value": "blakmarigold@gmail.com" },
+        { "name": "SUPPORT_EMAIL", "value": "Contact@blakmarigold.com" },
         { "name": "STRIPE_CREATOR_PRICE_ID", "value": "price_1UF2f6ISjA58kSWkuJmWx9da" },
         { "name": "STRIPE_CREATOR_ANNUAL_PRICE_ID", "value": "price_1UF2fZISjA58kSWkO8xExDHG" },
         { "name": "STRIPE_STUDIO_PRO_PRICE_ID", "value": "price_1UF2hPISjA58kSWklxV3Tgrr" },
