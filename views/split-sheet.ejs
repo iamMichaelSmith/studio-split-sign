@@ -21,7 +21,7 @@
   </div>
 <% } %>
 
-<form method="post" action="/split-sheet" id="splitForm" autocomplete="on">
+<form method="post" action="/split-sheet" id="splitForm" autocomplete="on" novalidate>
   <% if (typeof revisionSource !== 'undefined' && revisionSource) { %>
     <input type="hidden" name="revisionOfId" value="<%= revisionSource.id %>">
     <input type="hidden" name="revisionOfVersion" value="<%= revisionSource.version %>">
@@ -434,13 +434,45 @@ function renderReview(){
   const signaturesReady = collectByInvite ? true : (hasDrawn && hasTyped);
   const compositionValid = !includesComposition() || ((Math.round(w*100)/100===100) && (Math.round(p*100)/100===100));
   const masterValid = !includesMaster() || (Math.round(m*100)/100===100);
-  const valid = compositionValid && masterValid && signaturesReady && names.length>=2 && song !== '(missing song title)' && checkedRecipients>=1 && allAgree;
+  const requiredReady = requiredFieldsReady();
+  const valid = compositionValid && masterValid && signaturesReady && requiredReady && names.length>=2 && song !== '(missing song title)' && checkedRecipients>=1 && allAgree;
   document.getElementById('submitBtn').disabled = !valid;
   const hint=document.getElementById('submitHint');
   if(hint){
-    hint.textContent = valid ? 'Ready to send for signatures.' : (collectByInvite ? 'Need valid 100% rights totals, at least 2 contributors, a recipient email, and proposal confirmation.' : 'Need valid 100% rights totals, at least 2 signed contributors, a recipient email, and agreement confirmation.');
+    const invalidField = firstInvalidRequiredField();
+    hint.textContent = valid ? 'Ready to send for signatures.' : (invalidField ? `Finish required field: ${fieldLabel(invalidField)}.` : (collectByInvite ? 'Need valid 100% rights totals, at least 2 contributors, a recipient email, and proposal confirmation.' : 'Need valid 100% rights totals, at least 2 signed contributors, a recipient email, and agreement confirmation.'));
     hint.style.color = valid ? '#9be49b' : '#ffd48a';
   }
+  return valid;
+}
+
+function fieldLabel(el){
+  const label = el.closest('label') || (el.id ? document.querySelector(`label[for="${el.id}"]`) : null) || el.parentElement?.querySelector('label');
+  return String(label?.textContent || el.name || 'required field').replace(/\s+/g, ' ').trim();
+}
+
+function firstInvalidRequiredField(){
+  const form = document.getElementById('splitForm');
+  return Array.from(form.querySelectorAll('[required]')).find((el) => {
+    if(el.disabled || el.type === 'hidden') return false;
+    if(el.type === 'checkbox') return !el.checked;
+    return !String(el.value || '').trim() || !el.validity.valid;
+  }) || null;
+}
+
+function requiredFieldsReady(){
+  return !firstInvalidRequiredField();
+}
+
+function focusInvalidField(el){
+  if(!el) return;
+  const panel = el.closest('.step-panel');
+  const step = panel?.dataset.step;
+  if(step) goStep(step);
+  setTimeout(() => {
+    try { el.focus({ preventScroll: true }); } catch { try { el.focus(); } catch {} }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 80);
 }
 
 function goStep(n){
@@ -476,7 +508,20 @@ if(todayInput && !todayInput.value){ todayInput.value = new Date().toISOString()
 
 document.querySelector('[name="songTitle"]').addEventListener('input', () => { renderReview(); saveDraft(); });
 
-document.getElementById('splitForm').addEventListener('submit', () => {
+document.getElementById('splitForm').addEventListener('submit', (event) => {
+  if(!renderReview()){
+    event.preventDefault();
+    const invalidField = firstInvalidRequiredField();
+    if(invalidField){
+      focusInvalidField(invalidField);
+      const hint = document.getElementById('submitHint');
+      if(hint){
+        hint.textContent = `Finish required field: ${fieldLabel(invalidField)}.`;
+        hint.style.color = '#ffd48a';
+      }
+    }
+    return;
+  }
   saveCollaboratorsFromForm();
   localStorage.removeItem(DRAFT_KEY);
 });
