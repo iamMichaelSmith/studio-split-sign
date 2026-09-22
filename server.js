@@ -987,6 +987,71 @@ function drawContributorDetailSection(pdf, contributor, index, rightsScope = "co
   pdf.y = top + 486;
 }
 
+function drawAgreementLanguage(pdf, payload) {
+  drawSectionHeading(pdf, "Agreement Language");
+  ensurePdfSpace(pdf, 366);
+
+  const legalLeft = pdf.page.margins.left;
+  const legalWidth = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
+  const legalTop = pdf.y;
+  const innerLeft = legalLeft + 18;
+  const innerWidth = legalWidth - 36;
+  const clauses = [
+    {
+      label: "Purpose",
+      text: `This split sheet records the parties' agreed ownership, contributor, and administration information for the song or recording identified in this packet.`
+    },
+    {
+      label: "Rights recorded",
+      text: `Writer share, publisher share, and master recording share are separate rights categories. Only the categories shown in this packet are being documented for registration, royalty administration, catalog records, clearance, and sync licensing review.`
+    },
+    {
+      label: "No hidden transfer",
+      text: "This packet does not by itself transfer copyright, assign publishing administration, create a work-made-for-hire relationship, grant a sync license, grant a master-use license, or replace a separate producer, label, publishing, administration, or sample-clearance agreement unless those terms are expressly stated in a separate signed writing."
+    },
+    {
+      label: "Contributor confirmations",
+      text: "Each signer confirms that the names, roles, contact details, PRO, IPI/CAE, publisher details, percentages, and signature information shown for that signer are accurate to the best of that signer's knowledge at the time of signing."
+    },
+    {
+      label: "Missing or updated metadata",
+      text: "If a PRO, IPI/CAE, publisher, address, phone, or similar metadata field is incomplete or later changes, the signer agrees to provide updated information in good faith. Metadata updates do not change ownership percentages unless the affected parties sign a revised split sheet."
+    },
+    {
+      label: "Electronic signature and revisions",
+      text: "The typed name, drawn signature, email confirmation, timestamp, and audit record are intended to authenticate each signer's electronic signature. Any later change to ownership percentages or rights ownership should be documented in a new signed revision."
+    },
+    {
+      label: "Platform disclaimer",
+      text: "Split Sheet Studio provides workflow and documentation tools only. It does not provide legal, tax, publishing, royalty, or clearance advice, and each party may consult their own attorney, manager, publisher, or advisor before relying on this packet."
+    }
+  ];
+
+  pdf.save();
+  pdf.roundedRect(legalLeft, legalTop, legalWidth, 336, 10).fillAndStroke("#fffdf8", "#d7c49b");
+  pdf.fillColor("#111111").fontSize(10).text(
+    `This packet memorializes the parties' current agreement regarding ${rightsScopeLabel(payload.rightsScope).toLowerCase()}.`,
+    innerLeft,
+    legalTop + 18,
+    { width: innerWidth, lineGap: 2 }
+  );
+
+  let y = legalTop + 48;
+  clauses.forEach((clause, index) => {
+    pdf.fillColor("#7a6740").fontSize(7.4).text(`${index + 1}. ${clause.label.toUpperCase()}`, innerLeft, y, {
+      width: innerWidth
+    });
+    y += 10;
+    pdf.fillColor("#222222").fontSize(7.8).text(clause.text, innerLeft, y, {
+      width: innerWidth,
+      lineGap: 1.7
+    });
+    y += pdf.heightOfString(clause.text, { width: innerWidth, lineGap: 1.7 }) + 6;
+  });
+  pdf.restore();
+  pdf.y = legalTop + 352;
+}
+
 function renderSplitSheetPdf(pdf, docJson, options = {}) {
   const payload = docJson.payload || {};
   const contributors = payload.contributors || [];
@@ -1095,32 +1160,7 @@ function renderSplitSheetPdf(pdf, docJson, options = {}) {
     "Agreement Language",
     `${safeText(payload.songTitle)} | legal summary`
   );
-  drawSectionHeading(pdf, "Agreement Language");
-  ensurePdfSpace(pdf, 240);
-  const legalLeft = pdf.page.margins.left;
-  const legalWidth = pdf.page.width - pdf.page.margins.left - pdf.page.margins.right;
-  const legalTop = pdf.y;
-  pdf.roundedRect(legalLeft, legalTop, legalWidth, 190, 10).fillAndStroke("#fffdf8", "#d7c49b");
-  pdf.fillColor("#111111").fontSize(10).text(
-    `This split sheet is intended to memorialize the parties' current agreement regarding ${rightsScopeLabel(payload.rightsScope).toLowerCase()} for the recording identified in this packet.`,
-    legalLeft + 18,
-    legalTop + 18,
-    { width: legalWidth - 36, lineGap: 3 }
-  );
-  [
-    "Each contributor confirms that the applicable ownership percentages shown in this packet are accurate to the best of that contributor's knowledge as of the execution date.",
-    "Each contributor agrees that the typed name and captured signature image associated with that contributor are intended to serve as that contributor's electronic signature and authentication of this record.",
-    "The parties acknowledge that this document may be relied upon as a written record of authorship, ownership, and publishing information for administrative, royalty, and clearance purposes.",
-    "Any later change to ownership, publishing, administration, or contributor information should be documented in a revised split sheet signed by all affected parties."
-  ].forEach((line, index) => {
-    pdf.fillColor("#222222").fontSize(9.5).text(
-      `${index + 1}. ${line}`,
-      legalLeft + 18,
-      legalTop + 52 + (index * 28),
-      { width: legalWidth - 36, lineGap: 3 }
-    );
-  });
-  pdf.y = legalTop + 206;
+  drawAgreementLanguage(pdf, payload);
 
   drawSectionHeading(pdf, "Execution Audit");
   drawKeyValueGrid(pdf, [
