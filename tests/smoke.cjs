@@ -473,6 +473,13 @@ async function main() {
     }
     if (!accountHtml.includes('aria-current="page">Overview</a>')) throw new Error('account should open on Overview');
 
+    const authenticatedSplitPage = await fetch(`http://127.0.0.1:${port}/split-sheet`, { headers: { cookie } });
+    if (!authenticatedSplitPage.ok) throw new Error('authenticated split form failed');
+    const authenticatedSplitHtml = await authenticatedSplitPage.text();
+    for (const expectedSplitFormCopy of ['Saved collaborator', 'splitSheetCollaborators.v1', 'Select saved collaborator']) {
+      if (!authenticatedSplitHtml.includes(expectedSplitFormCopy)) throw new Error(`split form missing saved collaborator UX: ${expectedSplitFormCopy}`);
+    }
+
     const vaultPage = await fetch(`http://127.0.0.1:${port}/account?tab=vault`, { headers: { cookie } });
     if (!vaultPage.ok) throw new Error('account vault failed');
     const vaultHtml = await vaultPage.text();
@@ -489,6 +496,9 @@ async function main() {
     const vstHtml = await vstPage.text();
     if (!vstHtml.includes('Split Sheet Studio VST3') || !vstHtml.includes('plugin is included with Creator and Studio')) {
       throw new Error('account VST tab should show Free-plan upgrade path');
+    }
+    for (const expectedVstCopy of ['Upgrade to get the plugin', 'splitsheets', 'recording studio', 'sync licensing', '/vst-contributors.png']) {
+      if (!vstHtml.includes(expectedVstCopy)) throw new Error(`account VST tab missing marketing copy: ${expectedVstCopy}`);
     }
     if (vstHtml.includes('Download Windows installer')) throw new Error('Free account should not see plugin installer action');
 

@@ -59,10 +59,10 @@
         <% } %>
       </div>
       <div class="card">
-        <div class="stat-label">Studio toolkit</div>
-        <div class="stat-value">DAW</div>
-        <p class="small">Use Split Sheet Studio inside your Windows music workflow with the beta toolkit.</p>
-        <p><a class="button-link button-link-secondary" href="/account?tab=vst">Open VST</a></p>
+        <div class="stat-label">Get the plugin</div>
+        <div class="stat-value">VST3</div>
+        <p class="small">Bring splitsheets, credits, and session ownership into your Windows DAW workflow.</p>
+        <p><a class="button-link button-link-secondary" href="/account?tab=vst">Get plugin</a></p>
       </div>
     </div>
     <% } %>
@@ -125,17 +125,64 @@
     <% } %>
 
     <% if (accountTab === "vst") { %>
-      <section class="card">
-        <div class="stat-label">Studio toolkit</div>
-        <h2>Split Sheet Studio VST3</h2>
-        <p class="small">Use the Windows VST3 or standalone app with your Split Sheet Studio account.</p>
-        <% if (currentPlan.key === "free") { %>
-          <p class="small">The plugin is included with Creator and Studio plans.</p>
-          <p><a class="button-link" href="/account?tab=plans">View plans</a></p>
-        <% } else { %>
-          <p><a class="button-link" href="/downloads/plugin/latest">Download Windows installer</a></p>
-        <% } %>
-        <p><a href="/beta#windows-beta">Installation guide and compatibility</a></p>
+      <section class="card vst-download-page">
+        <div class="vst-download-hero">
+          <div class="vst-download-copy">
+            <div class="stat-label">Get the plugin</div>
+            <h2>Get Split Sheet Studio VST3 inside your DAW.</h2>
+            <p class="vst-lede">Split Sheet Studio VST3 brings splitsheets, recording studio paperwork, producer credits, songwriter ownership, sync licensing prep, and final PDF delivery into the same workflow where the record is being made.</p>
+            <div class="vst-keyword-row" aria-label="Plugin use cases">
+              <span>Splitsheets</span>
+              <span>Recording studio sessions</span>
+              <span>Sync licensing prep</span>
+              <span>Producer splits</span>
+            </div>
+            <div class="vst-actions">
+              <% if (currentPlan.key === "free") { %>
+                <a class="button-link account-primary-button" href="/account?tab=plans">Upgrade to get the plugin</a>
+                <a class="button-link button-link-secondary" href="<%= pricingUrl %>">Compare Creator and Studio</a>
+              <% } else { %>
+                <a class="button-link account-primary-button" href="/downloads/plugin/latest">Download Windows installer</a>
+                <a class="button-link button-link-secondary" href="/beta#windows-beta">Install guide</a>
+              <% } %>
+            </div>
+            <% if (currentPlan.key === "free") { %>
+              <p class="small">The plugin is included with Creator and Studio plans, so free users can upgrade when they are ready to close more sessions from the DAW.</p>
+            <% } else { %>
+              <p class="small">Your plan includes the Windows VST3 plugin and standalone Windows app during launch.</p>
+            <% } %>
+          </div>
+          <figure class="vst-plugin-preview">
+            <img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio VST3 plugin showing contributors, songwriter splits, producer shares, and session ownership fields inside a DAW workflow">
+            <figcaption>Creator and Studio include the Windows VST3 plugin plus standalone app.</figcaption>
+          </figure>
+        </div>
+
+        <div class="vst-benefit-grid" aria-label="Split Sheet Studio VST benefits">
+          <article>
+            <div class="stat-label">For studios</div>
+            <h3>Close the session before files leave.</h3>
+            <p class="small">Recording studios, engineers, and managers can capture splitsheets, legal names, roles, PRO data, and contributor emails while everyone is still focused on the song.</p>
+          </article>
+          <article>
+            <div class="stat-label">For creators</div>
+            <h3>Keep credits tied to the creative moment.</h3>
+            <p class="small">Artists, producers, and songwriters can document publishing splits, master ownership, beat agreements, topline credits, and collaboration details without leaving the music workflow.</p>
+          </article>
+          <article>
+            <div class="stat-label">For licensing</div>
+            <h3>Make sync conversations easier.</h3>
+            <p class="small">Clean ownership records, remote signatures, final PDF packets, and rights metadata help prepare songs for sync licensing, music publishing, catalog admin, and release paperwork.</p>
+          </article>
+        </div>
+
+        <div class="vst-download-footer">
+          <div>
+            <div class="stat-label">Compatibility</div>
+            <p class="small">Built for compatible 64-bit Windows VST3 hosts, with a standalone Windows app included for sessions outside the DAW.</p>
+          </div>
+          <a href="/beta#windows-beta">Installation guide and compatibility</a>
+        </div>
       </section>
     <% } %>
 

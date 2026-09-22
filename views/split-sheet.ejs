@@ -61,7 +61,7 @@
         <button type="button" id="add">Add contributor</button>
         <button type="button" id="setEqual">Set equal splits for all</button>
       </div>
-      <p class="small">Tip: Add everyone who should approve the split. Use equal splits first, then adjust percentages only where needed.</p>
+      <p class="small">Tip: Add everyone who should approve the split. Saved collaborators appear in the selector on each card after you enter them once in this browser.</p>
     </div>
     <div class="row">
       <button type="button" class="next-step" data-next="3">Review and send</button>
@@ -104,11 +104,13 @@
 <script src="/vendor/signature_pad/signature_pad.umd.min.js"></script>
 <script>
 const DRAFT_KEY = 'splitSheetDraft.v1';
+const COLLABORATOR_KEY = 'splitSheetCollaborators.v1';
+const COLLABORATOR_FIELDS = ['legalName','role','address','phone','email','pro','ipi','publisherName','publisherIpi','typedSignatureName'];
 const pads = new Map();
 const SERVER_PREFILL = <%- JSON.stringify(typeof prefill !== 'undefined' ? prefill : null).replace(/</g, '\\u003c') %>;
 
 function saveDraft(){
-  const fields = Array.from(document.querySelectorAll('#splitForm input, #splitForm textarea, #splitForm select'));
+  const fields = Array.from(document.querySelectorAll('#splitForm input, #splitForm textarea, #splitForm select')).filter((el) => !el.dataset.draftIgnore);
   const payload = fields.map((el) => ({
     type: el.type,
     value: el.type === 'checkbox' ? el.checked : el.value
@@ -121,7 +123,7 @@ function restoreDraft(){
     const raw = localStorage.getItem(DRAFT_KEY);
     if(!raw) return;
     const payload = JSON.parse(raw);
-    const fields = Array.from(document.querySelectorAll('#splitForm input, #splitForm textarea, #splitForm select'));
+    const fields = Array.from(document.querySelectorAll('#splitForm input, #splitForm textarea, #splitForm select')).filter((el) => !el.dataset.draftIgnore);
     fields.forEach((el, idx) => {
       const entry = payload[idx];
       if(!entry) return;
@@ -137,6 +139,85 @@ function restoreDraft(){
 function clearDraft(){
   localStorage.removeItem(DRAFT_KEY);
   location.reload();
+}
+
+function collaboratorKey(profile){
+  return String(profile.email || profile.legalName || profile.phone || '').trim().toLowerCase();
+}
+
+function readCollaborators(){
+  try {
+    const parsed = JSON.parse(localStorage.getItem(COLLABORATOR_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((profile) => profile && collaboratorKey(profile)).slice(0, 80) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCollaborators(profiles){
+  localStorage.setItem(COLLABORATOR_KEY, JSON.stringify(profiles.slice(0, 80)));
+}
+
+function profileFromCard(card){
+  const profile = {};
+  COLLABORATOR_FIELDS.forEach((name) => {
+    const node = card.querySelector(`[name="${name}"]`);
+    profile[name] = String(node?.value || '').trim();
+  });
+  return profile;
+}
+
+function saveCollaboratorFromCard(card){
+  const profile = profileFromCard(card);
+  if(!profile.legalName || (!profile.email && !profile.phone)) return;
+  const key = collaboratorKey(profile);
+  const profiles = readCollaborators().filter((saved) => collaboratorKey(saved) !== key);
+  profiles.unshift({ ...profile, updatedAt: new Date().toISOString() });
+  writeCollaborators(profiles);
+  renderCollaboratorSelectors(key);
+}
+
+function saveCollaboratorsFromForm(){
+  document.querySelectorAll('.contributor-card').forEach(saveCollaboratorFromCard);
+}
+
+function escapeOptionText(value){
+  return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+}
+
+function collaboratorOptionLabel(profile){
+  const role = profile.role ? ` - ${profile.role}` : '';
+  const email = profile.email ? ` (${profile.email})` : '';
+  return `${profile.legalName || profile.email || profile.phone}${role}${email}`;
+}
+
+function renderCollaboratorSelectors(selectedKey){
+  const profiles = readCollaborators();
+  const options = profiles.map((profile) => {
+    const key = collaboratorKey(profile);
+    return `<option value="${escapeOptionText(key)}">${escapeOptionText(collaboratorOptionLabel(profile))}</option>`;
+  }).join('');
+  document.querySelectorAll('.collaborator-select').forEach((select) => {
+    const currentValue = selectedKey || select.value;
+    select.innerHTML = `<option value="">Select saved collaborator</option>${options}`;
+    select.disabled = profiles.length === 0;
+    select.value = profiles.some((profile) => collaboratorKey(profile) === currentValue) ? currentValue : '';
+  });
+}
+
+function applyCollaboratorProfile(card, key){
+  const profile = readCollaborators().find((saved) => collaboratorKey(saved) === key);
+  if(!profile) return;
+  COLLABORATOR_FIELDS.forEach((name) => {
+    const node = card.querySelector(`[name="${name}"]`);
+    if(node && profile[name] !== undefined) node.value = profile[name] || '';
+  });
+  const typed = card.querySelector('[name="typedSignatureName"]');
+  const previewId = typed?.id ? typed.id.replace('typed', 'typedPreview') : '';
+  const preview = previewId ? document.getElementById(previewId) : null;
+  if(preview) preview.textContent = typed?.value || 'First Last';
+  updateTotals();
+  saveDraft();
 }
 
 function wirePad(canvasId,inputId,clearId){
@@ -170,6 +251,7 @@ function add(prefill){
   const i = idx;
   c.insertAdjacentHTML('beforeend',`<details class="card contributor-card" open>
   <summary>Contributor #${i+1}</summary>
+  <div class="collaborator-profile-row"><div><label>Saved collaborator</label><select class="collaborator-select" data-draft-ignore="true"><option value="">Select saved collaborator</option></select></div><p class="small">Profiles save automatically in this browser after you enter a legal name and email or phone.</p></div>
   <div class="row"><div><label>Legal name</label><input name="legalName" required></div><div><label>Role</label><input name="role" placeholder="artist / producer / writer" required></div></div>
   <div class="row"><div><label>Address</label><input name="address" required></div><div><label>Phone</label><input name="phone" required></div></div>
   <div class="row"><div><label>Email</label><input type="email" name="email" required></div><div><label>PRO</label><input name="pro" required></div></div>
@@ -186,8 +268,10 @@ function add(prefill){
 
   const card = c.lastElementChild;
   const typed=document.getElementById(`typed${i}`); const preview=document.getElementById(`typedPreview${i}`);
-  typed.addEventListener('input',()=>{preview.textContent=(typed.value||'First Last'); renderReview(); saveDraft();});
-  card.querySelectorAll('input,select,textarea').forEach(i=> i.addEventListener('input', () => { updateTotals(); saveDraft(); }));
+  const profileSelect = card.querySelector('.collaborator-select');
+  profileSelect.addEventListener('change', () => applyCollaboratorProfile(card, profileSelect.value));
+  typed.addEventListener('input',()=>{preview.textContent=(typed.value||'First Last'); renderReview(); saveDraft(); saveCollaboratorFromCard(card);});
+  card.querySelectorAll('input,select,textarea').forEach(i=> i.addEventListener('input', () => { updateTotals(); saveDraft(); if(!i.dataset.draftIgnore) saveCollaboratorFromCard(card); }));
 
   if(prefill){
     const names = ['legalName','role','address','phone','email','pro','ipi','publisherName','publisherIpi','writerShare','publisherShare','masterShare','typedSignatureName','signatureData'];
@@ -205,6 +289,7 @@ function add(prefill){
   }
 
   idx++;
+  renderCollaboratorSelectors(prefill ? collaboratorKey(prefill) : '');
   updateRightsFields();
   updateTotals();
 }
@@ -392,6 +477,7 @@ if(todayInput && !todayInput.value){ todayInput.value = new Date().toISOString()
 document.querySelector('[name="songTitle"]').addEventListener('input', () => { renderReview(); saveDraft(); });
 
 document.getElementById('splitForm').addEventListener('submit', () => {
+  saveCollaboratorsFromForm();
   localStorage.removeItem(DRAFT_KEY);
 });
 
