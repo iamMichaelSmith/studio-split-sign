@@ -19,8 +19,6 @@
           <% oauthProviders.forEach((provider) => { %>
             <% if (provider.enabled) { %>
               <a class="oauth-button" href="/auth/<%= provider.key %>?next=<%= encodeURIComponent(next) %>">Continue with <%= provider.label %></a>
-            <% } else { %>
-              <button class="oauth-button oauth-button-disabled" type="button" disabled><%= provider.label %> sign-in coming soon</button>
             <% } %>
           <% }) %>
         </div>

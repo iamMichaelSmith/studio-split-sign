@@ -63,6 +63,19 @@
       </div>
       <p class="small">Tip: Add everyone who should approve the split. Saved collaborators appear in the selector on each card after you enter them once in this browser.</p>
     </div>
+    <div class="card collaborator-manager">
+      <div class="stat-label">Saved collaborators</div>
+      <h3>Manage reusable profiles</h3>
+      <p class="small">These profiles are saved only in this browser. Select a collaborator to remove old test profiles or keep only the collaborator you reuse most.</p>
+      <div class="row">
+        <div><label>Saved profile</label><select id="savedCollaboratorManager" data-draft-ignore="true"><option value="">No saved collaborators yet</option></select></div>
+        <div class="collaborator-manager-actions">
+          <button type="button" id="removeSavedCollaborator" class="secondary-button">Delete selected</button>
+          <button type="button" id="keepOnlySavedCollaborator" class="secondary-button">Keep only selected</button>
+        </div>
+      </div>
+      <p class="small" id="savedCollaboratorStatus">Saved collaborators will appear here after you enter a contributor once.</p>
+    </div>
     <div class="row">
       <button type="button" class="next-step" data-next="3">Review and send</button>
       <button type="button" id="clearDraftBtn">Clear saved draft</button>
@@ -204,6 +217,52 @@ function renderCollaboratorSelectors(selectedKey){
     select.disabled = profiles.length === 0;
     select.value = profiles.some((profile) => collaboratorKey(profile) === currentValue) ? currentValue : '';
   });
+  renderCollaboratorManager(selectedKey);
+}
+
+function renderCollaboratorManager(selectedKey){
+  const manager = document.getElementById('savedCollaboratorManager');
+  const status = document.getElementById('savedCollaboratorStatus');
+  const removeButton = document.getElementById('removeSavedCollaborator');
+  const keepButton = document.getElementById('keepOnlySavedCollaborator');
+  if(!manager) return;
+  const profiles = readCollaborators();
+  const currentValue = selectedKey || manager.value;
+  const options = profiles.map((profile) => {
+    const key = collaboratorKey(profile);
+    return `<option value="${escapeOptionText(key)}">${escapeOptionText(collaboratorOptionLabel(profile))}</option>`;
+  }).join('');
+  manager.innerHTML = profiles.length
+    ? `<option value="">Select saved collaborator</option>${options}`
+    : '<option value="">No saved collaborators yet</option>';
+  manager.disabled = profiles.length === 0;
+  manager.value = profiles.some((profile) => collaboratorKey(profile) === currentValue) ? currentValue : '';
+  if(removeButton) removeButton.disabled = !manager.value;
+  if(keepButton) keepButton.disabled = !manager.value;
+  if(status) {
+    status.textContent = profiles.length
+      ? `${profiles.length} saved collaborator${profiles.length === 1 ? '' : 's'} in this browser.`
+      : 'Saved collaborators will appear here after you enter a contributor once.';
+  }
+}
+
+function removeSavedCollaborator(key){
+  if(!key) return;
+  const profile = readCollaborators().find((saved) => collaboratorKey(saved) === key);
+  const label = profile ? collaboratorOptionLabel(profile) : 'this collaborator';
+  if(!confirm(`Delete saved profile for ${label}?`)) return;
+  writeCollaborators(readCollaborators().filter((saved) => collaboratorKey(saved) !== key));
+  renderCollaboratorSelectors('');
+}
+
+function keepOnlySavedCollaborator(key){
+  if(!key) return;
+  const profile = readCollaborators().find((saved) => collaboratorKey(saved) === key);
+  if(!profile) return;
+  const label = collaboratorOptionLabel(profile);
+  if(!confirm(`Keep only ${label} and delete all other saved collaborator profiles from this browser?`)) return;
+  writeCollaborators([profile]);
+  renderCollaboratorSelectors(key);
 }
 
 function applyCollaboratorProfile(card, key){
@@ -528,6 +587,9 @@ document.addEventListener('change', (e)=>{
 document.getElementById('add').addEventListener('click', () => add());
 document.getElementById('setEqual').addEventListener('click', setEqualSplits);
 document.getElementById('clearDraftBtn').addEventListener('click', clearDraft);
+document.getElementById('savedCollaboratorManager').addEventListener('change', () => renderCollaboratorManager());
+document.getElementById('removeSavedCollaborator').addEventListener('click', () => removeSavedCollaborator(document.getElementById('savedCollaboratorManager').value));
+document.getElementById('keepOnlySavedCollaborator').addEventListener('click', () => keepOnlySavedCollaborator(document.getElementById('savedCollaboratorManager').value));
 
 const todayInput = document.querySelector('[name="date"]');
 if(todayInput && !todayInput.value){ todayInput.value = new Date().toISOString().slice(0,10); }

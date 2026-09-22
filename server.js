@@ -552,11 +552,12 @@ async function listSubmissions() {
 
 async function listUserSplitSheets(user) {
   if (!user?.id && !user?.email) return [];
-  return submissionStore.listSubmissions({
+  const submissions = await submissionStore.listSubmissions({
     ownerUserId: user.id,
     ownerEmail: user.email,
     type: "split-sheet"
   });
+  return submissions.filter((doc) => String(doc.status || "").toLowerCase() !== "archived");
 }
 
 async function usageSummaryForUser(user) {
@@ -593,6 +594,10 @@ function splitSheetDetail(doc) {
   const detail = detailSplitSheet(doc, baseUrl);
   detail.pdfUrl = pdfDownloadUrl(doc);
   return detail;
+}
+
+function splitSheetSongName(doc) {
+  return String(doc?.payload?.songTitle || doc?.payload?.title || doc?.payload?.song || doc?.payload?.workTitle || "Untitled song").trim();
 }
 
 function canDownloadSplitPdf(req, doc) {
@@ -1612,7 +1617,7 @@ async function sendMacPluginInstaller(res) {
       title: "Mac download coming soon",
       message: "The macOS Audio Unit version is prepared but not publicly available yet.",
       details: "It must be built on macOS, signed with an Apple Developer ID, notarized, and validated in Logic Pro before this download is enabled.",
-      actionHref: "/beta",
+      actionHref: "/plugin",
       actionLabel: "View Windows plugin downloads",
       debugLink: null
     });
@@ -1648,7 +1653,7 @@ async function sendMacPluginInstaller(res) {
     title: "Mac installer unavailable",
     message: "The Mac download is enabled, but its installer source is not configured.",
     details: "Set MAC_PLUGIN_DOWNLOAD_URL, MAC_PLUGIN_DOWNLOAD_PATH, or the Mac S3 download settings.",
-    actionHref: "/beta",
+    actionHref: "/plugin",
     actionLabel: "View Windows plugin downloads",
     debugLink: null
   });
@@ -1944,6 +1949,7 @@ function oauthRedirectUri(providerKey) {
 
 function oauthUiProviders() {
   return Object.entries(oauthProviderConfigs)
+    .filter(([key]) => key === "google")
     .map(([key, config]) => ({
       key,
       label: config.label,
@@ -1990,7 +1996,7 @@ function oauthError(res, error, next = "/account") {
   return res.status(error.statusCode || 400).render("auth-message", {
     title: "Sign-in unavailable",
     message,
-    details: "Google and Apple sign-in require provider credentials before they can be used in production.",
+    details: "Google sign-in requires provider credentials before it can be used in production.",
     actionHref: `/login?next=${encodeURIComponent(next)}`,
     actionLabel: "Back to sign in",
     debugLink: null,
@@ -2347,7 +2353,7 @@ app.get("/robots.txt", (req, res) => {
 });
 app.get("/sitemap.xml", publicPageLimiter, (req, res) => {
   if (!isMarketingHost(req)) return res.status(404).type("text/plain").send("Not found");
-  const staticUrls = ["/", "/pricing", "/beta", "/blog", "/support"].map((pathname) => ({
+  const staticUrls = ["/", "/pricing", "/plugin", "/blog", "/support"].map((pathname) => ({
     pathname,
     lastmod: "2026-09-13",
     changefreq: pathname === "/" ? "weekly" : "monthly",
@@ -2390,7 +2396,7 @@ app.get("/llms.txt", publicPageLimiter, (req, res) => {
     `- Homepage: ${marketingSiteUrl("/")}`,
     `- Pricing: ${marketingSiteUrl("/pricing")}`,
     `- Blog: ${marketingSiteUrl("/blog")}`,
-    `- Windows plugin downloads: ${marketingSiteUrl("/beta")}`,
+    `- Windows plugin downloads: ${marketingSiteUrl("/plugin")}`,
     `- Support: ${marketingSiteUrl("/support")}`,
     "",
     "## Blog Guides",
@@ -2477,6 +2483,10 @@ app.get("/pricing", publicPageLimiter, (req, res) => {
   });
 });
 app.get("/beta", publicPageLimiter, (req, res) => {
+  return res.redirect(301, "/plugin");
+});
+
+app.get("/plugin", publicPageLimiter, (req, res) => {
   return res.render("beta", {
     ...publicNavModel(),
     pluginVersionLabel,
@@ -3213,12 +3223,84 @@ app.get("/account", requireWebAuth, async (req, res) => {
     billingEnabled: stripeEnabled,
     billingNotice: req.query.billing || "",
     accountTab,
+    vaultNotice: String(req.query.vault || ""),
     pricingUrl: "/pricing",
     splitSheetUrl: "/split-sheet",
     blogUrl: "/blog",
     latestPosts: latestBlogPosts(),
     supportEmail
   });
+});
+app.post("/account/split-sheets/:id/archive", requireWebAuth, async (req, res) => {
+  const doc = await loadSubmission(req.params.id);
+  if (!doc || doc.type !== "split-sheet") {
+    return res.status(404).render("auth-message", {
+      title: "Split sheet not found",
+      message: "We could not find that split sheet.",
+      details: "It may have already been deleted or moved.",
+      actionHref: "/account?tab=vault",
+      actionLabel: "Back to vault",
+      debugLink: null,
+      supportEmail
+    });
+  }
+  if (!canAccessSplitSheet(doc, req.webUser)) {
+    return res.status(403).render("auth-message", {
+      title: "Access denied",
+      message: "You do not have access to archive this split sheet.",
+      details: "Sign in with the account that created the split sheet.",
+      actionHref: "/account?tab=vault",
+      actionLabel: "Back to vault",
+      debugLink: null,
+      supportEmail
+    });
+  }
+  doc.status = "archived";
+  doc.updatedAt = nowIso();
+  doc.payload = doc.payload || {};
+  doc.payload.archivedAt = doc.updatedAt;
+  await saveSubmissionRow(doc);
+  return res.redirect("/account?tab=vault&vault=archived");
+});
+app.post("/account/split-sheets/:id/delete", requireWebAuth, async (req, res) => {
+  const doc = await loadSubmission(req.params.id);
+  if (!doc || doc.type !== "split-sheet") {
+    return res.status(404).render("auth-message", {
+      title: "Split sheet not found",
+      message: "We could not find that split sheet.",
+      details: "It may have already been deleted or moved.",
+      actionHref: "/account?tab=vault",
+      actionLabel: "Back to vault",
+      debugLink: null,
+      supportEmail
+    });
+  }
+  if (!canAccessSplitSheet(doc, req.webUser)) {
+    return res.status(403).render("auth-message", {
+      title: "Access denied",
+      message: "You do not have access to delete this split sheet.",
+      details: "Sign in with the account that created the split sheet.",
+      actionHref: "/account?tab=vault",
+      actionLabel: "Back to vault",
+      debugLink: null,
+      supportEmail
+    });
+  }
+  const songName = splitSheetSongName(doc);
+  const confirmation = String(req.body.confirmSongTitle || "").trim();
+  if (confirmation !== songName) {
+    return res.status(400).render("auth-message", {
+      title: "Deletion not confirmed",
+      message: `Type the song name exactly as "${songName}" before deleting this split sheet.`,
+      details: "No changes were made.",
+      actionHref: "/account?tab=vault",
+      actionLabel: "Back to vault",
+      debugLink: null,
+      supportEmail
+    });
+  }
+  await submissionStore.deleteSubmission(doc.id);
+  return res.redirect("/account?tab=vault&vault=deleted");
 });
 app.get("/signup", publicPageLimiter, (req, res) => res.render("auth-signup", {
   error: null,

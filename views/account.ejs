@@ -77,6 +77,11 @@
         </div>
         <% if (usage.canCreate) { %><a class="button-link button-link-secondary" href="<%= splitSheetUrl %>">New split sheet</a><% } %>
       </div>
+      <% if (vaultNotice === "archived") { %>
+        <div class="card legal-note">Split sheet archived. It is hidden from the main vault.</div>
+      <% } else if (vaultNotice === "deleted") { %>
+        <div class="card legal-note">Split sheet permanently deleted.</div>
+      <% } %>
       <% if (!splitSheets.length) { %>
         <p class="small">No split sheets in the vault yet. Start your first split sheet when your session credits are ready.</p>
       <% } %>
@@ -92,6 +97,17 @@
             <div class="vault-actions">
               <a href="<%= pdfViewPath(doc) %>" target="_blank" rel="noopener">View</a>
               <a href="<%= pdfDownloadPath(doc) %>">Download</a>
+              <form method="post" action="/account/split-sheets/<%= doc.id %>/archive" class="vault-inline-form" onsubmit="return confirm('Archive this split sheet? It will be hidden from your main vault.');">
+                <button type="submit">Archive</button>
+              </form>
+              <details class="vault-delete-panel">
+                <summary>Delete</summary>
+                <form method="post" action="/account/split-sheets/<%= doc.id %>/delete">
+                  <p class="small">Permanent delete. Type <strong><%= songName %></strong> to confirm.</p>
+                  <input name="confirmSongTitle" autocomplete="off" placeholder="<%= songName %>" required>
+                  <button type="submit">Delete permanently</button>
+                </form>
+              </details>
             </div>
           </div>
         </div>
@@ -143,7 +159,7 @@
                 <a class="button-link button-link-secondary" href="<%= pricingUrl %>">Compare Creator and Studio</a>
               <% } else { %>
                 <a class="button-link account-primary-button" href="/downloads/plugin/latest">Download Windows installer</a>
-                <a class="button-link button-link-secondary" href="/beta#windows-beta">Install guide</a>
+                <a class="button-link button-link-secondary" href="/plugin#windows-download">Install guide</a>
               <% } %>
             </div>
             <% if (currentPlan.key === "free") { %>
@@ -181,7 +197,7 @@
             <div class="stat-label">Compatibility</div>
             <p class="small">Built for compatible 64-bit Windows VST3 hosts, with a standalone Windows app included for sessions outside the DAW.</p>
           </div>
-          <a href="/beta#windows-beta">Installation guide and compatibility</a>
+          <a href="/plugin#windows-download">Installation guide and compatibility</a>
         </div>
       </section>
     <% } %>

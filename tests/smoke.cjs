@@ -130,12 +130,16 @@ async function main() {
       throw new Error('unsigned Stripe webhook rejection reason mismatch');
     }
 
-    const pluginDownload = await fetch(`http://127.0.0.1:${port}/beta`);
+    const pluginDownload = await fetch(`http://127.0.0.1:${port}/plugin`);
     if (!pluginDownload.ok) throw new Error('plugin download page failed');
     const pluginDownloadHtml = await pluginDownload.text();
     if (!pluginDownloadHtml.includes('Windows VST3')) throw new Error('windows plugin label missing');
     for (const staleCopy of ['Public beta', 'Known beta limits', 'Stripe can stay disabled', 'Mac AU beta']) {
       if (pluginDownloadHtml.includes(staleCopy)) throw new Error(`plugin download page has stale copy: ${staleCopy}`);
+    }
+    const oldPluginPath = await fetch(`http://127.0.0.1:${port}/beta`, { redirect: 'manual' });
+    if (oldPluginPath.status !== 301 || oldPluginPath.headers.get('location') !== '/plugin') {
+      throw new Error('old beta plugin path should redirect to /plugin');
     }
 
     const support = await fetch(`http://127.0.0.1:${port}/support`);
@@ -228,7 +232,9 @@ async function main() {
     if (!signupPage.ok) throw new Error('signup page failed');
     const signupHtml = await signupPage.text();
     if (!signupHtml.includes('Continue with Google')) throw new Error('signup page missing active Google sign-in');
-    if (!signupHtml.includes('Continue with Apple')) throw new Error('signup page missing active Apple sign-in');
+    if (signupHtml.includes('Continue with Apple') || signupHtml.includes('Apple sign-in coming soon')) {
+      throw new Error('signup page should not show Apple sign-in');
+    }
 
     const forgotPasswordPage = await fetch(`http://127.0.0.1:${port}/forgot-password`);
     if (!forgotPasswordPage.ok) throw new Error('forgot password page failed');
@@ -511,7 +517,7 @@ async function main() {
     const authenticatedSplitPage = await fetch(`http://127.0.0.1:${port}/split-sheet`, { headers: { cookie } });
     if (!authenticatedSplitPage.ok) throw new Error('authenticated split form failed');
     const authenticatedSplitHtml = await authenticatedSplitPage.text();
-    for (const expectedSplitFormCopy of ['Saved collaborator', 'splitSheetCollaborators.v1', 'Select saved collaborator']) {
+    for (const expectedSplitFormCopy of ['Saved collaborator', 'splitSheetCollaborators.v1', 'Select saved collaborator', 'Manage reusable profiles', 'Keep only selected']) {
       if (!authenticatedSplitHtml.includes(expectedSplitFormCopy)) throw new Error(`split form missing saved collaborator UX: ${expectedSplitFormCopy}`);
     }
 
@@ -520,6 +526,82 @@ async function main() {
     const vaultHtml = await vaultPage.text();
     if (!vaultHtml.includes('Split Sheet Vault')) throw new Error('account vault title missing');
     if (!vaultHtml.includes('>View</a>') || !vaultHtml.includes('>Download</a>')) throw new Error('account vault should include view and download actions');
+    if (!vaultHtml.includes('>Archive</button>') || !vaultHtml.includes('Delete permanently')) {
+      throw new Error('account vault should include archive and confirmed delete actions');
+    }
+
+    const archiveDraft = await fetch(`http://127.0.0.1:${port}/api/split-sheets/drafts`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${auth.accessToken}`
+      },
+      body: JSON.stringify({
+        songTitle: 'Archive Smoke Song',
+        date: '2026-07-01',
+        contributors: [
+          { legalName: 'Archive Writer One', role: 'Writer', email: 'archive1@example.com', writerShare: 50, publisherShare: 50 },
+          { legalName: 'Archive Writer Two', role: 'Writer', email: 'archive2@example.com', writerShare: 50, publisherShare: 50 }
+        ]
+      })
+    });
+    if (!archiveDraft.ok) throw new Error('archive test draft create failed');
+    const archiveDraftJson = await archiveDraft.json();
+    const archiveResponse = await fetch(`http://127.0.0.1:${port}/account/split-sheets/${archiveDraftJson.splitSheet.id}/archive`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { cookie }
+    });
+    if (archiveResponse.status !== 302 || !archiveResponse.headers.get('location')?.includes('vault=archived')) {
+      throw new Error('archive action should redirect with archived notice');
+    }
+    const vaultAfterArchive = await fetch(`http://127.0.0.1:${port}/account?tab=vault`, { headers: { cookie } });
+    if ((await vaultAfterArchive.text()).includes('Archive Smoke Song')) {
+      throw new Error('archived split sheet should be hidden from main vault');
+    }
+
+    const deleteDraft = await fetch(`http://127.0.0.1:${port}/api/split-sheets/drafts`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${auth.accessToken}`
+      },
+      body: JSON.stringify({
+        songTitle: 'Delete Smoke Song',
+        date: '2026-07-01',
+        contributors: [
+          { legalName: 'Delete Writer One', role: 'Writer', email: 'delete1@example.com', writerShare: 50, publisherShare: 50 },
+          { legalName: 'Delete Writer Two', role: 'Writer', email: 'delete2@example.com', writerShare: 50, publisherShare: 50 }
+        ]
+      })
+    });
+    if (!deleteDraft.ok) throw new Error('delete test draft create failed');
+    const deleteDraftJson = await deleteDraft.json();
+    const rejectedDelete = await fetch(`http://127.0.0.1:${port}/account/split-sheets/${deleteDraftJson.splitSheet.id}/delete`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        cookie
+      },
+      body: new URLSearchParams({ confirmSongTitle: 'Wrong Song' })
+    });
+    if (rejectedDelete.status !== 400) throw new Error('delete should require exact song title confirmation');
+    const acceptedDelete = await fetch(`http://127.0.0.1:${port}/account/split-sheets/${deleteDraftJson.splitSheet.id}/delete`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        cookie
+      },
+      body: new URLSearchParams({ confirmSongTitle: 'Delete Smoke Song' })
+    });
+    if (acceptedDelete.status !== 302 || !acceptedDelete.headers.get('location')?.includes('vault=deleted')) {
+      throw new Error('confirmed delete should redirect with deleted notice');
+    }
+    const deletedDetail = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${deleteDraftJson.splitSheet.id}`, {
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+    if (deletedDetail.status !== 404) throw new Error('confirmed delete should remove split sheet');
 
     const resourcesPage = await fetch(`http://127.0.0.1:${port}/account?tab=resources`, { headers: { cookie } });
     if (!resourcesPage.ok || !(await resourcesPage.text()).includes('Guides for your next session')) {
