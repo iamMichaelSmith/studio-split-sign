@@ -11,7 +11,7 @@ function pickArray(input, key) {
   if (!input || typeof input !== "object") return [];
   const value = input[key];
   if (Array.isArray(value)) return value;
-  return [value].filter((item) => item !== undefined && item !== null && item !== "");
+  return [value].filter((item) => item !== undefined && item !== null);
 }
 
 function toBooleanFlag(value) {
@@ -60,14 +60,14 @@ function normalizeContributor(raw = {}) {
 
 function parseContributorArrayInput(input) {
   if (Array.isArray(input?.contributors)) {
-    return input.contributors.map(normalizeContributor).filter((contributor) => contributor.legalName);
+    return input.contributors.map(normalizeContributor).filter(contributorHasIdentity);
   }
 
   if (typeof input?.contributors === "string") {
     try {
       const parsed = JSON.parse(input.contributors);
       if (Array.isArray(parsed)) {
-        return parsed.map(normalizeContributor).filter((contributor) => contributor.legalName);
+        return parsed.map(normalizeContributor).filter(contributorHasIdentity);
       }
     } catch {}
   }
@@ -91,8 +91,25 @@ function parseFlatContributorInput(input) {
   const typedNames = pickArray(input, "typedSignatureName");
   const signatureData = pickArray(input, "signatureData");
 
-  return names.map((legalName, index) => normalizeContributor({
-    legalName,
+  const count = Math.max(
+    names.length,
+    roles.length,
+    addresses.length,
+    phones.length,
+    emails.length,
+    pros.length,
+    ipis.length,
+    publisherNames.length,
+    publisherIpis.length,
+    writerShares.length,
+    publisherShares.length,
+    masterShares.length,
+    typedNames.length,
+    signatureData.length
+  );
+
+  return Array.from({ length: count }, (_, index) => normalizeContributor({
+    legalName: names[index],
     role: roles[index],
     address: addresses[index],
     phone: phones[index],
@@ -106,7 +123,15 @@ function parseFlatContributorInput(input) {
     masterShare: masterShares[index],
     typedSignatureName: typedNames[index],
     signatureData: signatureData[index]
-  })).filter((contributor) => contributor.legalName);
+  })).filter(contributorHasIdentity);
+}
+
+function contributorHasIdentity(contributor) {
+  return Boolean(contributor?.legalName || contributor?.email);
+}
+
+function hasEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
 function parseContributors(input) {
@@ -153,13 +178,17 @@ async function buildSplitSheetPayload(input, { nextVersion, createSignerToken, s
     throw new SplitSheetValidationError("At least 2 contributors are required for a valid split sheet.", { field: "contributors" });
   }
 
-  const hasMissingBasicFields = contributors.some((contributor) =>
-    !contributor.legalName ||
-    !contributor.role ||
-    !contributor.email
-  );
+  const hasMissingBasicFields = contributors.some((contributor) => {
+    if (collectByInvite) return !hasEmail(contributor.email);
+    return !contributor.legalName || !contributor.role || !hasEmail(contributor.email);
+  });
   if (hasMissingBasicFields) {
-    throw new SplitSheetValidationError("Each contributor must include legal name, role, and email.", { field: "contributors" });
+    throw new SplitSheetValidationError(
+      collectByInvite
+        ? "Each invited contributor must include a valid email address."
+        : "Each contributor must include legal name, role, and email.",
+      { field: "contributors" }
+    );
   }
 
   if (!collectByInvite) {

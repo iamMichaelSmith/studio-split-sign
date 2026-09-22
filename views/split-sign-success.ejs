@@ -10,7 +10,7 @@
     <h1>Signature Submitted</h1>
     <div class="card">
       <p><b>Song:</b> <%= doc.payload.songTitle %></p>
-      <p><b>Contributor:</b> <%= signer.legalName %> (<%= signer.role %>)</p>
+      <p><b>Contributor:</b> <%= signer.legalName || signer.email %><%= signer.role ? ` (${signer.role})` : '' %></p>
       <p><b>Status:</b> <%= everyoneSigned ? 'Completed' : 'Pending remaining signer(s)' %></p>
       <p><%= message %></p>
       <% if (everyoneSigned) { %>

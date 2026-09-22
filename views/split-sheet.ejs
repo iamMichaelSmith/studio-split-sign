@@ -106,6 +106,7 @@
 const DRAFT_KEY = 'splitSheetDraft.v1';
 const COLLABORATOR_KEY = 'splitSheetCollaborators.v1';
 const COLLABORATOR_FIELDS = ['legalName','role','address','phone','email','pro','ipi','publisherName','publisherIpi','typedSignatureName'];
+const INVITE_OPTIONAL_FIELDS = new Set(['legalName','role','address','phone','pro','ipi','publisherName','publisherIpi']);
 const pads = new Map();
 const SERVER_PREFILL = <%- JSON.stringify(typeof prefill !== 'undefined' ? prefill : null).replace(/</g, '\\u003c') %>;
 
@@ -417,7 +418,8 @@ function renderReview(){
   for(let i=0;i<names.length;i++){
     const compositionText = includesComposition() ? `Writer ${writer[i]||0}% / Publisher ${publisher[i]||0}%` : '';
     const masterText = includesMaster() ? `${compositionText ? ' / ' : ''}Master ${master[i]||0}%` : '';
-    html += `<li><b>${names[i]||'(missing name)'}</b> (${roles[i]||'role missing'}) - ${compositionText}${masterText} - Typed: ${typed[i]||'missing'} - Drawn: ${drawn[i]?'yes':'no'}</li>`;
+    const email = getVals('email')[i] || '';
+    html += `<li><b>${names[i]||email||'(missing name)'}</b> (${roles[i]||'role pending'}) - ${compositionText}${masterText} - Typed: ${typed[i]||'pending'} - Drawn: ${drawn[i]?'yes':'pending'}</li>`;
   }
   html += `</ul>`;
   document.getElementById('reviewSummary').innerHTML = html;
@@ -440,7 +442,7 @@ function renderReview(){
   const hint=document.getElementById('submitHint');
   if(hint){
     const invalidField = firstInvalidRequiredField();
-    hint.textContent = valid ? 'Ready to send for signatures.' : (invalidField ? `Finish required field: ${fieldLabel(invalidField)}.` : (collectByInvite ? 'Need valid 100% rights totals, at least 2 contributors, a recipient email, and proposal confirmation.' : 'Need valid 100% rights totals, at least 2 signed contributors, a recipient email, and agreement confirmation.'));
+    hint.textContent = valid ? 'Ready to send for signatures.' : (invalidField ? `Finish required field: ${fieldLabel(invalidField)}.` : (collectByInvite ? 'Need valid 100% rights totals, at least 2 contributor emails, a recipient email, and proposal confirmation.' : 'Need valid 100% rights totals, at least 2 signed contributors, a recipient email, and agreement confirmation.'));
     hint.style.color = valid ? '#9be49b' : '#ffd48a';
   }
   return valid;
@@ -453,8 +455,10 @@ function fieldLabel(el){
 
 function firstInvalidRequiredField(){
   const form = document.getElementById('splitForm');
+  const collectByInvite = !!document.getElementById('collectByInvite') && document.getElementById('collectByInvite').checked;
   return Array.from(form.querySelectorAll('[required]')).find((el) => {
     if(el.disabled || el.type === 'hidden') return false;
+    if(collectByInvite && INVITE_OPTIONAL_FIELDS.has(el.name)) return false;
     if(el.type === 'checkbox') return !el.checked;
     return !String(el.value || '').trim() || !el.validity.valid;
   }) || null;

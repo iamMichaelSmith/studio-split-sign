@@ -1619,7 +1619,7 @@ function splitSummaryHtml(contributors = [], rightsScope = "composition") {
     : "";
   const rows = contributors.map((c) => {
     return `<tr>
-      <td style="padding:6px 8px;border:1px solid #ddd;">${escapeHtml(c.legalName)}</td>
+      <td style="padding:6px 8px;border:1px solid #ddd;">${escapeHtml(c.legalName || c.email)}</td>
       <td style="padding:6px 8px;border:1px solid #ddd;">${escapeHtml(c.role)}</td>
       ${includesCompositionRights(scope) ? `<td style="padding:6px 8px;border:1px solid #ddd;text-align:right;">${Number(c.writerShare || 0)}%</td><td style="padding:6px 8px;border:1px solid #ddd;text-align:right;">${Number(c.publisherShare || 0)}%</td>` : ""}
       ${includesMasterRights(scope) ? `<td style="padding:6px 8px;border:1px solid #ddd;text-align:right;">${Number(c.masterShare || 0)}%</td>` : ""}
@@ -1750,7 +1750,7 @@ async function sendSplitInvite(doc, contributor, { reminder = false, renew = fal
   const result = await sendEmail({
     subject: `${reminder ? "Reminder" : "Action required"}: Review and sign ${doc.payload.songTitle}`,
     to: [contributor.email, notifyInbox],
-    html: `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111"><h2>${reminder ? "Signature reminder" : "Your split sheet is ready for review"}</h2><p>Song: <b>${escapeHtml(doc.payload.songTitle)}</b></p><p>Contributor: <b>${escapeHtml(contributor.legalName)}</b></p>${splitHtml}<p style="margin:18px 0;"><a href="${link}" style="display:inline-block;background:#b8860b;color:#111;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;">Review and sign split sheet</a></p><p>No account is required. Review the complete split, confirm your agreement, and sign from your phone or computer.</p><p><b>Secure link expires:</b> ${escapeHtml(formatIsoLabel(contributor.signerTokenExpiresAt))}</p><p>Submission ID: ${escapeHtml(doc.id)}</p></div>`
+    html: `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111"><h2>${reminder ? "Signature reminder" : "Your split sheet is ready for review"}</h2><p>Song: <b>${escapeHtml(doc.payload.songTitle)}</b></p><p>Contributor: <b>${escapeHtml(contributor.legalName || contributor.email)}</b></p>${splitHtml}<p style="margin:18px 0;"><a href="${link}" style="display:inline-block;background:#b8860b;color:#111;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;">Review and sign split sheet</a></p><p>No account is required. Review the complete split, complete any missing contributor details, confirm your agreement, and sign from your phone or computer.</p><p><b>Secure link expires:</b> ${escapeHtml(formatIsoLabel(contributor.signerTokenExpiresAt))}</p><p>Submission ID: ${escapeHtml(doc.id)}</p></div>`
   });
   contributor.inviteEmailStatus = result.ok ? "sent" : "failed";
   contributor.inviteEmailReason = result.reason || null;
@@ -3613,10 +3613,39 @@ app.get("/split-sheet/sign/:id/:token", signerViewLimiter, async (req, res) => {
   res.render("split-sign", { doc, signer, timeline: splitSignerTimeline(doc), error: null, success: null });
 });
 
+function signerProfileFromInput(input = {}) {
+  return {
+    legalName: String(input.legalName || "").trim(),
+    role: String(input.role || "").trim(),
+    address: String(input.address || "").trim(),
+    phone: String(input.phone || "").trim(),
+    pro: String(input.pro || "").trim(),
+    ipi: String(input.ipi || "").trim(),
+    publisherName: String(input.publisherName || "").trim(),
+    publisherIpi: String(input.publisherIpi || "").trim()
+  };
+}
+
+function missingSignerProfileFields(contributor = {}, rightsScope = "composition") {
+  const required = [
+    ["legalName", "legal name"],
+    ["role", "role"],
+    ["address", "address"],
+    ["phone", "phone"],
+    ["pro", "PRO"],
+    ["ipi", "IPI number"]
+  ];
+  if (includesCompositionRights(normalizeRightsScope(rightsScope))) {
+    required.push(["publisherName", "publisher name"], ["publisherIpi", "publisher IPI"]);
+  }
+  return required.filter(([key]) => !String(contributor[key] || "").trim()).map(([, label]) => label);
+}
+
 app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) => {
   const typedSignatureName = String(req.body.typedSignatureName || "").trim();
   const signatureData = String(req.body.signatureData || "").trim();
   const agreementAccepted = ["yes", "true", "1", "on"].includes(String(req.body.agreeToSplits || "").trim().toLowerCase());
+  const profileInput = signerProfileFromInput(req.body);
 
   let validationError = null;
   const mutation = await updateSubmissionWithRetry(req.params.id, async (doc) => {
@@ -3629,10 +3658,16 @@ app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) =
       return { alreadySigned: true, signer: currentSigner, skipSave: true };
     }
     if (isPast(currentSigner.signerTokenExpiresAt)) {
-      return { expired: true, signer: currentSigner, skipSave: true };
+      return { expired: true, doc, signer: currentSigner, skipSave: true };
     }
+    Object.assign(currentSigner, profileInput);
+    const missingProfile = missingSignerProfileFields(currentSigner, doc.payload?.rightsScope);
     if (!typedSignatureName || !signatureData.startsWith("data:image/") || !agreementAccepted) {
-      validationError = { doc, signer: currentSigner };
+      validationError = { doc, signer: currentSigner, missingProfile };
+      return { invalidInput: true, skipSave: true };
+    }
+    if (missingProfile.length) {
+      validationError = { doc, signer: currentSigner, missingProfile };
       return { invalidInput: true, skipSave: true };
     }
 
@@ -3677,11 +3712,14 @@ app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) =
     });
   }
   if (mutation.invalidInput) {
+    const missingProfile = validationError.missingProfile || [];
     return res.status(400).render("split-sign", {
       doc: validationError.doc,
       signer: validationError.signer,
       timeline: splitSignerTimeline(validationError.doc),
-      error: "Review confirmation, typed name, and drawn signature are required.",
+      error: missingProfile.length
+        ? `Complete your missing profile details before signing: ${missingProfile.join(", ")}.`
+        : "Review confirmation, typed name, and drawn signature are required.",
       success: null
     });
   }

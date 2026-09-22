@@ -17,6 +17,22 @@ function splitPayload(songTitle) {
   };
 }
 
+function signerForm(name, extra = {}) {
+  return {
+    legalName: name,
+    role: name === 'Avery Stone' ? 'Writer' : 'Producer',
+    address: `${name} address`,
+    phone: name === 'Avery Stone' ? '555-1001' : '555-1002',
+    pro: name === 'Avery Stone' ? 'ASCAP' : 'BMI',
+    ipi: name === 'Avery Stone' ? '111111111' : '222222222',
+    publisherName: `${name} Publishing`,
+    publisherIpi: name === 'Avery Stone' ? '333333333' : '444444444',
+    typedSignatureName: name,
+    signatureData: signature,
+    ...extra
+  };
+}
+
 test(`isolated HTTP release security and remote signing (${process.env.RELEASE_TEST_POSTGRES === '1' ? 'PostgreSQL' : 'SQLite'})`, async (suite) => {
   const mail = await startSmtpSink();
   let database;
@@ -133,18 +149,18 @@ test(`isolated HTTP release security and remote signing (${process.env.RELEASE_T
     assert.equal(detail.status, 'pending-signatures');
     const tokens = detail.payload.contributors.map((contributor) => contributor.signerToken);
     const signRoute = (token) => `/split-sheet/sign/${detail.id}/${token}`;
-    const invalid = await form(signRoute('invalid'), { typedSignatureName: 'Avery Stone', signatureData: signature, agreeToSplits: 'yes' });
+    const invalid = await form(signRoute('invalid'), signerForm('Avery Stone', { agreeToSplits: 'yes' }));
     assert.equal(invalid.status, 404);
-    const missingAgreement = await form(signRoute(tokens[0]), { typedSignatureName: 'Avery Stone', signatureData: signature });
+    const missingAgreement = await form(signRoute(tokens[0]), signerForm('Avery Stone'));
     assert.equal(missingAgreement.status, 400);
     const mailCount = mail.messages.length;
-    const first = await form(signRoute(tokens[0]), { typedSignatureName: 'Avery Stone', signatureData: signature, agreeToSplits: 'yes' });
+    const first = await form(signRoute(tokens[0]), signerForm('Avery Stone', { agreeToSplits: 'yes' }));
     assert.equal(first.status, 200);
     detail = (await json(route, { token: owner.accessToken })).splitSheet;
     assert.equal(detail.status, 'pending-signatures');
     assert.equal(detail.payload.contributors.filter((contributor) => contributor.signedAt).length, 1);
     assert.equal(mail.messages.length, mailCount, 'No completion email before the last signer');
-    const last = await form(signRoute(tokens[1]), { typedSignatureName: 'Jordan Reed', signatureData: signature, agreeToSplits: 'yes' });
+    const last = await form(signRoute(tokens[1]), signerForm('Jordan Reed', { agreeToSplits: 'yes' }));
     assert.equal(last.status, 200);
     completed = (await json(route, { token: owner.accessToken })).splitSheet;
     assert.equal(completed.status, 'completed');
@@ -161,7 +177,7 @@ test(`isolated HTTP release security and remote signing (${process.env.RELEASE_T
     assert.equal(tokenPdf.status, 200);
     assert.match(Buffer.from(await tokenPdf.arrayBuffer()).toString('utf8', 0, 5), /^%PDF/);
     const finalMailCount = mail.messages.length;
-    const replay = await form(signRoute(tokens[1]), { typedSignatureName: 'Changed Name', signatureData: signature, agreeToSplits: 'yes' });
+    const replay = await form(signRoute(tokens[1]), signerForm('Changed Name', { agreeToSplits: 'yes' }));
     assert.equal(replay.status, 200);
     assert.equal(mail.messages.length, finalMailCount);
     const after = (await json(route, { token: owner.accessToken })).splitSheet;
@@ -206,8 +222,8 @@ test(`isolated HTTP release security and remote signing (${process.env.RELEASE_T
     const beforeSigningMailCount = mail.messages.length;
     const signRoute = (token) => `/split-sheet/sign/${detail.id}/${token}`;
     const [first, second] = await Promise.all([
-      form(signRoute(tokens[0]), { typedSignatureName: 'Avery Stone', signatureData: signature, agreeToSplits: 'yes' }),
-      form(signRoute(tokens[1]), { typedSignatureName: 'Jordan Reed', signatureData: signature, agreeToSplits: 'yes' })
+      form(signRoute(tokens[0]), signerForm('Avery Stone', { agreeToSplits: 'yes' })),
+      form(signRoute(tokens[1]), signerForm('Jordan Reed', { agreeToSplits: 'yes' }))
     ]);
     assert.equal(first.status, 200);
     assert.equal(second.status, 200);

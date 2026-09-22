@@ -17,7 +17,7 @@
     <div class="card">
       <div class="signer-summary-grid">
         <div><span class="small">Song</span><strong><%= doc.payload.songTitle %></strong></div>
-        <div><span class="small">You are signing as</span><strong><%= signer.legalName %> · <%= signer.role %></strong></div>
+        <div><span class="small">You are signing as</span><strong><%= signer.legalName || signer.email %><%= signer.role ? ` · ${signer.role}` : '' %></strong></div>
         <div><span class="small">Rights covered</span><strong><%= doc.payload.rightsScope === 'master' ? 'Master recording ownership' : (doc.payload.rightsScope === 'composition-and-master' ? 'Songwriting/publishing and master ownership' : 'Songwriting and publishing') %></strong></div>
         <div><span class="small">Link expires</span><strong><%= signer.signerTokenExpiresAt || 'Not specified' %></strong></div>
       </div>
@@ -30,7 +30,7 @@
       <div class="signer-split-list">
         <% (doc.payload.contributors || []).forEach(function(row){ %>
           <div class="signer-split-row <%= row.email === signer.email ? 'current-signer' : '' %>">
-            <div><strong><%= row.legalName %></strong><span class="small"><%= row.role %><%= row.email === signer.email ? ' · You' : '' %></span></div>
+            <div><strong><%= row.legalName || row.email %></strong><span class="small"><%= row.role || 'Details pending' %><%= row.email === signer.email ? ' · You' : '' %></span></div>
             <% if (doc.payload.rightsScope !== 'master') { %>
               <div><span class="small">Writer</span><strong><%= row.writerShare %>%</strong></div>
               <div><span class="small">Publisher</span><strong><%= row.publisherShare %>%</strong></div>
@@ -49,6 +49,31 @@
 
     <form method="post" class="card signer-form" id="signerForm">
       <h2>Confirm and sign</h2>
+      <p class="small">Complete any missing contributor details first. These details will appear in the final locked split sheet PDF.</p>
+      <div class="row">
+        <div><label>Legal name</label><input name="legalName" value="<%= signer.legalName || '' %>" required autocomplete="name"></div>
+        <div><label>Role</label><input name="role" value="<%= signer.role || '' %>" required placeholder="artist / producer / writer"></div>
+      </div>
+      <div class="row">
+        <div><label>Email</label><input type="email" value="<%= signer.email || '' %>" readonly></div>
+        <div><label>Phone</label><input name="phone" value="<%= signer.phone || '' %>" required autocomplete="tel"></div>
+      </div>
+      <label>Address</label>
+      <input name="address" value="<%= signer.address || '' %>" required autocomplete="street-address">
+      <div class="row">
+        <div><label>PRO</label><input name="pro" value="<%= signer.pro || '' %>" required placeholder="ASCAP / BMI / SESAC / etc."></div>
+        <div><label>IPI number</label><input name="ipi" value="<%= signer.ipi || '' %>" required inputmode="numeric"></div>
+      </div>
+      <% if (doc.payload.rightsScope !== 'master') { %>
+        <div class="row">
+          <div><label>Publisher name</label><input name="publisherName" value="<%= signer.publisherName || '' %>" required></div>
+          <div><label>Publisher IPI</label><input name="publisherIpi" value="<%= signer.publisherIpi || '' %>" required inputmode="numeric"></div>
+        </div>
+      <% } else { %>
+        <input type="hidden" name="publisherName" value="<%= signer.publisherName || '' %>">
+        <input type="hidden" name="publisherIpi" value="<%= signer.publisherIpi || '' %>">
+      <% } %>
+
       <label class="agreement-check">
         <input type="checkbox" name="agreeToSplits" value="yes" required>
         <span>I reviewed the complete split above and agree that the percentages shown for me and the other contributors are accurate.</span>

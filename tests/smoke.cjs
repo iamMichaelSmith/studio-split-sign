@@ -320,6 +320,24 @@ async function main() {
     });
     if (!validateMaster.ok) throw new Error('master ownership validation failed');
 
+    const validateEmailOnlyInvite = await fetch(`http://127.0.0.1:${port}/api/split-sheets/validate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${auth.accessToken}`
+      },
+      body: JSON.stringify({
+        songTitle: 'Email Only Invite Smoke Song',
+        allPartiesAgree: true,
+        collectSignaturesByInvite: true,
+        contributors: [
+          { email: 'emailonly1@example.com', writerShare: 50, publisherShare: 50 },
+          { email: 'emailonly2@example.com', writerShare: 50, publisherShare: 50 }
+        ]
+      })
+    });
+    if (!validateEmailOnlyInvite.ok) throw new Error('email-only invite validation failed');
+
     const draftCreate = await fetch(`http://127.0.0.1:${port}/api/split-sheets/drafts`, {
       method: 'POST',
       headers: {
@@ -380,8 +398,8 @@ async function main() {
         allPartiesAgree: true,
         collectSignaturesByInvite: true,
         contributors: [
-          { legalName: 'Writer One', role: 'Writer', email: 'writer1@example.com', writerShare: 50, publisherShare: 50 },
-          { legalName: 'Writer Two', role: 'Producer', email: 'writer2@example.com', writerShare: 50, publisherShare: 50 }
+          { email: 'writer1@example.com', writerShare: 50, publisherShare: 50 },
+          { email: 'writer2@example.com', writerShare: 50, publisherShare: 50 }
         ]
       })
     });
@@ -408,20 +426,33 @@ async function main() {
     if (!signers.every((signer) => signer.signerToken && signer.signerTokenExpiresAt)) throw new Error('secure signer links missing');
 
     const signatureData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    const signerProfileBody = (signer, index, extra = {}) => new URLSearchParams({
+      legalName: index === 0 ? 'Writer One' : 'Writer Two',
+      role: index === 0 ? 'Writer' : 'Producer',
+      address: `${index + 1} Music Row`,
+      phone: `555-010${index}`,
+      pro: index === 0 ? 'ASCAP' : 'BMI',
+      ipi: `00000000${index + 1}`,
+      publisherName: index === 0 ? 'Writer One Publishing' : 'Writer Two Publishing',
+      publisherIpi: `10000000${index + 1}`,
+      typedSignatureName: index === 0 ? 'Writer One' : 'Writer Two',
+      signatureData,
+      ...extra
+    });
     const rejectedSignature = await fetch(`http://127.0.0.1:${port}/split-sheet/sign/${created.splitSheet.id}/${signers[0].signerToken}`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ typedSignatureName: signers[0].legalName, signatureData })
+      body: signerProfileBody(signers[0], 0)
     });
     if (rejectedSignature.status !== 400) throw new Error('signature without explicit agreement should be rejected');
 
-    for (const signer of signers) {
+    for (const [index, signer] of signers.entries()) {
       const signed = await fetch(`http://127.0.0.1:${port}/split-sheet/sign/${created.splitSheet.id}/${signer.signerToken}`, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ typedSignatureName: signer.legalName, signatureData, agreeToSplits: 'yes' })
+        body: signerProfileBody(signer, index, { agreeToSplits: 'yes' })
       });
-      if (!signed.ok) throw new Error(`signer completion failed for ${signer.legalName}`);
+      if (!signed.ok) throw new Error(`signer completion failed for ${signer.email}`);
     }
 
     const completedStatusResponse = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${created.splitSheet.id}/status`, {
@@ -445,6 +476,7 @@ async function main() {
     });
     if (!completedDetailResponse.ok) throw new Error('completed split detail failed');
     const completedDetail = await completedDetailResponse.json();
+    if (completedDetail.splitSheet.payload.contributors[0].legalName !== 'Writer One') throw new Error('remote signer profile details were not saved');
     const revisionToken = completedDetail.splitSheet?.payload?.revisionToken;
     if (!revisionToken) throw new Error('completed split missing revision token');
 
