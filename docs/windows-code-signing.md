@@ -1,6 +1,6 @@
 # Windows code signing
 
-The Windows 0.1.3 release uses Azure Artifact Signing. The verified publisher is **Blak Marigold Pro LLC**. The standalone app and VST3 binary are signed before packaging; the completed installer is signed afterward. All three signatures must be valid and timestamped.
+The Windows 0.1.4 release uses Azure Artifact Signing. The verified publisher is **Blak Marigold Pro LLC**. The standalone app and VST3 binary are signed before packaging; the completed installer is signed afterward. All three signatures must be valid and timestamped.
 
 ## Configured tools
 
@@ -24,7 +24,7 @@ npm run vst:release
 For existing release binaries in the clean build directory:
 
 ```powershell
-.\vst\package-installer.ps1 -BuildDir '.\build-release-clean' -Version '0.1.3' -SkipBuild -RequireSigning
+.\vst\package-installer.ps1 -BuildDir '.\build-release-clean' -Version '0.1.4' -SkipBuild -RequireSigning
 ```
 
 Azure signing uses SignTool `/dlib` and `/dmdf`, SHA-256 digests, and the Microsoft timestamp server at `http://timestamp.acs.microsoft.com`. A timestamp keeps the signing-time validation available after the short-lived signing certificate expires.
@@ -36,7 +36,7 @@ The existing certificate-thumbprint and PFX options remain supported for other e
 ## Verify before publication
 
 ```powershell
-.\vst\test-release.ps1 -Version '0.1.3' -RequireSigned
+.\vst\test-release.ps1 -Version '0.1.4' -RequireSigned
 ```
 
 Verification requires valid timestamped signatures from Blak Marigold Pro LLC for the installer, VST3, and standalone binary, and matching embedded product versions. The report includes SHA-256 checksums. Only use `-CheckInstalled` after deliberately installing the release on a test machine.

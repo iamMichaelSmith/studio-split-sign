@@ -5,7 +5,7 @@
 #include <cstdlib>
 
 #ifndef SPLIT_SHEET_STUDIO_VERSION
-#define SPLIT_SHEET_STUDIO_VERSION "0.1.3"
+#define SPLIT_SHEET_STUDIO_VERSION "0.1.4"
 #endif
 
 namespace
@@ -424,6 +424,8 @@ public:
 
     void drawTextEditorOutline(juce::Graphics& graphics, int width, int height, juce::TextEditor& editor) override
     {
+        if (editor.isReadOnly())
+            return;
         auto bounds = juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width - 1), static_cast<float>(height - 1));
         graphics.setColour(editor.hasKeyboardFocus(true) ? palette.accent : palette.fieldOutline);
         graphics.drawRoundedRectangle(bounds, 6.0f, editor.hasKeyboardFocus(true) ? 1.5f : 1.0f);
@@ -623,7 +625,7 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     {
         for (const auto& cardBounds : contributorCardBounds)
         {
-            graphics.setColour(palette.card);
+            graphics.setColour(palette.section.withAlpha(0.40f));
             graphics.fillRoundedRectangle(cardBounds.toFloat(), 10.0f);
             graphics.setColour(palette.secondaryText.withAlpha(0.24f));
             graphics.drawRoundedRectangle(cardBounds.toFloat(), 10.0f, 1.0f);
@@ -632,6 +634,11 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     contributorsViewport.setViewedComponent(contributorsCanvas.get(), false);
     contributorsViewport.setScrollBarsShown(true, false);
     contributorsViewport.setScrollBarThickness(10);
+
+    reviewCanvas = std::make_unique<PaintedComponent>();
+    reviewViewport.setViewedComponent(reviewCanvas.get(), false);
+    reviewViewport.setScrollBarsShown(true, false);
+    reviewViewport.setScrollBarThickness(8);
 
     titleLabel.setText("Split Sheet Studio", juce::dontSendNotification);
     titleLabel.setJustificationType(juce::Justification::centredLeft);
@@ -682,9 +689,17 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     additionalRecipientsLabel.setText("Additional Recipients", juce::dontSendNotification);
     agreementsLabel.setText("Confirmations", juce::dontSendNotification);
     reviewSummaryTitleLabel.setText("Review Summary", juce::dontSendNotification);
-    reviewSummaryLabel.setJustificationType(juce::Justification::topLeft);
-    reviewSummaryLabel.setColour(juce::Label::textColourId, palette.secondaryText);
-    reviewSummaryLabel.setFont(juce::FontOptions(13.0f));
+    reviewSummaryLabel.setMultiLine(true, true);
+    reviewSummaryLabel.setReadOnly(true);
+    reviewSummaryLabel.setScrollbarsShown(true);
+    reviewSummaryLabel.setCaretVisible(false);
+    reviewSummaryLabel.setIndents(16, 16);
+    reviewSummaryLabel.setLineSpacing(1.18f);
+    reviewSummaryLabel.setColour(juce::TextEditor::textColourId, palette.primaryText);
+    reviewSummaryLabel.setColour(juce::TextEditor::backgroundColourId, palette.section.withAlpha(0.22f));
+    reviewSummaryLabel.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    reviewSummaryLabel.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+    reviewSummaryLabel.setFont(juce::FontOptions(15.0f));
 
     validationLabel.setJustificationType(juce::Justification::centredLeft);
     validationLabel.setColour(juce::Label::textColourId, palette.secondaryText);
@@ -744,7 +759,6 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     supersedesPreviousToggle.onClick = [this] { refreshReviewSummary(); refreshSubmitState(); };
     allPartiesAgreeToggle.onClick = [this] { refreshReviewSummary(); refreshSubmitState(); };
 
-    styleButton(settingsButton, palette);
     styleButton(readyButton, palette);
     styleButton(loginButton, palette, palette.accent, palette.card);
     styleButton(createAccountButton, palette);
@@ -754,7 +768,6 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     styleButton(setEqualSplitsButton, palette);
     styleButton(nextStepButton, palette);
     styleButton(submitButton, palette, palette.accent, palette.card);
-    styleButton(logoutButton, palette);
     styleStepButton(songStepButton, true, palette);
     styleStepButton(contributorsStepButton, false, palette);
     styleStepButton(reviewStepButton, false, palette);
@@ -779,7 +792,6 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
         applyTheme(static_cast<SplitSheetTheme>(themeSelector.getSelectedId()), true);
     };
 
-    settingsButton.addListener(this);
     readyButton.addListener(this);
     loginButton.addListener(this);
     createAccountButton.addListener(this);
@@ -792,10 +804,9 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     setEqualSplitsButton.addListener(this);
     nextStepButton.addListener(this);
     submitButton.addListener(this);
-    logoutButton.addListener(this);
 
-    for (auto* component : std::array<juce::Component*, 35>{
-             &titleLabel, &subtitleLabel, &statusBadgeLabel, &statusLabel, &settingsButton,
+    for (auto* component : std::array<juce::Component*, 34>{
+             &titleLabel, &subtitleLabel, &statusBadgeLabel, &statusLabel,
              &baseUrlLabel, &baseUrlEditor, &readyButton, &emailLabel, &emailEditor,
              &passwordLabel, &passwordEditor, &loginButton, &createAccountButton,
              &forgotPasswordButton, &updateDownloadButton, &songStepButton,
@@ -822,14 +833,17 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     addAndMakeVisible(supersedesPreviousToggle);
     addAndMakeVisible(allPartiesAgreeToggle);
     addAndMakeVisible(submitButton);
-    addAndMakeVisible(logoutButton);
+    addAndMakeVisible(reviewViewport);
+    for (auto* component : std::array<juce::Component*, 8>{ &recipientsLabel, &additionalRecipientsLabel,
+             &agreementsLabel, &additionalRecipientOneEditor, &additionalRecipientTwoEditor,
+             &inviteToggle, &supersedesPreviousToggle, &allPartiesAgreeToggle })
+        reviewCanvas->addAndMakeVisible(*component);
 
     buildContributorRow();
 
     songStepButton.setButtonText("01  SONG");
     contributorsStepButton.setButtonText("02  CONTRIBUTORS");
     reviewStepButton.setButtonText("03  REVIEW & SEND");
-    settingsButton.setButtonText("Preferences");
     loginButton.setButtonText("SIGN IN");
     createAccountButton.setButtonText("CREATE ACCOUNT");
     forgotPasswordButton.setButtonText("FORGOT PASSWORD?");
@@ -857,7 +871,6 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
 SplitSheetStudioEditor::~SplitSheetStudioEditor()
 {
     setLookAndFeel(nullptr);
-    settingsButton.removeListener(this);
     readyButton.removeListener(this);
     loginButton.removeListener(this);
     createAccountButton.removeListener(this);
@@ -870,7 +883,6 @@ SplitSheetStudioEditor::~SplitSheetStudioEditor()
     setEqualSplitsButton.removeListener(this);
     nextStepButton.removeListener(this);
     submitButton.removeListener(this);
-    logoutButton.removeListener(this);
 
     for (auto& row : contributorRows)
     {
@@ -906,7 +918,10 @@ void SplitSheetStudioEditor::restyleControls()
     welcomeLabel.setColour(juce::Label::textColourId, palette.primaryText);
     contributorsHintLabel.setColour(juce::Label::textColourId, palette.secondaryText);
     totalsLabel.setColour(juce::Label::textColourId, palette.secondaryText);
-    reviewSummaryLabel.setColour(juce::Label::textColourId, palette.secondaryText);
+    reviewSummaryLabel.setColour(juce::TextEditor::textColourId, palette.primaryText);
+    reviewSummaryLabel.setColour(juce::TextEditor::backgroundColourId, palette.section.withAlpha(0.22f));
+    reviewSummaryLabel.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    reviewSummaryLabel.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     validationLabel.setColour(juce::Label::textColourId, palette.secondaryText);
     updateNoticeLabel.setColour(juce::Label::textColourId, palette.accent);
 
@@ -938,7 +953,6 @@ void SplitSheetStudioEditor::restyleControls()
     for (auto& button : recipientButtons)
         styleToggle(*button, palette);
 
-    styleButton(settingsButton, palette);
     styleButton(readyButton, palette);
     styleButton(loginButton, palette, palette.accent, palette.card);
     styleButton(createAccountButton, palette);
@@ -948,7 +962,6 @@ void SplitSheetStudioEditor::restyleControls()
     styleButton(setEqualSplitsButton, palette);
     styleButton(nextStepButton, palette);
     styleButton(submitButton, palette, palette.accent, palette.card);
-    styleButton(logoutButton, palette);
     styleStepButton(songStepButton, currentStep == Step::song, palette);
     styleStepButton(contributorsStepButton, currentStep == Step::contributors, palette);
     styleStepButton(reviewStepButton, currentStep == Step::review, palette);
@@ -1077,38 +1090,18 @@ void SplitSheetStudioEditor::paint(juce::Graphics& graphics)
         graphics.restoreState();
     }
 
-    if (isArtworkTheme(currentTheme))
-    {
-        // Keep labels and controls readable over bright artwork at every editor size.
-        graphics.setColour(palette.card.withAlpha(0.92f));
-        graphics.fillRoundedRectangle(juce::Rectangle<float>(18.0f, 18.0f, static_cast<float>(getWidth() - 36), 182.0f), 12.0f);
-        graphics.fillRoundedRectangle(juce::Rectangle<float>(18.0f, static_cast<float>(getHeight() - 72),
-                                                             static_cast<float>(getWidth() - 36), 58.0f), 10.0f);
-    }
-
-    graphics.setColour(palette.secondaryText.withAlpha(0.42f));
-    graphics.drawRoundedRectangle(bounds.reduced(10.0f), 16.0f, 1.0f);
-
-    auto topAccent = bounds.reduced(10.0f).removeFromTop(5.0f);
+    const auto panel = bounds.reduced(22.0f);
+    graphics.setColour(palette.background.withAlpha(0.92f));
+    graphics.fillRoundedRectangle(panel, 16.0f);
+    graphics.setColour(palette.secondaryText.withAlpha(0.24f));
+    graphics.drawRoundedRectangle(panel, 16.0f, 1.0f);
     graphics.setColour(palette.accent);
-    graphics.fillRoundedRectangle(topAccent.removeFromLeft(318.0f), 3.0f);
+    graphics.fillRoundedRectangle(juce::Rectangle<float>(panel.getX() + 24.0f, panel.getY(), 230.0f, 3.0f), 1.5f);
+    drawBrandMark(graphics, juce::Rectangle<float>(46.0f, 46.0f, 44.0f, 44.0f), palette);
+    graphics.setColour(palette.secondaryText.withAlpha(0.16f));
+    graphics.drawHorizontalLine(104, 46.0f, static_cast<float>(getWidth() - 46));
+    graphics.drawHorizontalLine(getHeight() - 106, 46.0f, static_cast<float>(getWidth() - 46));
 
-    drawBrandMark(graphics, juce::Rectangle<float>(26.0f, 23.0f, 44.0f, 44.0f), palette);
-    graphics.setColour(palette.secondaryText.withAlpha(0.7f));
-    graphics.setFont(juce::FontOptions(8.0f, juce::Font::bold));
-    graphics.drawFittedText("BLAK MARIGOLD STUDIO  |  SESSION RIGHTS SYSTEM",
-                            juce::Rectangle<int>(getWidth() - 330, 26, 300, 14),
-                            juce::Justification::centredRight, 1);
-    graphics.setColour(palette.secondaryText.withAlpha(0.18f));
-    graphics.drawHorizontalLine(80, 24.0f, static_cast<float>(getWidth() - 24));
-
-    auto contentArea = getLocalBounds().reduced(24);
-    contentArea.removeFromTop(168 + (settingsVisible ? 68 : 0));
-    contentArea.removeFromBottom(58);
-    graphics.setColour(palette.section.withAlpha(isArtworkTheme(currentTheme) ? 1.0f : 0.91f));
-    graphics.fillRoundedRectangle(contentArea.toFloat(), 14.0f);
-    graphics.setColour(palette.secondaryText.withAlpha(0.22f));
-    graphics.drawRoundedRectangle(contentArea.toFloat(), 14.0f, 1.0f);
 }
 
 void SplitSheetStudioEditor::resized()
@@ -1145,170 +1138,118 @@ void SplitSheetStudioEditor::resized()
         return;
     }
 
-    auto area = getLocalBounds().reduced(24);
-    auto header = area.removeFromTop(58);
+    auto area = getLocalBounds().reduced(46);
+    auto header = area.removeFromTop(48);
     header.removeFromLeft(58);
     titleLabel.setBounds(header.removeFromTop(28));
     subtitleLabel.setBounds(header.removeFromTop(18));
-    area.removeFromTop(8);
-
+    area.removeFromTop(12);
     auto statusRow = area.removeFromTop(28);
     statusBadgeLabel.setBounds(statusRow.removeFromLeft(92));
-    statusRow.removeFromLeft(10);
-    settingsButton.setBounds(statusRow.removeFromRight(170));
-    statusRow.removeFromRight(8);
-    themeSelector.setBounds(statusRow.removeFromRight(108));
-    statusRow.removeFromRight(10);
-    if (updateAvailable)
-    {
+    statusRow.removeFromLeft(12);
+    themeSelector.setBounds(statusRow.removeFromRight(136));
+    statusRow.removeFromRight(14);
+    if (updateAvailable) {
         updateDownloadButton.setBounds(statusRow.removeFromRight(150));
-        statusRow.removeFromRight(10);
+        statusRow.removeFromRight(12);
     }
     statusLabel.setBounds(statusRow);
-    updateNoticeLabel.setBounds(area.removeFromTop(updateAvailable ? 22 : 0));
-    if (updateAvailable)
-        area.removeFromTop(6);
-    area.removeFromTop(10);
+    updateNoticeLabel.setBounds(0, 0, 0, 0);
+    welcomeLabel.setBounds(0, 0, 0, 0);
+    area.removeFromTop(14);
+    auto tabs = area.removeFromTop(34);
+    songStepButton.setBounds(tabs.removeFromLeft(130));
+    tabs.removeFromLeft(10);
+    contributorsStepButton.setBounds(tabs.removeFromLeft(178));
+    tabs.removeFromLeft(10);
+    reviewStepButton.setBounds(tabs.removeFromLeft(190));
+    area.removeFromTop(20);
 
-    if (settingsVisible)
-    {
-        auto settingsRow = area.removeFromTop(58);
-        auto labelArea = settingsRow.removeFromLeft(150);
-        baseUrlLabel.setBounds(labelArea.removeFromTop(20));
-        settingsRow.removeFromLeft(8);
-        readyButton.setBounds(settingsRow.removeFromRight(150));
-        settingsRow.removeFromRight(10);
-        baseUrlEditor.setBounds(settingsRow.removeFromTop(32));
-        area.removeFromTop(10);
-    }
-
-    auto tabRow = area.removeFromTop(34);
-    songStepButton.setBounds(tabRow.removeFromLeft(130));
-    tabRow.removeFromLeft(8);
-    contributorsStepButton.setBounds(tabRow.removeFromLeft(178));
-    tabRow.removeFromLeft(8);
-    reviewStepButton.setBounds(tabRow.removeFromLeft(190));
-    area.removeFromTop(12);
-
-    welcomeLabel.setBounds(area.removeFromTop(24));
-    area.removeFromTop(10);
-
-    auto footer = area.removeFromBottom(48);
-    validationLabel.setBounds(footer.removeFromLeft(getWidth() - 280));
-    footer.removeFromLeft(12);
-    if (currentStep == Step::review)
-    {
-        submitButton.setBounds(footer.removeFromLeft(190));
-        footer.removeFromLeft(12);
-    }
-    else
-    {
-        nextStepButton.setBounds(footer.removeFromLeft(190));
-        footer.removeFromLeft(12);
-    }
-    logoutButton.setBounds(footer.removeFromLeft(140));
-
+    auto footer = area.removeFromBottom(44);
+    const auto action = footer.removeFromRight(202);
+    if (currentStep == Step::review) submitButton.setBounds(action);
+    else nextStepButton.setBounds(action);
+    footer.removeFromRight(20);
+    validationLabel.setBounds(footer);
+    area.removeFromBottom(20);
     auto contentArea = area;
-
-    switch (currentStep)
-    {
-        case Step::song:
-        {
-            auto row1 = contentArea.removeFromTop(58);
-            auto songTitleArea = row1.removeFromLeft(440);
-            songTitleLabel.setBounds(songTitleArea.removeFromTop(20));
-            songTitleArea.removeFromTop(4);
-            songTitleEditor.setBounds(songTitleArea.removeFromTop(32));
-            row1.removeFromLeft(16);
-            auto dateArea = row1.removeFromLeft(180);
-            dateLabel.setBounds(dateArea.removeFromTop(20));
-            dateArea.removeFromTop(4);
-            dateEditor.setBounds(dateArea.removeFromTop(32));
+    auto field = [](juce::Rectangle<int> r, juce::Label& label, juce::TextEditor& editor) {
+        label.setBounds(r.removeFromTop(20));
+        r.removeFromTop(6);
+        editor.setBounds(r.removeFromTop(34));
+    };
+    switch (currentStep) {
+        case Step::song: {
+            const auto gap = 20;
+            const auto half = (contentArea.getWidth() - gap) / 2;
+            auto row = contentArea.removeFromTop(60);
+            field(row.removeFromLeft(half), songTitleLabel, songTitleEditor);
+            row.removeFromLeft(gap);
+            field(row, dateLabel, dateEditor);
             contentArea.removeFromTop(12);
-
-            auto row2 = contentArea.removeFromTop(58);
-            auto alternateArea = row2.removeFromLeft(440);
-            alternateTitleLabel.setBounds(alternateArea.removeFromTop(20));
-            alternateArea.removeFromTop(4);
-            alternateTitleEditor.setBounds(alternateArea.removeFromTop(32));
-            row2.removeFromLeft(16);
-            auto locationArea = row2.removeFromLeft(300);
-            sessionLocationLabel.setBounds(locationArea.removeFromTop(20));
-            locationArea.removeFromTop(4);
-            sessionLocationEditor.setBounds(locationArea.removeFromTop(32));
+            row = contentArea.removeFromTop(60);
+            field(row.removeFromLeft(half), alternateTitleLabel, alternateTitleEditor);
+            row.removeFromLeft(gap);
+            field(row, sessionLocationLabel, sessionLocationEditor);
             contentArea.removeFromTop(12);
-
-            auto row3 = contentArea.removeFromTop(58);
-            auto iswcArea = row3.removeFromLeft(280);
-            iswcLabel.setBounds(iswcArea.removeFromTop(20));
-            iswcArea.removeFromTop(4);
-            iswcEditor.setBounds(iswcArea.removeFromTop(32));
-            row3.removeFromLeft(16);
-            auto isrcArea = row3.removeFromLeft(280);
-            isrcLabel.setBounds(isrcArea.removeFromTop(20));
-            isrcArea.removeFromTop(4);
-            isrcEditor.setBounds(isrcArea.removeFromTop(32));
+            row = contentArea.removeFromTop(60);
+            field(row.removeFromLeft(half), iswcLabel, iswcEditor);
+            row.removeFromLeft(gap);
+            field(row, isrcLabel, isrcEditor);
             contentArea.removeFromTop(12);
-
             notesLabel.setBounds(contentArea.removeFromTop(20));
-            contentArea.removeFromTop(4);
-            notesEditor.setBounds(contentArea.removeFromTop(104));
+            contentArea.removeFromTop(6);
+            notesEditor.setBounds(contentArea);
             break;
         }
-
-        case Step::contributors:
-        {
-            auto headerRow = contentArea.removeFromTop(26);
-            contributorsLabel.setBounds(headerRow.removeFromLeft(160));
-            setEqualSplitsButton.setBounds(headerRow.removeFromRight(150));
-            headerRow.removeFromRight(10);
-            addContributorButton.setBounds(headerRow.removeFromRight(150));
+        case Step::contributors: {
+            auto row = contentArea.removeFromTop(30);
+            contributorsLabel.setBounds(row.removeFromLeft(150));
+            addContributorButton.setBounds(row.removeFromRight(150));
+            row.removeFromRight(12);
+            setEqualSplitsButton.setBounds(row.removeFromRight(150));
+            contentArea.removeFromTop(8);
+            contributorsHintLabel.setBounds(contentArea.removeFromTop(20));
             contentArea.removeFromTop(6);
-            contributorsHintLabel.setBounds(contentArea.removeFromTop(18));
-            contentArea.removeFromTop(6);
-            totalsLabel.setBounds(contentArea.removeFromTop(18));
-            contentArea.removeFromTop(10);
+            totalsLabel.setBounds(contentArea.removeFromTop(20));
+            contentArea.removeFromTop(12);
             contributorsViewport.setBounds(contentArea);
             refreshContributorCanvas();
             break;
         }
-
-        case Step::review:
-        {
-            recipientsLabel.setBounds(contentArea.removeFromTop(20));
-            contentArea.removeFromTop(6);
-
-            for (auto& button : recipientButtons)
-            {
-                if (!button->isVisible())
-                    continue;
-
-                button->setBounds(contentArea.removeFromTop(24));
-                contentArea.removeFromTop(4);
+        case Step::review: {
+            auto left = contentArea.removeFromLeft((contentArea.getWidth() - 28) * 44 / 100);
+            contentArea.removeFromLeft(28);
+            reviewViewport.setBounds(left);
+            const auto width = juce::jmax(1, left.getWidth() - 12);
+            const auto height = 400 + static_cast<int>(contributorRows.size()) * 40;
+            reviewCanvas->setSize(width, juce::jmax(left.getHeight(), height));
+            auto form = reviewCanvas->getLocalBounds().withTrimmedRight(6);
+            recipientsLabel.setBounds(form.removeFromTop(24));
+            form.removeFromTop(8);
+            for (auto& button : recipientButtons) {
+                if (!button->isVisible()) continue;
+                button->setBounds(form.removeFromTop(36));
+                form.removeFromTop(4);
             }
-
-            contentArea.removeFromTop(6);
-            additionalRecipientsLabel.setBounds(contentArea.removeFromTop(20));
-            contentArea.removeFromTop(4);
-
-            auto recipientRow = contentArea.removeFromTop(32);
-            additionalRecipientOneEditor.setBounds(recipientRow.removeFromLeft(320));
-            recipientRow.removeFromLeft(12);
-            additionalRecipientTwoEditor.setBounds(recipientRow.removeFromLeft(320));
-            contentArea.removeFromTop(14);
-
-            agreementsLabel.setBounds(contentArea.removeFromTop(20));
-            contentArea.removeFromTop(6);
-            inviteToggle.setBounds(contentArea.removeFromTop(24));
-            contentArea.removeFromTop(4);
-            supersedesPreviousToggle.setBounds(contentArea.removeFromTop(24));
-            contentArea.removeFromTop(4);
-            allPartiesAgreeToggle.setBounds(contentArea.removeFromTop(24));
-            contentArea.removeFromTop(16);
-
-            reviewSummaryTitleLabel.setBounds(contentArea.removeFromTop(20));
-            contentArea.removeFromTop(6);
-            reviewSummaryLabel.setBounds(contentArea.removeFromTop(180));
+            form.removeFromTop(16);
+            additionalRecipientsLabel.setBounds(form.removeFromTop(24));
+            form.removeFromTop(8);
+            additionalRecipientOneEditor.setBounds(form.removeFromTop(36));
+            form.removeFromTop(10);
+            additionalRecipientTwoEditor.setBounds(form.removeFromTop(36));
+            form.removeFromTop(22);
+            agreementsLabel.setBounds(form.removeFromTop(24));
+            form.removeFromTop(8);
+            inviteToggle.setBounds(form.removeFromTop(48));
+            form.removeFromTop(8);
+            supersedesPreviousToggle.setBounds(form.removeFromTop(48));
+            form.removeFromTop(8);
+            allPartiesAgreeToggle.setBounds(form.removeFromTop(48));
+            reviewSummaryTitleLabel.setFont(juce::FontOptions(17.0f, juce::Font::bold));
+            reviewSummaryTitleLabel.setBounds(contentArea.removeFromTop(26));
+            contentArea.removeFromTop(10);
+            reviewSummaryLabel.setBounds(contentArea);
             break;
         }
     }
@@ -1316,13 +1257,7 @@ void SplitSheetStudioEditor::resized()
 
 void SplitSheetStudioEditor::buttonClicked(juce::Button* button)
 {
-    if (button == &settingsButton)
-    {
-        toggleSettings();
-        return;
-    }
-
-    if (button == &readyButton)
+if (button == &readyButton)
     {
         juce::Component::SafePointer<SplitSheetStudioEditor> safeThis(this);
         processor.getApiClient().setBaseUrl(baseUrlEditor.getText());
@@ -1428,13 +1363,7 @@ void SplitSheetStudioEditor::buttonClicked(juce::Button* button)
         return;
     }
 
-    if (button == &logoutButton)
-    {
-        runLogout();
-        return;
-    }
-
-    for (int index = 0; index < static_cast<int>(contributorRows.size()); ++index)
+for (int index = 0; index < static_cast<int>(contributorRows.size()); ++index)
     {
         auto& row = contributorRows[static_cast<size_t>(index)];
         if (button == row->removeButton.get())
@@ -1586,10 +1515,9 @@ void SplitSheetStudioEditor::refreshViewState()
     subtitleLabel.setVisible(authed);
     statusBadgeLabel.setVisible(authed);
     statusLabel.setVisible(authed);
-    settingsButton.setVisible(authed);
-    baseUrlLabel.setVisible(authed && settingsVisible);
-    baseUrlEditor.setVisible(authed && settingsVisible);
-    readyButton.setVisible(authed && settingsVisible);
+    baseUrlLabel.setVisible(false);
+    baseUrlEditor.setVisible(false);
+    readyButton.setVisible(false);
 
     emailLabel.setVisible(!authed);
     emailEditor.setVisible(!authed);
@@ -1605,15 +1533,15 @@ void SplitSheetStudioEditor::refreshViewState()
     songStepButton.setVisible(authed);
     contributorsStepButton.setVisible(authed);
     reviewStepButton.setVisible(authed);
-    welcomeLabel.setVisible(authed);
+    welcomeLabel.setVisible(false);
     validationLabel.setVisible(authed);
-    logoutButton.setVisible(authed);
     nextStepButton.setVisible(authed && currentStep != Step::review);
     submitButton.setVisible(authed && currentStep == Step::review);
 
     const auto showSong = authed && currentStep == Step::song;
     const auto showContributors = authed && currentStep == Step::contributors;
     const auto showReview = authed && currentStep == Step::review;
+    reviewViewport.setVisible(showReview);
 
     songTitleLabel.setVisible(showSong);
     songTitleEditor.setVisible(showSong);
@@ -1788,19 +1716,6 @@ void SplitSheetStudioEditor::runLogin()
     });
 }
 
-void SplitSheetStudioEditor::runLogout()
-{
-    const auto refreshToken = processor.getRefreshToken();
-    processor.clearSession();
-    refreshViewState();
-    updateStatus("Signed out.", palette.neutral);
-
-    if (refreshToken.isEmpty())
-        return;
-
-    processor.getApiClient().logout(refreshToken, [] {});
-}
-
 void SplitSheetStudioEditor::submitSplitSheet()
 {
     const auto message = validationMessage();
@@ -1847,7 +1762,6 @@ void SplitSheetStudioEditor::updateStatus(juce::String message, juce::Colour col
 
 void SplitSheetStudioEditor::setBusy(bool busy)
 {
-    settingsButton.setEnabled(!busy);
     readyButton.setEnabled(!busy);
     loginButton.setEnabled(!busy);
     createAccountButton.setEnabled(!busy);
@@ -1858,7 +1772,6 @@ void SplitSheetStudioEditor::setBusy(bool busy)
     addContributorButton.setEnabled(!busy);
     setEqualSplitsButton.setEnabled(!busy);
     nextStepButton.setEnabled(!busy);
-    logoutButton.setEnabled(!busy);
 
     for (auto& row : contributorRows)
     {
@@ -1871,13 +1784,6 @@ void SplitSheetStudioEditor::setBusy(bool busy)
         refreshSubmitState();
     else
         submitButton.setEnabled(false);
-}
-
-void SplitSheetStudioEditor::toggleSettings()
-{
-    settingsVisible = !settingsVisible;
-    settingsButton.setButtonText(settingsVisible ? "Hide Preferences" : "Preferences");
-    refreshViewState();
 }
 
 void SplitSheetStudioEditor::switchStep(Step step)
@@ -1912,15 +1818,15 @@ void SplitSheetStudioEditor::refreshContributorCanvas()
         return;
 
     contributorCardBounds.clear();
-    const auto canvasWidth = juce::jmax(720, contributorsViewport.getWidth() - 14);
+    const auto canvasWidth = juce::jmax(1, contributorsViewport.getWidth() - 14);
     int y = 8;
 
     for (auto& row : contributorRows)
     {
-        juce::Rectangle<int> card(8, y, canvasWidth - 16, 372);
+        juce::Rectangle<int> card(0, y, canvasWidth, 464);
         contributorCardBounds.push_back(card);
 
-        auto inner = card.reduced(14);
+        auto inner = card.reduced(22);
         auto titleRow = inner.removeFromTop(24);
         row->titleLabel->setBounds(titleRow.removeFromLeft(180));
         row->removeButton->setBounds(titleRow.removeFromRight(34));
@@ -1993,7 +1899,7 @@ void SplitSheetStudioEditor::refreshRecipientButtons()
             refreshReviewSummary();
             refreshSubmitState();
         };
-        addAndMakeVisible(*button);
+        reviewCanvas->addAndMakeVisible(*button);
         recipientButtons.push_back(std::move(button));
     }
 
@@ -2051,7 +1957,7 @@ void SplitSheetStudioEditor::refreshReviewSummary()
     summary << "Recipients selected: " << juce::String(recipients.size()) << "\n";
     summary << "Agreement confirmed: " << (allPartiesAgreeToggle.getToggleState() ? "Yes" : "No");
 
-    reviewSummaryLabel.setText(summary, juce::dontSendNotification);
+    reviewSummaryLabel.setText(summary, false);
 }
 
 void SplitSheetStudioEditor::refreshSubmitState()
@@ -2120,6 +2026,10 @@ void SplitSheetStudioEditor::maybeGenerateBackendScreenshots()
             editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile(prefix + "-contributors.png"), 1280, 1260);
             editor.switchStep(Step::review);
             editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile(prefix + "-review.png"), 1280, 980);
+            editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile(prefix + "-review-default.png"), defaultEditorWidth, defaultEditorHeight);
+            editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile(prefix + "-review-compact.png"), authedMinEditorWidth, authedMinEditorHeight);
+            editor.switchStep(Step::contributors);
+            editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile(prefix + "-contributors-compact.png"), authedMinEditorWidth, authedMinEditorHeight);
         }
 
         juce::Timer::callAfterDelay(150, []

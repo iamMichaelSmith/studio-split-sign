@@ -2,7 +2,7 @@
   "containerDefinitions": [
     {
       "name": "splitsheetstudio-staging",
-      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20261014-windows-013-signed",
+      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20261014-ui-014",
       "cpu": 0,
       "portMappings": [
         {
@@ -67,7 +67,7 @@
         },
         {
           "name": "APP_RELEASE_ID",
-          "value": "20261014-windows-013-signed"
+          "value": "20261014-ui-014"
         },
         {
           "name": "S3_PREFIX",
@@ -143,7 +143,7 @@
         },
         {
           "name": "PLUGIN_LATEST_VERSION_LABEL",
-          "value": "0.1.3"
+          "value": "0.1.4"
         },
         {
           "name": "FROM_EMAIL",
@@ -155,7 +155,7 @@
         },
         {
           "name": "PLUGIN_DOWNLOAD_KEY",
-          "value": "downloads/SplitSheetStudio-Setup-0.1.3.exe"
+          "value": "downloads/SplitSheetStudio-Setup-0.1.4.exe"
         },
         {
           "name": "SIGNER_LINK_TTL_HOURS",
@@ -183,7 +183,7 @@
         },
         {
           "name": "PLUGIN_VERSION_LABEL",
-          "value": "0.1.3"
+          "value": "0.1.4"
         },
         {
           "name": "PG_SSL_CA_PATH",

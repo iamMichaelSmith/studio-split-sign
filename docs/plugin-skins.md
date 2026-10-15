@@ -19,3 +19,7 @@ Build the VST3 and Standalone targets for local testing. Local builds do not upd
 ## October 14 Windows beta release
 
 Version 0.1.3 is published through the account download, including all six new skins. The homepage, plugin page, and account page feature the original six-skin gallery. The installer, VST3, and standalone app are now timestamped and digitally signed by Blak Marigold Pro LLC. See windows-release-2026-10-14.md for verification and checksum.
+
+## Version 0.1.4 layout
+
+All signed-in pages now share one centered translucent shell, with equal margins and consistent control padding. Review & Send uses recipients and confirmations on the left and a larger independently scrollable summary on the right. Preferences and sign-out controls are removed. Contributor cards reserve space for their full signature area. Native previews cover default, compact, and large sizes. Use scripts/build-plugin-gallery.cjs with the renderer capture directory to update the website and email gallery together.

@@ -92,11 +92,9 @@ private:
     void restoreSessionIfNeeded();
     void checkForUpdates();
     void runLogin();
-    void runLogout();
     void submitSplitSheet();
     void updateStatus(juce::String message, juce::Colour colour);
     void setBusy(bool busy);
-    void toggleSettings();
     void switchStep(Step step);
     void updateStepButtons();
     void updateContributorTitles();
@@ -145,7 +143,7 @@ private:
     juce::Label additionalRecipientsLabel;
     juce::Label agreementsLabel;
     juce::Label reviewSummaryTitleLabel;
-    juce::Label reviewSummaryLabel;
+    juce::TextEditor reviewSummaryLabel;
     juce::Label validationLabel;
     juce::Label updateNoticeLabel;
 
@@ -166,7 +164,6 @@ private:
     juce::ToggleButton supersedesPreviousToggle;
     juce::ToggleButton allPartiesAgreeToggle;
 
-    juce::TextButton settingsButton { "Connection Settings" };
     juce::TextButton readyButton { "Check Connection" };
     juce::TextButton loginButton { "Sign In" };
     juce::TextButton createAccountButton { "Create Account" };
@@ -179,11 +176,12 @@ private:
     juce::TextButton setEqualSplitsButton { "Set Equal Splits" };
     juce::TextButton nextStepButton { "Next" };
     juce::TextButton submitButton { "Send Split Sheet" };
-    juce::TextButton logoutButton { "Sign Out" };
     juce::ComboBox themeSelector;
 
     juce::Viewport contributorsViewport;
     std::unique_ptr<PaintedComponent> contributorsCanvas;
+    juce::Viewport reviewViewport;
+    std::unique_ptr<PaintedComponent> reviewCanvas;
 
     std::vector<std::unique_ptr<ContributorRow>> contributorRows;
     std::vector<juce::Rectangle<int>> contributorCardBounds;
@@ -191,7 +189,6 @@ private:
     std::vector<bool> recipientSelections;
 
     Step currentStep = Step::song;
-    bool settingsVisible = false;
     bool restoringSession = false;
     bool updateAvailable = false;
     bool backendScreenshotMode = false;

@@ -1,6 +1,6 @@
 ﻿cmake_minimum_required(VERSION 3.22)
 
-project(SplitSheetStudioVST VERSION 0.1.3)
+project(SplitSheetStudioVST VERSION 0.1.4)
 
 include(FetchContent)
 
