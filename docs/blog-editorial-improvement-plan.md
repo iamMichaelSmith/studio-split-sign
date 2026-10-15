@@ -1,5 +1,18 @@
 # Blog editorial improvement log
 
+## Publication — October 14, 2026
+
+Published to [the public blog](https://splitsheetstudio.com/blog) from GitHub source commit [2118222](https://github.com/iamMichaelSmith/studio-split-sign/commit/2118222193d71fa37fae7381420b2221ac01419d), **Blog revisions: improve all 28 articles and reader resources**.
+
+- Release image: `20261014-blog-revisions-230337`; ECS task definition `splitsheetstudio-staging:90`.
+- Image digest: `sha256:518db29f7d59de7075432823595b411903b534f48ca38d58ad9df6845a512e53`.
+- GitHub CI passed, including the blog checks, application checks, smoke test, and isolated PostgreSQL checks.
+- Production verification: all 28 article bodies match the committed source; author/date/canonical metadata and one closing CTA per article are correct. Blog indexes on the root, www, and app hosts include all 28 articles.
+- All five resource files and the blog stylesheet match their committed bytes. Health reports the new release; readiness, pricing, and the plug-in page respond successfully.
+- Deployment preserves the previous runtime configuration except for the image and release identifier. Previous task revision 89 remains the rollback reference.
+
+The local/unpublished descriptions below are historical notes from preparation, before this authorized publication.
+
 First pilot pass: October 14, 2026. Local implementation; not deployed.
 
 ## Second editorial pass — October 14, 2026
