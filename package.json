@@ -10,6 +10,7 @@
     "test": "node --test tests/auth-security.cjs tests/release-security.cjs tests/launch-regressions.cjs tests/email-journeys.cjs && node tests/smoke.cjs",
     "n8n:build-onboarding": "node scripts/build-onboarding-workflows.cjs",
     "test:security": "node --test tests/auth-security.cjs tests/release-security.cjs",
+    "test:blog": "node --test tests/blog-editorial.cjs",
     "test:release:postgres": "node tests/release-postgres.cjs",
     "test:postgres": "node tests/release-postgres.cjs",
     "db:postgres:setup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\setup-local-postgres.ps1",

@@ -1,6 +1,7 @@
 .git
 .github
 .local
+tmp
 node_modules
 .env
 data
