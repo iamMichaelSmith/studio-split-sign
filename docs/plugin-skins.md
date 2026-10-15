@@ -18,4 +18,4 @@ Build the VST3 and Standalone targets for local testing. Local builds do not upd
 
 ## October 14 Windows beta release
 
-Version 0.1.3 is published through the account download, including all six new skins. The homepage, plugin page, and account page feature the original six-skin gallery. The installer remains unsigned. See windows-release-2026-10-14.md for verification and checksum.
+Version 0.1.3 is published through the account download, including all six new skins. The homepage, plugin page, and account page feature the original six-skin gallery. The installer, VST3, and standalone app are now timestamped and digitally signed by Blak Marigold Pro LLC. See windows-release-2026-10-14.md for verification and checksum.

@@ -12,4 +12,4 @@ Only new enrollments with verified active accounts and current marketing consent
 
 Validation: ECS deployment completed and healthy; both production automation endpoints return HTTP 200 with enabled=true and mode=production; both n8n dry runs succeeded with no due recipients; business footer and six-skin attachment verified. Earlier release validation passed 39 application checks plus smoke and 22 PostgreSQL checks.
 
-Windows 0.1.3 remains an unsigned beta; see windows-release-2026-10-14.md for artifact verification.
+Windows 0.1.3 was subsequently published with valid timestamped Azure signatures as Blak Marigold Pro LLC; see windows-release-2026-10-14.md for artifact verification.

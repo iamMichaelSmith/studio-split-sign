@@ -32,7 +32,7 @@ This beta validates the full creator workflow before Stripe checkout and code si
 10. Confirm every party receives the final completed PDF.
 
 ## Known beta limits
-- Installer is unsigned; Windows SmartScreen warnings are expected.
+- Installer, VST3, and standalone app are timestamped and digitally signed by Blak Marigold Pro LLC. Windows reputation and DAW compatibility are separate from signature validity.
 - Stripe checkout can remain disabled during the free beta.
 - Plugin update checks open a browser download; they do not hot-replace the VST while the DAW is open.
 - Compatibility can vary by DAW version. Record the Windows version, DAW name/version, and scan result for every beta test.
@@ -55,7 +55,7 @@ The beta can be promoted when:
 - plugin update check reports `0.1.3` as current/latest
 
 ## Before paid launch
-- Buy and configure Windows code-signing certificate.
+- Azure Artifact Signing is configured; preserve timestamped signing and release verification for future builds.
 - Connect live Stripe keys and webhook secret.
 - Run checkout in Stripe test mode, then live mode.
 - Add a public changelog/release notes page.

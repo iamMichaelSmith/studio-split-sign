@@ -128,7 +128,7 @@ powershell -ExecutionPolicy Bypass -File .\deploy\aws\deploy-ecs-service.ps1 `
 ## Remaining owner and commercial-release work
 
 - confirm the SNS email subscription sent to `blakmarigold@gmail.com`
-- sign the Windows installer and binaries
+- preserve the configured Azure Artifact Signing process for future Windows builds (0.1.3 is signed)
 - complete clean-machine and multi-DAW Windows beta testing
 - complete one live end-to-end paid checkout and refund rehearsal
 - configure Google and Apple OAuth only if those providers will be offered

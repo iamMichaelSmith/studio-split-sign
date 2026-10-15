@@ -1,6 +1,6 @@
 # Release Checklist
 
-Last technical validation: September 13, 2026. Checked items reflect the deployed Windows public-beta environment, not a signed commercial release.
+Latest signing and application validation: October 14, 2026. Windows 0.1.3 artifacts have valid timestamped signatures from Blak Marigold Pro LLC; clean-machine and multi-DAW checks remain separate gates.
 
 ## Code and app checks
 - [x] `npm test` passes
@@ -15,7 +15,7 @@ Last technical validation: September 13, 2026. Checked items reflect the deploye
 - [x] plugin can sign in against hosted API
 - [x] beta page download points to latest installer
 - [x] Windows VST3 unsigned-test compatibility checklist passes
-- [ ] installer and plugin binaries are code signed
+- [x] installer and plugin binaries are code signed with Azure Artifact Signing (October 14, 2026)
 - [ ] clean-machine Windows and DAW matrix passes
 
 ## Configuration checks

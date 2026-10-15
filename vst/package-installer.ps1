@@ -6,6 +6,8 @@
   [string]$CertificateThumbprint = $env:SPLITSHEET_SIGNING_CERT_THUMBPRINT,
   [string]$PfxPath = $env:SPLITSHEET_SIGNING_PFX_PATH,
   [string]$PfxPassword = $env:SPLITSHEET_SIGNING_PFX_PASSWORD,
+  [string]$AzureMetadataPath = $env:SPLITSHEET_AZURE_METADATA_PATH,
+  [string]$AzureDlibPath = $env:SPLITSHEET_AZURE_DLIB_PATH,
   [string]$TimestampUrl = "http://timestamp.digicert.com",
   [switch]$SkipBuild,
   [switch]$InstallAfterBuild,
@@ -14,6 +16,7 @@
 )
 
 $ErrorActionPreference = "Stop"
+$timestampExplicitlySet = $PSBoundParameters.ContainsKey('TimestampUrl')
 
 function Resolve-ToolPath {
   param(
@@ -60,8 +63,15 @@ function Invoke-CodeSigning {
     [string]$SignToolPath
   )
 
-  $arguments = @("sign", "/fd", "SHA256", "/td", "SHA256", "/tr", $TimestampUrl)
-  if ($PfxPath) {
+  $signingTimestamp = $TimestampUrl
+  if ($AzureMetadataPath -and -not $timestampExplicitlySet) {
+    $signingTimestamp = "http://timestamp.acs.microsoft.com"
+  }
+  $arguments = @("sign", "/fd", "SHA256", "/td", "SHA256", "/tr", $signingTimestamp)
+  if ($AzureMetadataPath) {
+    $arguments += @("/dlib", (Resolve-Path -LiteralPath $AzureDlibPath).Path,
+      "/dmdf", (Resolve-Path -LiteralPath $AzureMetadataPath).Path)
+  } elseif ($PfxPath) {
     $resolvedPfxPath = (Resolve-Path -LiteralPath $PfxPath).Path
     $arguments += @("/f", $resolvedPfxPath)
     if ($PfxPassword) {
@@ -77,9 +87,13 @@ function Invoke-CodeSigning {
     throw "Code signing failed for $Path"
   }
 
-  & $SignToolPath verify /pa /v $Path
+  & $SignToolPath verify /pa /all /tw /v $Path
   if ($LASTEXITCODE -ne 0) {
     throw "Signature verification failed for $Path"
+  }
+  $signature = Get-AuthenticodeSignature -LiteralPath $Path
+  if ($signature.Status -ne 'Valid' -or -not $signature.TimeStamperCertificate) {
+    throw "A valid timestamped signature is required for $Path"
   }
 }
 
@@ -106,7 +120,17 @@ if (-not $isccExe) {
 
 if (-not $SkipBuild) {
   & $cmakeExe -S $PSScriptRoot -B $buildPath -G "Visual Studio 17 2022" -A x64
+  if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed." }
+  # JUCE 8.0.4 can retain a previous resource version after reconfiguration.
+  $resourceInfo = Join-Path $buildPath 'SplitSheetStudio_artefacts\JuceLibraryCode\Info.txt'
+  $resourceOutput = Join-Path $buildPath 'SplitSheetStudio_artefacts\JuceLibraryCode\SplitSheetStudio_resources.rc'
+  $juceAide = Get-ChildItem -LiteralPath (Join-Path $buildPath '_deps\juce-build') -Filter juceaide.exe -Recurse -File |
+    Select-Object -ExpandProperty FullName -First 1
+  if (-not $juceAide -or -not (Test-Path -LiteralPath $resourceInfo)) { throw "JUCE resource generation tools are missing." }
+  & $juceAide rcfile $resourceInfo $resourceOutput
+  if ($LASTEXITCODE -ne 0) { throw "Windows version resource generation failed." }
   & $cmakeExe --build $buildPath --config $Configuration
+  if ($LASTEXITCODE -ne 0) { throw "Windows build failed." }
 }
 
 $standaloneSource = Join-Path $buildPath "SplitSheetStudio_artefacts\$Configuration\Standalone"
@@ -131,6 +155,11 @@ foreach ($binary in @(
 
 New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
 if (Test-Path $stagePath) {
+  $resolvedStage = [IO.Path]::GetFullPath($stagePath)
+  $resolvedOutput = [IO.Path]::GetFullPath($outputPath).TrimEnd([IO.Path]::DirectorySeparatorChar)
+  if (-not $resolvedStage.StartsWith($resolvedOutput + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Installer staging must remain inside the output directory."
+  }
   Remove-Item -LiteralPath $stagePath -Recurse -Force
 }
 New-Item -ItemType Directory -Force -Path $standaloneStage | Out-Null
@@ -141,11 +170,15 @@ Copy-Item -LiteralPath $vst3Source -Destination (Join-Path $vst3Stage "Split She
 
 $standaloneBinary = Join-Path $standaloneStage "Split Sheet Studio.exe"
 $vst3Binary = Join-Path $vst3Stage "Split Sheet Studio.vst3\Contents\x86_64-win\Split Sheet Studio.vst3"
-$signingRequested = [bool]($CertificateThumbprint -or $PfxPath)
+$signingRequested = [bool]($CertificateThumbprint -or $PfxPath -or $AzureMetadataPath)
 $signToolExe = Resolve-SignToolPath
 
+if ($AzureMetadataPath -and (-not $AzureDlibPath -or -not (Test-Path -LiteralPath $AzureDlibPath))) {
+  throw "Azure signing requires SPLITSHEET_AZURE_DLIB_PATH or -AzureDlibPath."
+}
+
 if ($RequireSigning -and -not $signingRequested) {
-  throw "Release signing is required. Set SPLITSHEET_SIGNING_CERT_THUMBPRINT or SPLITSHEET_SIGNING_PFX_PATH."
+  throw "Release signing is required. Configure Azure metadata/dlib paths, a certificate thumbprint, or a PFX."
 }
 if ($signingRequested -and -not $signToolExe) {
   throw "SignTool was not found. Install the Windows SDK signing tools."
@@ -164,6 +197,7 @@ $issPath = Join-Path $PSScriptRoot "installer\SplitSheetStudio.iss"
   "/DVst3Source=$(Join-Path $vst3Stage 'Split Sheet Studio.vst3')" `
   "/DOutputDir=$outputPath" `
   $issPath
+if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed." }
 
 $installerPath = Join-Path $outputPath "SplitSheetStudio-Setup-$Version.exe"
 if (-not (Test-Path $installerPath)) {

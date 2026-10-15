@@ -299,6 +299,8 @@ Default local URL:
 
 ## Current Release Position
 
+**October 14, 2026 signed release:** Windows 0.1.3 now ships with valid timestamped Azure Artifact Signing signatures from Blak Marigold Pro LLC on the installer, standalone app, and VST3 binary. See the [signing guide](./docs/windows-code-signing.md) and [release record](./docs/windows-release-2026-10-14.md). Clean-machine installation and multi-DAW compatibility checks remain separate release work.
+
 **September 2, 2026 validation update:** the local SQLite/security suite reports 18 passing test entries, the PostgreSQL suite reports 12, and the broader smoke suite passes. The local dependency audit reports no known production dependency vulnerabilities after a targeted parser update. This pass also fixed account-verification, session-revocation, and revision-integrity problems. These fixes are **local and not yet deployed**; passing these tests is not a commercial-launch sign-off. Installed Windows binaries differ from the staged package, and the checked artifacts remain unsigned. See the [release-validation report](./docs/release-validation-2026-09-02.md) for scope, evidence, migration notes, and remaining release gates.
 
 ### Previous Deployment Snapshot

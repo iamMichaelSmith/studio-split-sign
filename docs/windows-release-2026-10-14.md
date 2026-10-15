@@ -15,3 +15,13 @@ Verification: 39 application tests plus smoke; 22 isolated PostgreSQL checks; al
 The beta is unsigned. Code signing and clean-machine/multi-DAW validation remain separate release work. This release did not install the plugin on this computer. Production email journeys are explicitly disabled. Beta journeys keep the real-day schedule and six-skin email image.
 
 JUCE 8.0.4 may retain the previous Windows resource version after CMake reconfiguration. Regenerate the generated resource using juceaide rcfile with the generated Info.txt, rebuild both targets, and run vst/test-release.ps1 before upload. Packaging now rejects binaries whose embedded version differs from the installer version.
+
+## Signed release follow-up
+
+Azure Artifact Signing is now configured. The installer was rebuilt from signed staged VST3 and standalone binaries and then signed as Blak Marigold Pro LLC. All three artifacts have valid timestamped signatures. The signed installer replaces the unsigned beta at the same S3 download key.
+
+Signed installer SHA256: 39fcaf0bf4b1573edcd3e2a009a5149545098574177afb1cc032ac66f8956655
+
+The website now identifies the verified publisher. Production email journeys remain enabled with the existing real-day schedule and mailing footer. Clean-machine and multi-DAW testing remain outstanding. See windows-code-signing.md for the repeatable Azure release process.
+
+Signed website deployment: splitsheetstudio-staging:87. Container image: 20261014-windows-013-signed.

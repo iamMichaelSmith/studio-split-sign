@@ -1,5 +1,5 @@
 ﻿#define MyAppName "Split Sheet Studio"
-#define MyAppPublisher "Blak Marigold Studio"
+#define MyAppPublisher "Blak Marigold Pro LLC"
 #define MyAppURL "https://splitsheetstudio.com"
 #define MyAppSupportURL "https://app.splitsheetstudio.com"
 #ifndef MyAppVersion

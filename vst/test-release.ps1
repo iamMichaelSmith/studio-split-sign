@@ -1,5 +1,6 @@
 ﻿param(
   [string]$Version = "0.1.3",
+  [string]$ExpectedPublisher = "Blak Marigold Pro LLC",
   [switch]$RequireSigned,
   [switch]$CheckInstalled
 )
@@ -33,14 +34,17 @@ $signatureResults = foreach ($path in $requiredPaths) {
   [pscustomobject]@{
     Path = $path
     Signature = $signature.Status.ToString()
+    Signer = $signature.SignerCertificate.Subject
+    Publisher = if ($signature.SignerCertificate) { $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) } else { $null }
+    Timestamped = [bool]$signature.TimeStamperCertificate
     Sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
     ProductVersion = $item.VersionInfo.ProductVersion
     FileVersion = $item.VersionInfo.FileVersion
   }
 }
 
-if ($RequireSigned -and ($signatureResults | Where-Object Signature -ne "Valid")) {
-  throw "Release verification failed because one or more artifacts are not signed."
+if ($RequireSigned -and ($signatureResults | Where-Object { $_.Signature -ne 'Valid' -or -not $_.Timestamped -or $_.Publisher -ne $ExpectedPublisher })) {
+  throw "Release verification requires valid timestamped signatures from $ExpectedPublisher on every artifact."
 }
 
 $installedResult = $null
@@ -82,5 +86,5 @@ if ($versionMismatches) {
   Artifacts = $signatureResults
   Installed = $installedResult
   ReadyForUnsignedTesting = $true
-  ReadyForPublicDistribution = -not [bool]($signatureResults | Where-Object Signature -ne "Valid")
+  ReadyForPublicDistribution = -not [bool]($signatureResults | Where-Object { $_.Signature -ne 'Valid' -or -not $_.Timestamped -or $_.Publisher -ne $ExpectedPublisher })
 } | ConvertTo-Json -Depth 6

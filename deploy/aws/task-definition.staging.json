@@ -2,7 +2,7 @@
   "containerDefinitions": [
     {
       "name": "splitsheetstudio-staging",
-      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20261014-windows-013",
+      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20261014-windows-013-signed",
       "cpu": 0,
       "portMappings": [
         {
@@ -54,12 +54,20 @@
           "value": "true"
         },
         {
+          "name": "EMAIL_JOURNEYS_ENABLED",
+          "value": "true"
+        },
+        {
           "name": "DB_PROVIDER",
           "value": "postgres"
         },
         {
           "name": "ALLOW_PUBLIC_REGISTRATION",
           "value": "true"
+        },
+        {
+          "name": "APP_RELEASE_ID",
+          "value": "20261014-windows-013-signed"
         },
         {
           "name": "S3_PREFIX",
@@ -78,12 +86,20 @@
           "value": "Contact@blakmarigold.com"
         },
         {
+          "name": "EMAIL_JOURNEYS_MODE",
+          "value": "production"
+        },
+        {
           "name": "PUBLIC_BASE_URL",
           "value": "https://app.splitsheetstudio.com"
         },
         {
           "name": "REDIS_PREFIX",
           "value": "splitsheet:sess:"
+        },
+        {
+          "name": "EMAIL_JOURNEY_POSTAL_ADDRESS",
+          "value": "14205 N Mopac Expressway, STE 570, Austin, TX 78728"
         },
         {
           "name": "PLUGIN_DOWNLOAD_URL",
@@ -120,6 +136,10 @@
         {
           "name": "STRIPE_STUDIO_ANNUAL_PRICE_ID",
           "value": "price_1UF2iuISjA58kSWkyP1fxZe1"
+        },
+        {
+          "name": "EMAIL_JOURNEY_DAY_MINUTES",
+          "value": "1440"
         },
         {
           "name": "PLUGIN_LATEST_VERSION_LABEL",
@@ -172,26 +192,6 @@
         {
           "name": "NOTIFY_EMAIL",
           "value": "blakmarigold@gmail.com"
-        },
-        {
-          "name": "EMAIL_JOURNEYS_ENABLED",
-          "value": "true"
-        },
-        {
-          "name": "EMAIL_JOURNEYS_MODE",
-          "value": "production"
-        },
-        {
-          "name": "APP_RELEASE_ID",
-          "value": "20261014-onboarding-production"
-        },
-        {
-          "name": "EMAIL_JOURNEY_POSTAL_ADDRESS",
-          "value": "14205 N Mopac Expressway, STE 570, Austin, TX 78728"
-        },
-        {
-          "name": "EMAIL_JOURNEY_DAY_MINUTES",
-          "value": "1440"
         }
       ],
       "mountPoints": [],
