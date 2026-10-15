@@ -2,7 +2,7 @@
   "containerDefinitions": [
     {
       "name": "splitsheetstudio-staging",
-      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20261014-ui-014",
+      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20261014-blog-tables",
       "cpu": 0,
       "portMappings": [
         {
@@ -67,7 +67,7 @@
         },
         {
           "name": "APP_RELEASE_ID",
-          "value": "20261014-ui-014"
+          "value": "20261014-blog-tables"
         },
         {
           "name": "S3_PREFIX",
