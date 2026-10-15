@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const Database = require('better-sqlite3');
 const { createAuthService } = require('../services/auth-service');
-const { PLAN_DEFINITIONS } = require('../services/plan-service');
+const { PLAN_DEFINITIONS, planForUser } = require('../services/plan-service');
 const { validateProductionRuntime } = require('../services/runtime-config');
 
 function fixture(options = {}) {
@@ -150,6 +150,99 @@ test('social sign-in creates verified accounts and keeps inactive users blocked'
       email: 'social@example.test',
       displayName: 'Social User'
     }), { statusCode: 401 });
+  } finally { db.close(); }
+});
+
+test('signup attribution is stored for admin source reporting', async () => {
+  const { db, auth } = fixture({ requireEmailVerification: false });
+  try {
+    const registered = await auth.registerUser({
+      email: 'source@example.test',
+      password: 'Attribution-test-password-123',
+      displayName: 'Source Test',
+      attribution: {
+        signupProvider: 'email_web',
+        firstSource: 'reddit',
+        firstMedium: 'social',
+        firstCampaign: 'sync-license-paperwork',
+        firstLandingPath: '/pricing?utm_source=reddit&utm_campaign=sync-license-paperwork',
+        firstReferrer: 'reddit.com',
+        firstCapturedAt: '2026-10-01T00:00:00.000Z',
+        lastSource: 'reddit',
+        lastMedium: 'social',
+        lastCampaign: 'sync-license-paperwork',
+        lastLandingPath: '/signup',
+        lastReferrer: 'reddit.com',
+        lastCapturedAt: '2026-10-01T00:02:00.000Z'
+      }
+    });
+    assert.equal(registered.user.attribution.signupProvider, 'email_web');
+    assert.equal(registered.user.attribution.firstSource, 'reddit');
+    assert.equal(registered.user.attribution.firstCampaign, 'sync-license-paperwork');
+
+    const users = await auth.listUsers();
+    const stored = users.find((user) => user.email === 'source@example.test');
+    assert.equal(stored.attribution.firstReferrer, 'reddit.com');
+    assert.equal(stored.attribution.lastLandingPath, '/signup');
+
+    const social = await auth.findOrCreateProviderUser({
+      email: 'google-source@example.test',
+      displayName: 'Google Source',
+      signupProvider: 'google',
+      attribution: {
+        firstSource: 'google',
+        firstMedium: 'organic',
+        firstLandingPath: '/blog/what-is-a-split-sheet-in-music',
+        firstCapturedAt: '2026-10-02T00:00:00.000Z'
+      }
+    });
+    assert.equal(social.attribution.signupProvider, 'google');
+    assert.equal(social.attribution.firstSource, 'google');
+  } finally { db.close(); }
+});
+
+test('admin complimentary access upgrades existing and future accounts without Stripe', async () => {
+  const { db, auth } = fixture({ requireEmailVerification: false });
+  try {
+    const existing = await auth.registerUser(account);
+    assert.equal(planForUser(existing.user).key, 'free');
+
+    const existingGrant = await auth.grantComplimentaryAccess({
+      email: account.email,
+      planKey: 'studio_pro',
+      reason: 'plugin_review',
+      note: 'YouTube review campaign',
+      grantedBy: 'admin-test'
+    });
+    assert.equal(existingGrant.user.email, account.email);
+    assert.equal(existingGrant.user.complimentaryActive, true);
+    assert.equal(planForUser(existingGrant.user).key, 'studio_pro');
+
+    const session = await auth.createSession(account);
+    assert.equal(session.user.complimentaryReason, 'plugin_review');
+    assert.equal(planForUser(session.user).key, 'studio_pro');
+
+    await auth.grantComplimentaryAccess({
+      email: 'future-reviewer@example.test',
+      planKey: 'studio_pro',
+      reason: 'sponsorship',
+      note: 'Sponsored beat maker',
+      grantedBy: 'admin-test'
+    });
+    const future = await auth.findOrCreateProviderUser({
+      email: 'future-reviewer@example.test',
+      displayName: 'Future Reviewer'
+    });
+    assert.equal(future.complimentaryActive, true);
+    assert.equal(future.complimentaryReason, 'sponsorship');
+    assert.equal(planForUser(future).key, 'studio_pro');
+
+    const grants = await auth.listComplimentaryGrants();
+    assert.equal(grants.filter((grant) => grant.status === 'active').length, 2);
+
+    const revoked = await auth.revokeComplimentaryAccess({ email: account.email });
+    assert.equal(revoked.complimentaryActive, false);
+    assert.equal(planForUser(revoked).key, 'free');
   } finally { db.close(); }
 });
 

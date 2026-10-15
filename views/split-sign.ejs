@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -11,7 +11,7 @@
     <div class="signer-hero">
       <span class="landing-kicker">Secure remote signature</span>
       <h1>Review and sign your split</h1>
-      <p>No account is required. Review every percentage below before signing.</p>
+      <p>Review every percentage below before signing. Your split sheet will be saved to your Split Sheet Studio account at no charge.</p>
     </div>
 
     <div class="card">
@@ -96,8 +96,8 @@
       <p class="small">Submitting records your consent, timestamp, and signing-session audit information. The record is locked after every contributor signs.</p>
     </form>
   </div>
-  <script src="/vendor/signature_pad/signature_pad.umd.min.js"></script>
-  <script>
+  <script nonce="<%= cspNonce %>" src="/vendor/signature_pad/signature_pad.umd.min.js"></script>
+  <script nonce="<%= cspNonce %>">
     const canvas=document.getElementById('sig');
     const input=document.getElementById('signatureData');
     const hint=document.getElementById('sig-hint');

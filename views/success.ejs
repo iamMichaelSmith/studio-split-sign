@@ -29,7 +29,7 @@
 
       <% if (type === 'split-sheet') { %>
         <div class="home-actions">
-          <a class="button-link" href="/account#split-sheet-vault">Open vault</a>
+          <a class="button-link" href="/account?tab=vault">Open vault</a>
           <a class="button-link button-link-secondary" href="<%= typeof pdfUrl !== 'undefined' ? pdfUrl : `/split-sheet/pdf/${id}` %>">Download PDF summary</a>
           <a class="button-link button-link-secondary" href="/split-sheet">Create another</a>
         </div>
@@ -37,5 +37,8 @@
     </div>
     <p><a href="/account">Back to account</a></p>
   </div>
+<% if(typeof clearDraftKey === 'string') { %>
+<script nonce="<%= cspNonce %>">try { localStorage.removeItem(<%- JSON.stringify(clearDraftKey).replace(/</g,'\\u003c') %>); } catch {}</script>
+<% } %>
 </body>
 </html>

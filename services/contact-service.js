@@ -264,6 +264,9 @@ function createContactService({ db, provider = "sqlite" }) {
   return {
     consentCopyVersion: CONSENT_COPY_VERSION,
     recordContact,
+    async getByEmail(email) {
+      return mapContact(await adapter.byEmail(normalizeEmail(email)));
+    },
     async listContacts() {
       return (await adapter.list()).map(mapContact);
     },

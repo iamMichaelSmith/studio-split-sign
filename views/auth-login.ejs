@@ -26,14 +26,14 @@
       <% } %>
       <form method="post" action="/login">
         <input type="hidden" name="next" value="<%= next %>">
-        <label>Email</label>
-        <input type="email" name="email" value="<%= values.email %>" required>
-        <label>Password</label>
-        <input type="password" name="password" required>
+        <label for="email">Email</label>
+        <input id="email" autocomplete="email" type="email" name="email" value="<%= values.email %>" required>
+        <label for="password">Password</label>
+        <input id="password" autocomplete="current-password" type="password" name="password" required>
         <button type="submit">Sign in</button>
       </form>
       <p class="small auth-links">
-        <a href="<%= signupUrl %>">Create account with email</a>
+        <a href="<%= signupUrl %>?next=<%= encodeURIComponent(next) %>">Create account with email</a>
         <a href="<%= forgotPasswordUrl %>">Forgot password</a>
         <a href="mailto:<%= supportEmail %>">Support</a>
       </p>

@@ -1,0 +1,111 @@
+{
+  "name": "Split Sheet Studio BETA — Invited contributor onboarding",
+  "active": false,
+  "nodes": [
+    {
+      "id": "609d5c75-f944-489c-aae8-e4a4909af28d",
+      "name": "Journey schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "3f87c674-5b72-4805-be6b-125545347140",
+      "name": "Run due journey emails",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.1.70:5051/api/automations/onboarding/invited/run",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"dryRun\":true,\"limit\":25}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Split Sheet Studio onboarding"
+        }
+      }
+    },
+    {
+      "id": "6e2c21dd-a588-4a45-a9db-35a49ac19191",
+      "name": "Check delivery results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nif (result.needsReview > 0) throw new Error('Onboarding delivery needs review in the app database; do not automatically resend uncertain deliveries.');\nif (!result.dryRun && result.enabled === false) throw new Error('Email journeys are disabled in the app.');\nreturn $input.all();"
+      }
+    },
+    {
+      "id": "a3dbf818-ea16-4654-810f-cb0395f24f7a",
+      "name": "Setup and journey",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -360
+      ],
+      "parameters": {
+        "width": 760,
+        "height": 300,
+        "content": "## BETA: Invited contributor\n\nOnly blakmarigold@gmail.com receives beta mail. Separate local database; production remains unchanged.\n\nWelcome → first action → vault → plugin skins → approved collaborators → next session.\nTiming: 0, 2, 4, 7, 10, 14 minutes. Check every minute.\n\nStart/restart or send the next email manually at:\nhttp://192.168.1.70:5051/admin/email-journeys\n\nUses the existing AWS SES sender and an embedded screenshot header. dryRun=true previews counts; set false to run beta delivery. Keep the beta app running on this computer. Production requires its own deployment and published workflows after owner approval."
+      }
+    }
+  ],
+  "connections": {
+    "Journey schedule": {
+      "main": [
+        [
+          {
+            "node": "Run due journey emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run due journey emails": {
+      "main": [
+        [
+          {
+            "node": "Check delivery results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Chicago",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  }
+}

@@ -20,10 +20,13 @@ const { createRemoteJWKSet, SignJWT, importPKCS8, jwtVerify } = require("jose");
 const { createAuthService, ApiAuthError } = require("./services/auth-service");
 const { createDatabaseService } = require("./services/database-service");
 const { createContactService } = require("./services/contact-service");
+const { createEmailJourneyService, journeyEmail, JOURNEYS } = require("./services/email-journey-service");
 const { createCollaboratorService } = require("./services/collaborator-service");
 const { validateProductionRuntime } = require("./services/runtime-config");
 const { createStorefrontService } = require("./services/storefront-service");
 const { createSubmissionService } = require("./services/submission-service");
+const { createLaunchStore } = require("./services/launch-store");
+const { createBillingService } = require("./services/billing-service");
 const {
   PLAN_DEFINITIONS,
   buildUsageSummary,
@@ -77,7 +80,6 @@ const rawStripeSecretKey = String(process.env.STRIPE_SECRET_KEY || "").trim();
 const rawStripeWebhookSecret = String(process.env.STRIPE_WEBHOOK_SECRET || "").trim();
 const stripeSecretKey = /^(disabled|unset|none|null)$/i.test(rawStripeSecretKey) ? "" : rawStripeSecretKey;
 const stripeWebhookSecret = /^(disabled|unset|none|null)$/i.test(rawStripeWebhookSecret) ? "" : rawStripeWebhookSecret;
-const stripeUseConfiguredPriceIds = String(process.env.STRIPE_USE_CONFIGURED_PRICE_IDS || "false").toLowerCase() === "true";
 const stripePluginPriceUsdCents = Number(process.env.STRIPE_PLUGIN_PRICE_USD_CENTS || 2900);
 const stripePluginProductSku = process.env.STRIPE_PLUGIN_PRODUCT_SKU || "splitsheet-studio-vst3";
 const stripePluginProductName = process.env.STRIPE_PLUGIN_PRODUCT_NAME || "Split Sheet Studio VST3 Plugin";
@@ -103,6 +105,15 @@ const signerReminderIntervalMinutes = Math.max(5, Number(process.env.SIGNER_REMI
 const automaticSignerReminders = String(process.env.AUTO_SIGNER_REMINDERS || "false").toLowerCase() === "true";
 const analyticsMeasurementId = String(process.env.GA_MEASUREMENT_ID || "").trim();
 const contactExportToken = String(process.env.CONTACT_EXPORT_TOKEN || "").trim();
+const onboardingAutomationToken = String(process.env.ONBOARDING_AUTOMATION_TOKEN || "").trim();
+const emailJourneysEnabled = process.env.EMAIL_JOURNEYS_ENABLED === "true";
+const emailJourneyMode = process.env.EMAIL_JOURNEYS_MODE || "beta";
+const emailJourneyBetaRecipients = String(process.env.EMAIL_JOURNEY_BETA_RECIPIENTS || "").split(",").map(email => email.trim().toLowerCase()).filter(Boolean);
+const emailJourneyDayMinutes = emailJourneyMode === "beta" ? Math.max(1, Number(process.env.EMAIL_JOURNEY_DAY_MINUTES || 1440)) : 1440;
+if (!["beta", "production"].includes(emailJourneyMode)) throw new Error("EMAIL_JOURNEYS_MODE must be beta or production");
+if (emailJourneysEnabled && emailJourneyMode === "beta" && !emailJourneyBetaRecipients.length) throw new Error("Beta email journeys require an explicit recipient allowlist");
+if (onboardingAutomationToken && onboardingAutomationToken.length < 32) throw new Error("ONBOARDING_AUTOMATION_TOKEN must contain at least 32 characters");
+if (emailJourneysEnabled && !onboardingAutomationToken) throw new Error("EMAIL_JOURNEYS_ENABLED requires ONBOARDING_AUTOMATION_TOKEN");
 const oauthProviderConfigs = {
   google: {
     label: "Google",
@@ -199,6 +210,7 @@ app.use((req, res, next) => {
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   res.setHeader("Cross-Origin-Resource-Policy", "same-site");
   res.setHeader("Origin-Agent-Cluster", "?1");
+  res.locals.cspNonce = crypto.randomBytes(18).toString('base64');
   res.setHeader("Content-Security-Policy", [
     "default-src 'self'",
     "base-uri 'self'",
@@ -208,7 +220,7 @@ app.use((req, res, next) => {
     "frame-ancestors 'none'",
     "img-src 'self' data: blob:",
     "object-src 'none'",
-    "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com",
+    `script-src 'self' 'nonce-${res.locals.cspNonce}' https://www.googletagmanager.com`,
     "style-src 'self' 'unsafe-inline'"
   ].join("; "));
   if (req.secure || trustProxy) {
@@ -224,7 +236,7 @@ app.use((req, res, next) => {
       event: "http_request",
       requestId,
       method: req.method,
-      path: req.path,
+      path: req.route?.path || '[unmatched]',
       statusCode: res.statusCode,
       durationMs: Date.now() - startedAt,
       at: nowIso()
@@ -249,6 +261,11 @@ app.use(session({
     maxAge: cookieMaxAgeMs
   }
 }));
+app.use((req, res, next) => {
+  rememberAttribution(req);
+  res.locals.attribution = req.session?.attribution || null;
+  next();
+});
 const allowedWebOrigins = new Set([
   baseOrigin.origin,
   `${baseOrigin.protocol}//${rootDomain}`,
@@ -376,6 +393,28 @@ const collaboratorService = createCollaboratorService({
   db: databaseService.client,
   provider: databaseService.provider
 });
+const launchStore = createLaunchStore({db:databaseService.client,provider:databaseService.provider,submissions:submissionStore});
+const billingService = createBillingService({stripe:stripeClient,auth:authService,store:launchStore,plans:PLAN_DEFINITIONS,priceId:stripePriceIdForPlan,baseUrl});
+const emailJourneyService = createEmailJourneyService({
+  db: databaseService.client, provider: databaseService.provider,
+  auth: authService, contacts: contactService, submissions: submissionStore,
+  sendEmail, baseUrl, enabled: emailJourneysEnabled,
+  postalAddress: process.env.EMAIL_JOURNEY_POSTAL_ADDRESS || "",
+  headerImagePath: path.join(__dirname, "public", "vst-contributors.png"),
+  mode: emailJourneyMode, allowedRecipients: emailJourneyBetaRecipients, dayMinutes: emailJourneyDayMinutes
+});
+
+async function enrollSignupJourney(user, nextPath) {
+  const match = /^\/split-sheet\/sign\/([^/?]+)\/([^/?]+)$/.exec(safeRedirectPath(nextPath));
+  let invitationId = null;
+  if (match) {
+    const doc = await loadSubmission(match[1]);
+    if (doc?.type === "split-sheet" && doc.payload?.contributors?.some(c =>
+      c.signerToken === match[2] && String(c.email).toLowerCase() === user.email.toLowerCase()
+      && !isPast(c.signerTokenExpiresAt))) invitationId = doc.id;
+  }
+  await emailJourneyService.enroll({ userId: user.id, journey: invitationId ? "invited" : "direct", invitationId });
+}
 
 const loginAttempts = new Map();
 function loginKey(req) {
@@ -402,6 +441,157 @@ function recordLoginFailure(req) {
 }
 function clearLoginFailures(req) {
   loginAttempts.delete(loginKey(req));
+}
+
+function compactText(value, maxLength = 240) {
+  const normalized = String(value || "").trim();
+  return normalized ? normalized.slice(0, maxLength) : "";
+}
+
+function externalReferrerHost(req) {
+  const header = String(req.headers.referer || "").trim();
+  if (!header) return "";
+  try {
+    const referrer = new URL(header);
+    const referrerHost = referrer.hostname.toLowerCase();
+    const internalHosts = new Set([appHost, rootDomain, `www.${rootDomain}`].filter(Boolean));
+    if (internalHosts.has(referrerHost)) return "";
+    return referrerHost.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function sourceFromHost(host) {
+  const normalized = String(host || "").toLowerCase();
+  if (!normalized) return "";
+  if (normalized.includes("facebook.com") || normalized === "fb.com" || normalized.includes("messenger.com")) return "facebook";
+  if (normalized.includes("instagram.com")) return "instagram";
+  if (normalized.includes("reddit.com")) return "reddit";
+  if (normalized.includes("tiktok.com")) return "tiktok";
+  if (normalized.includes("youtube.com") || normalized.includes("youtu.be")) return "youtube";
+  if (normalized.includes("google.")) return "google";
+  if (normalized.includes("bing.com")) return "bing";
+  if (normalized.includes("linkedin.com")) return "linkedin";
+  if (normalized.includes("twitter.com") || normalized === "x.com") return "x";
+  if (normalized.includes("discord.")) return "discord";
+  if (normalized.includes("linktr.ee") || normalized.includes("linktree.com")) return "linktree";
+  return normalized;
+}
+
+function attributionFromRequest(req, { includeDirect = false } = {}) {
+  const query = req.query || {};
+  const referrer = externalReferrerHost(req);
+  const utmSource = compactText(query.utm_source, 80).toLowerCase();
+  const clickSource = query.fbclid ? "facebook"
+    : query.gclid ? "google"
+      : query.ttclid ? "tiktok"
+        : query.msclkid ? "bing"
+          : "";
+  const source = utmSource || clickSource || sourceFromHost(referrer) || (includeDirect ? "direct" : "");
+  if (!source) return null;
+  const timestamp = nowIso();
+  return {
+    source,
+    medium: compactText(query.utm_medium, 80) || (clickSource ? "paid" : referrer ? "referral" : "direct"),
+    campaign: compactText(query.utm_campaign, 140),
+    content: compactText(query.utm_content, 140),
+    term: compactText(query.utm_term, 140),
+    landingPath: compactText(req.originalUrl || req.url || req.path || "/", 240),
+    referrer: compactText(referrer, 240),
+    capturedAt: timestamp
+  };
+}
+
+function rememberAttribution(req) {
+  if (!req.session || req.method !== "GET") return;
+  if (req.path.startsWith("/admin") || req.path.startsWith("/api") || req.path.startsWith("/downloads")) return;
+  if (/\.(css|js|png|jpg|jpeg|svg|ico|webp|woff2?)$/i.test(req.path)) return;
+
+  const visit = attributionFromRequest(req);
+  if (!visit) return;
+  const stored = req.session.attribution || {};
+  const first = stored.firstCapturedAt ? {} : {
+    firstSource: visit.source,
+    firstMedium: visit.medium,
+    firstCampaign: visit.campaign,
+    firstContent: visit.content,
+    firstTerm: visit.term,
+    firstLandingPath: visit.landingPath,
+    firstReferrer: visit.referrer,
+    firstCapturedAt: visit.capturedAt
+  };
+  req.session.attribution = {
+    ...stored,
+    ...first,
+    lastSource: visit.source,
+    lastMedium: visit.medium,
+    lastCampaign: visit.campaign,
+    lastContent: visit.content,
+    lastTerm: visit.term,
+    lastLandingPath: visit.landingPath,
+    lastReferrer: visit.referrer,
+    lastCapturedAt: visit.capturedAt
+  };
+}
+
+function attributionForSignup(req, signupProvider) {
+  const stored = req.session?.attribution || {};
+  const visit = attributionFromRequest(req, { includeDirect: true }) || {};
+  return {
+    signupProvider,
+    firstSource: stored.firstSource || visit.source || "direct",
+    firstMedium: stored.firstMedium || visit.medium || "direct",
+    firstCampaign: stored.firstCampaign || visit.campaign || "",
+    firstContent: stored.firstContent || visit.content || "",
+    firstTerm: stored.firstTerm || visit.term || "",
+    firstLandingPath: stored.firstLandingPath || visit.landingPath || compactText(req.originalUrl || req.path || "/", 240),
+    firstReferrer: stored.firstReferrer || visit.referrer || "",
+    firstCapturedAt: stored.firstCapturedAt || visit.capturedAt || nowIso(),
+    lastSource: visit.source || stored.lastSource || stored.firstSource || "direct",
+    lastMedium: visit.medium || stored.lastMedium || stored.firstMedium || "direct",
+    lastCampaign: visit.campaign || stored.lastCampaign || "",
+    lastContent: visit.content || stored.lastContent || "",
+    lastTerm: visit.term || stored.lastTerm || "",
+    lastLandingPath: visit.landingPath || stored.lastLandingPath || stored.firstLandingPath || compactText(req.originalUrl || req.path || "/", 240),
+    lastReferrer: visit.referrer || stored.lastReferrer || "",
+    lastCapturedAt: visit.capturedAt || stored.lastCapturedAt || nowIso()
+  };
+}
+
+function contactSource(baseSource, attribution) {
+  const source = compactText(attribution?.firstSource || attribution?.lastSource || "", 80);
+  return source ? `${baseSource}:${source}` : baseSource;
+}
+
+function userAcquisitionSource(user) {
+  return compactText(user?.attribution?.firstSource || user?.firstSource || "unknown", 80).toLowerCase() || "unknown";
+}
+
+function userSignupProvider(user) {
+  return compactText(user?.attribution?.signupProvider || user?.signupProvider || "unknown", 40).toLowerCase() || "unknown";
+}
+
+function incrementGroup(map, key, patch = {}) {
+  const normalizedKey = compactText(key || "unknown", 120) || "unknown";
+  const row = map.get(normalizedKey) || { key: normalizedKey, count: 0, paid: 0, free: 0, landingCounts: new Map() };
+  row.count += 1;
+  if (patch.paid) row.paid += 1;
+  if (patch.free) row.free += 1;
+  if (patch.landingPath) {
+    const landing = compactText(patch.landingPath, 240) || "/";
+    row.landingCounts.set(landing, (row.landingCounts.get(landing) || 0) + 1);
+  }
+  map.set(normalizedKey, row);
+}
+
+function groupRows(map) {
+  return [...map.values()]
+    .map((row) => ({
+      ...row,
+      topLandingPath: [...row.landingCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || ""
+    }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
 }
 
 function requestIp(req) {
@@ -560,13 +750,15 @@ async function listUserSplitSheets(user) {
   const submissions = await submissionStore.listSubmissions({
     ownerUserId: user.id,
     ownerEmail: user.email,
+    participantUserId: user.id,
     type: "split-sheet"
   });
-  return submissions.filter((doc) => String(doc.status || "").toLowerCase() !== "archived");
+  return submissions.filter((doc) => String(doc.status || "").toLowerCase() !== "archived" || (!canAccessSplitSheet(doc, user) && canReadSharedSplitSheet(doc, user)));
 }
 
 async function usageSummaryForUser(user) {
-  const splitSheets = await listUserSplitSheets(user);
+  const rows = await launchStore.usageRows(user);
+  const splitSheets = rows.map(row=>({type:'split-sheet',status:'submitted',createdAt:row.charged_at}));
   return buildUsageSummary(user, splitSheets);
 }
 
@@ -613,7 +805,7 @@ function canDownloadSplitPdf(req, doc) {
   if (req.session?.isAdmin) {
     return true;
   }
-  if (req.webUser && canAccessSplitSheet(doc, req.webUser)) {
+  if (req.webUser && (canAccessSplitSheet(doc, req.webUser) || canReadSharedSplitSheet(doc, req.webUser))) {
     return true;
   }
   return false;
@@ -1265,13 +1457,18 @@ async function initializeRuntime() {
   }
 }
 
-async function sendEmail({ subject, html, to, attachments = [] }) {
+async function sendEmail({ subject, html, text, to, attachments = [], headers = {} }) {
   const recipientList = Array.isArray(to) ? uniq(to.filter(Boolean)) : [];
   if (!recipientList.length) {
     return { ok: false, skipped: true, reason: "no_recipients" };
   }
+  if (emailJourneysEnabled && emailJourneyMode === "beta" && recipientList.some(email => !emailJourneyBetaRecipients.includes(String(email).toLowerCase()))) {
+    return { ok: false, skipped: true, reason: "beta_recipient_not_allowed" };
+  }
 
   const hasSmtp = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
+  const senderAddress = require('nodemailer/lib/addressparser')(process.env.FROM_EMAIL || process.env.SMTP_USER || '')[0]?.address;
+  const sender = { name: 'Split Sheet Studio', address: senderAddress };
   const hasSes = Boolean((process.env.SES_REGION || process.env.AWS_REGION || process.env.AWS_PROFILE || process.env.FROM_EMAIL) && process.env.FROM_EMAIL);
 
   if (!hasSmtp && !hasSes) {
@@ -1289,7 +1486,7 @@ async function sendEmail({ subject, html, to, attachments = [] }) {
       }
     });
     try {
-      const info = await t.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: recipientList.join(","), subject, html, attachments });
+      const info = await t.sendMail({ from: sender, to: recipientList.join(","), subject, html, text, attachments, headers });
       return { ok: true, skipped: false, reason: "sent", provider: "smtp", messageId: info.messageId || null, sentAt: nowIso() };
     } catch (e) {
       console.error("Email send failed:", e.message || e);
@@ -1319,12 +1516,14 @@ async function sendEmail({ subject, html, to, attachments = [] }) {
   });
   try {
     const info = await sesTransport.sendMail({
-      from: process.env.FROM_EMAIL,
+      from: sender,
       to: uniq(normalizedRecipients).join(","),
       replyTo: process.env.REPLY_TO_EMAIL || process.env.NOTIFY_EMAIL || process.env.FROM_EMAIL,
       subject,
       html,
-      attachments
+      text,
+      attachments,
+      headers
     });
     return { ok: true, skipped: false, reason: "sent", provider: "ses", messageId: info.messageId || null, sentAt: nowIso() };
   } catch (e) {
@@ -1358,11 +1557,11 @@ function passwordResetEmailHtml({ displayName, resetUrl, expiresAt }) {
   </div>`;
 }
 
-async function sendVerificationEmail({ user, token, expiresAt }) {
+async function sendVerificationEmail({ user, token, expiresAt, next = '/account' }) {
   if (!user?.email || !token || !expiresAt) {
     return { ok: false, skipped: true, reason: "missing_verification_payload" };
   }
-  const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(token)}`;
+  const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(token)}&next=${encodeURIComponent(safeRedirectPath(next))}`;
   const emailResult = await sendEmail({
     to: [user.email],
     subject: "Verify your Split Sheet Studio account",
@@ -1529,58 +1728,8 @@ function normalizeBillingInterval(value) {
 }
 
 function stripePriceIdForPlan(plan, interval = "month") {
-  if (!stripeUseConfiguredPriceIds) return "";
   const envName = normalizeBillingInterval(interval) === "year" ? plan.annualStripePriceEnv : plan.stripePriceEnv;
   return String(process.env[envName] || "").trim();
-}
-
-function stripeLineItemForPlan(plan, interval = "month") {
-  const billingInterval = normalizeBillingInterval(interval);
-  const priceId = stripePriceIdForPlan(plan, billingInterval);
-  if (priceId) {
-    return { quantity: 1, price: priceId };
-  }
-  const unitAmount = billingInterval === "year"
-    ? Number(plan.annualPriceUsdCents || 0)
-    : Number(plan.monthlyPriceUsdCents || 0);
-  return {
-    quantity: 1,
-    price_data: {
-      currency: "usd",
-      unit_amount: unitAmount,
-      recurring: { interval: billingInterval },
-      product_data: {
-        name: `Split Sheet Studio ${plan.name}`,
-        description: `${plan.monthlySheetLimit} completed split sheets per month. ${plan.description}`
-      }
-    }
-  };
-}
-
-async function updateUserFromStripePlanCheckout(session) {
-  const planKey = normalizePlanKey(session.metadata?.planKey);
-  const userId = String(session.client_reference_id || session.metadata?.userId || "").trim();
-  if (!userId || planKey === "free") return null;
-  return authService.updateUserBilling({
-    userId,
-    planKey,
-    stripeCustomerId: session.customer ? String(session.customer) : null,
-    stripeSubscriptionId: session.subscription ? String(session.subscription) : null
-  });
-}
-
-async function updateUserFromStripeSubscription(subscription) {
-  const userId = String(subscription.metadata?.userId || "").trim();
-  if (!userId) return null;
-  const status = String(subscription.status || "").toLowerCase();
-  const active = ["active", "trialing"].includes(status);
-  const planKey = active ? normalizePlanKey(subscription.metadata?.planKey) : "free";
-  return authService.updateUserBilling({
-    userId,
-    planKey,
-    stripeCustomerId: subscription.customer ? String(subscription.customer) : null,
-    stripeSubscriptionId: active && subscription.id ? String(subscription.id) : null
-  });
 }
 
 function pluginDownloadHref(purchase) {
@@ -1826,7 +1975,6 @@ async function sendCompletedSplitSheetPacket(doc, { title = "Split Sheet Complet
   ensureRevisionToken(doc);
   const contributors = doc.payload?.contributors || [];
   const recipients = uniq([
-    process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com",
     ...contributors.map((contributor) => contributor.email),
     ...(doc.payload?.recipientEmails || [])
   ]);
@@ -1866,13 +2014,12 @@ async function sendSplitInvite(doc, contributor, { reminder = false, renew = fal
   if (renew || !contributor.signerToken || !contributor.signerTokenExpiresAt || isPast(contributor.signerTokenExpiresAt)) {
     refreshSignerToken(contributor);
   }
-  const notifyInbox = process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com";
   const link = `${baseUrl}/split-sheet/sign/${doc.id}/${contributor.signerToken}`;
   const splitHtml = splitSummaryHtml(doc.payload?.contributors || [], doc.payload?.rightsScope);
   const result = await sendEmail({
     subject: `${reminder ? "Reminder" : "Action required"}: Review and sign ${doc.payload.songTitle}`,
-    to: [contributor.email, notifyInbox],
-    html: `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111"><h2>${reminder ? "Signature reminder" : "Your split sheet is ready for review"}</h2><p>Song: <b>${escapeHtml(doc.payload.songTitle)}</b></p><p>Contributor: <b>${escapeHtml(contributor.legalName || contributor.email)}</b></p>${splitHtml}<p style="margin:18px 0;"><a href="${link}" style="display:inline-block;background:#b8860b;color:#111;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;">Review and sign split sheet</a></p><p>No account is required. Review the complete split, complete any missing contributor details, confirm your agreement, and sign from your phone or computer.</p><p><b>Secure link expires:</b> ${escapeHtml(formatIsoLabel(contributor.signerTokenExpiresAt))}</p><p>Submission ID: ${escapeHtml(doc.id)}</p></div>`
+    to: [contributor.email],
+    html: `<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111"><h2>${reminder ? "Signature reminder" : "Your split sheet is ready for review"}</h2><p>Song: <b>${escapeHtml(doc.payload.songTitle)}</b></p><p>Contributor: <b>${escapeHtml(contributor.legalName || contributor.email)}</b></p>${splitHtml}<p style="margin:18px 0;"><a href="${link}" style="display:inline-block;background:#b8860b;color:#111;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold;">Review and sign split sheet</a></p><p>Create a free Split Sheet Studio account using this invitation email, or sign in to your existing account. Review the split, add your details, and sign from your phone or computer. Your signed sheet is saved in your account, and the completed packet will be available in every signer's vault. No payment is required.</p><p><b>Secure link expires:</b> ${escapeHtml(formatIsoLabel(contributor.signerTokenExpiresAt))}</p><p>Submission ID: ${escapeHtml(doc.id)}</p></div>`
   });
   contributor.inviteEmailStatus = result.ok ? "sent" : "failed";
   contributor.inviteEmailReason = result.reason || null;
@@ -1946,7 +2093,15 @@ function bearerTokenFrom(req) {
 
 async function requireApiAuth(req, res, next) {
   try {
+    // Browser sessions may use the web API; bearer sessions are the paid desktop API.
+    if (!bearerTokenFrom(req) && req.webUser && req.get('origin') === baseOrigin.origin) {
+      req.apiUser=req.webUser;
+      return next();
+    }
     const session = await authService.getSessionByAccessToken(bearerTokenFrom(req));
+    if(req.path.startsWith('/api/split-sheets') && session.user.planKey === 'free') {
+      return apiError(res,402,'The plugin API requires Creator or Studio. Use the website with your Free plan.');
+    }
     req.apiUser = session.user;
     req.apiSession = session;
     return next();
@@ -1996,7 +2151,7 @@ async function attachWebUser(req, res, next) {
 
 function safeRedirectPath(value, fallback = "/account") {
   const candidate = String(value || "").trim();
-  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//")) return fallback;
+  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//") || /[\\\x00-\x20]/.test(candidate)) return fallback;
   return candidate;
 }
 
@@ -2105,6 +2260,11 @@ function requireWebAuth(req, res, next) {
   }
   return res.redirect(`/login?next=${encodeURIComponent(req.originalUrl || "/account")}`);
 }
+function requirePaidDownload(req,res,next) {
+  res.setHeader('Cache-Control','no-store');
+  if(planForUser(req.webUser).key === 'free') return res.redirect('/account?tab=plans');
+  return next();
+}
 
 function canAccessSplitSheet(doc, user) {
   if (!doc) return false;
@@ -2112,6 +2272,30 @@ function canAccessSplitSheet(doc, user) {
   if (doc.ownerEmail && user?.email) return String(doc.ownerEmail).toLowerCase() === String(user.email).toLowerCase();
   if (doc.ownerUsername && user?.email) return String(doc.ownerUsername).toLowerCase() === String(user.email).toLowerCase();
   return false;
+}
+
+function canReadSharedSplitSheet(doc, user) {
+  return Boolean(user?.id && (doc?.payload?.contributors || []).some((contributor) => contributor.accountUserId === user.id));
+}
+
+function requireSignerAccount(req, res, signer) {
+  res.setHeader("Cache-Control", "no-store");
+  if (!req.webUser) {
+    res.redirect(`/signup?next=${encodeURIComponent(req.originalUrl)}`);
+    return true;
+  }
+  if (!req.webUser.emailVerifiedAt || String(req.webUser.email).trim().toLowerCase() !== String(signer.email).trim().toLowerCase()) {
+    res.status(403).render("auth-message", {
+      title: "Use your invited account",
+      message: `Sign in with a verified account for ${signer.email} to complete this split sheet.`,
+      details: "This keeps your signature and saved split sheet connected to the correct account. Sign out of your current account first if needed.",
+      actionHref: `/login?next=${encodeURIComponent(req.originalUrl)}`,
+      actionLabel: "Sign in with invited email",
+      debugLink: null
+    });
+    return true;
+  }
+  return null;
 }
 
 function revisionPrefillFromDoc(doc) {
@@ -2147,7 +2331,7 @@ function revisionPrefillFromDoc(doc) {
 }
 
 async function createSplitSheetSubmission(input, req) {
-  await requireAvailableSplitSheetUsage(req.apiUser);
+  const usage = await requireAvailableSplitSheetUsage(req.apiUser);
 
   let draft = null;
   if (input.draftId) {
@@ -2195,7 +2379,11 @@ async function createSplitSheetSubmission(input, req) {
       revisionOfVersion: payload.revisionOfVersion
     });
   }
-  const saved = draft
+  const documentId = draft?.id || nanoid(10);
+  payload.usageChargedAt = await launchStore.reserve(req.apiUser,documentId,usage.window,usage.limit);
+  let saved;
+  try {
+    saved = draft
     ? await saveSubmissionRow({
       ...draft,
       status: collectByInvite ? "pending-signatures" : "completed",
@@ -2204,7 +2392,10 @@ async function createSplitSheetSubmission(input, req) {
       userAgent: req.headers["user-agent"],
       payload
     })
-    : await saveSubmission("split-sheet", payload, req);
+    : await submissionStore.createSubmission({id:documentId,type:'split-sheet',status:collectByInvite?'pending-signatures':'completed',
+      createdAt:nowIso(),updatedAt:nowIso(),ip:requestIp(req),userAgent:req.headers['user-agent'],
+      ownerUserId:req.apiUser.id,ownerEmail:req.apiUser.email,payload});
+  } catch(error) { await launchStore.release(documentId); throw error; }
   await Promise.all(payload.contributors.map((contributor) => contactService.recordContact({
     email: contributor.email,
     displayName: contributor.legalName,
@@ -2214,7 +2405,6 @@ async function createSplitSheetSubmission(input, req) {
     userAgent: req.headers["user-agent"] || ""
   })));
   const recipients = uniq([
-    process.env.NOTIFY_EMAIL || "blakmarigold@gmail.com",
     ...payload.contributors.map((contributor) => contributor.email),
     ...recipientEmails
   ]);
@@ -2401,6 +2591,8 @@ app.use(attachWebUser);
 app.use((req, res, next) => {
   res.locals.pdfDownloadPath = pdfDownloadPath;
   res.locals.pdfViewPath = pdfViewPath;
+  res.locals.signupNext = safeRedirectPath(req.body?.next || req.query.next || req.session.signupNext);
+  if(req.path === '/signup' && req.query.next) req.session.signupNext=res.locals.signupNext;
   next();
 });
 
@@ -2647,33 +2839,7 @@ app.post("/account/billing/checkout", requireWebAuth, async (req, res) => {
   }
 
   try {
-    const checkoutSession = await stripeClient.checkout.sessions.create({
-      mode: "subscription",
-      wallet_options: {
-        link: { display: "never" }
-      },
-      customer: req.webUser.stripeCustomerId || undefined,
-      customer_email: req.webUser.stripeCustomerId ? undefined : req.webUser.email,
-      client_reference_id: req.webUser.id,
-      billing_address_collection: "auto",
-      success_url: `${baseUrl}/account?billing=success`,
-      cancel_url: `${baseUrl}/account?billing=cancelled`,
-      line_items: [stripeLineItemForPlan(plan, billingInterval)],
-      metadata: {
-        checkoutType: "subscription_plan",
-        userId: req.webUser.id,
-        planKey,
-        billingInterval
-      },
-      subscription_data: {
-        metadata: {
-          userId: req.webUser.id,
-          planKey,
-          billingInterval
-        }
-      }
-    });
-    return res.redirect(303, checkoutSession.url);
+    return res.redirect(303, await billingService.checkout(req.webUser,plan,billingInterval));
   } catch (error) {
     console.error(error);
     return res.status(500).render("auth-message", {
@@ -2793,26 +2959,29 @@ app.post("/api/stripe/webhook", async (req, res) => {
     if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
       const session = event.data.object;
       if (session.metadata?.checkoutType === "subscription_plan") {
-        await updateUserFromStripePlanCheckout(session);
+        await billingService.event(event);
       } else {
         await fulfillPluginCheckoutSession(session);
       }
     }
 
-    if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
-      await updateUserFromStripeSubscription(event.data.object);
+    if (['customer.subscription.created','customer.subscription.updated','customer.subscription.deleted','invoice.paid','invoice.payment_failed'].includes(event.type)) {
+      await billingService.event(event);
+      if(event.type === 'invoice.payment_failed') console.warn(JSON.stringify({event:'billing_payment_failed',stripeEventId:event.id}));
     }
 
     return res.json({ received: true });
   } catch (error) {
-    console.error(error);
-    return res.status(400).json({ ok: false, error: "stripe_webhook_failed" });
+    const signatureFailure = error.type === 'StripeSignatureVerificationError';
+    console.error(JSON.stringify({event:'stripe_webhook_failed',type:error.type || error.name}));
+    return res.status(signatureFailure ? 400 : 500).json({ ok: false, error: "stripe_webhook_failed" });
   }
 });
-app.get("/downloads/plugin/latest", pluginDownloadLimiter, async (req, res) => {
+app.get("/downloads/plugin/latest", pluginDownloadLimiter, requireWebAuth, requirePaidDownload, async (req, res) => {
+  await emailJourneyService.recordActivity(req.webUser.id, "windows_download");
   return sendPluginInstaller(res);
 });
-app.get("/downloads/plugin/mac/latest", pluginDownloadLimiter, async (req, res) => {
+app.get("/downloads/plugin/mac/latest", pluginDownloadLimiter, requireWebAuth, requirePaidDownload, async (req, res) => {
   return sendMacPluginInstaller(res);
 });
 app.get("/downloads/plugin/:purchaseId", pluginDownloadLimiter, async (req, res) => {
@@ -2912,7 +3081,7 @@ async function runtimeReadiness() {
   const requiredChecks = productionRuntime ? Object.values(checks) : [checks.database, checks.sessionStore];
   return { ok: requiredChecks.every(Boolean), checks };
 }
-app.get("/health", (req, res) => res.json({ ok: true, at: nowIso() }));
+app.get("/health", (req, res) => res.json({ ok: true, at: nowIso(), release: process.env.APP_RELEASE_ID || 'development' }));
 app.get("/ready", async (req, res) => {
   const readiness = await runtimeReadiness();
   return res.status(readiness.ok ? 200 : 503).json({
@@ -2941,7 +3110,7 @@ app.get("/api/plugin/update", publicPageLimiter, (req, res) => {
     minimumSupportedVersion: pluginMinimumSupportedVersion || null,
     updateAvailable,
     updateRequired,
-    downloadUrl: pluginDownloadUrl || `${baseUrl}/downloads/plugin/latest`,
+    downloadUrl: `${baseUrl}/account?tab=vst`,
     releaseNotesUrl: pluginReleaseNotesUrl,
     message: updateAvailable
       ? `Split Sheet Studio ${latestVersion} is available.`
@@ -2967,12 +3136,14 @@ app.post("/api/auth/register", registerLimiter, async (req, res) => {
     return apiError(res, 403, "Public registration is disabled.");
   }
   try {
+    const attribution = attributionForSignup(req, "email_api");
     const result = await authService.registerUser({
       email: req.body.email,
       password: req.body.password,
       displayName: req.body.displayName,
       ip: requestIp(req),
-      userAgent: req.headers["user-agent"]
+      userAgent: req.headers["user-agent"],
+      attribution
     });
     const verificationEmail = await sendVerificationEmail({
       user: result.user,
@@ -2982,11 +3153,12 @@ app.post("/api/auth/register", registerLimiter, async (req, res) => {
     await contactService.recordContact({
       email: result.user.email,
       displayName: result.user.displayName,
-      source: "account_signup_api",
+      source: contactSource("account_signup_api", attribution),
       marketingOptIn: isAffirmative(req.body.marketingOptIn),
       ip: requestIp(req),
       userAgent: req.headers["user-agent"] || ""
     });
+    await enrollSignupJourney(result.user, req.body.next);
     clearLoginFailures(req);
     return res.status(201).json({
       ok: true,
@@ -3058,6 +3230,7 @@ app.post("/api/auth/resend-verification", resendVerificationLimiter, async (req,
 app.post("/api/auth/verify-email", async (req, res) => {
   try {
     const result = await authService.verifyEmailToken(req.body.token);
+    await emailJourneyService.activate(result.user.id);
     return res.json({ ok: true, ...result });
   } catch (error) {
     if (error instanceof ApiAuthError) {
@@ -3145,14 +3318,14 @@ app.get("/api/account/usage", requireApiAuth, authenticatedApiLimiter, async (re
 app.get("/login", publicPageLimiter, (req, res) => res.render("auth-login", {
   error: null,
   values: { email: "" },
-  next: safeRedirectPath(req.query.next, "/account"),
+  next: safeRedirectPath(req.query.next || req.session.signupNext, "/account"),
   signupUrl: `${baseUrl}/signup`,
   forgotPasswordUrl: `${baseUrl}/forgot-password`,
   oauthProviders: oauthUiProviders(),
   supportEmail
 }));
 app.post("/login", loginLimiter, async (req, res) => {
-  const next = safeRedirectPath(req.body.next, "/account");
+  const next = safeRedirectPath(req.body.next || req.session.signupNext, "/account");
   try {
     const result = await authService.createSession({
       email: req.body.email,
@@ -3198,6 +3371,7 @@ app.get("/auth/:provider", publicPageLimiter, (req, res) => {
       provider: providerKey,
       state,
       next,
+      attribution: attributionForSignup(req, providerKey),
       createdAt: nowIso()
     };
     const authUrl = new URL(provider.authUrl);
@@ -3239,15 +3413,21 @@ async function handleOAuthCallback(req, res) {
     if (!existing && !allowPublicRegistration && await authService.userCount() > 0) {
       throw new ApiAuthError("Public registration is disabled right now.", 403);
     }
-    const user = await authService.findOrCreateProviderUser(providerProfile);
+    const attribution = stored.attribution || attributionForSignup(req, providerKey);
+    const user = await authService.findOrCreateProviderUser({
+      ...providerProfile,
+      signupProvider: providerKey,
+      attribution
+    });
     await contactService.recordContact({
       email: user.email,
       displayName: user.displayName,
-      source: `oauth_${providerKey}`,
+      source: contactSource(`oauth_${providerKey}`, attribution),
       marketingOptIn: false,
       ip: requestIp(req),
       userAgent: req.headers["user-agent"] || ""
     });
+    if (!existing) await enrollSignupJourney(user, next);
     await new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
     req.session.userId = user.id;
     req.session.passwordChangedAt = user.passwordChangedAt || null;
@@ -3275,12 +3455,15 @@ app.get("/account", requireWebAuth, async (req, res) => {
   return res.render("account", {
     user: req.webUser,
     usage,
-    splitSheets: splitSheets.slice(0, 10),
+    splitSheets: accountTab === "vault" ? splitSheets : splitSheets.slice(0, 10),
+    canManageSplitSheet: (doc) => canAccessSplitSheet(doc, req.webUser),
     planOptions: Object.values(PLAN_DEFINITIONS),
     paidPlanOptions: paidPlanOptions(),
     currentPlan: planForUser(req.webUser),
     billingEnabled: stripeEnabled,
     billingNotice: req.query.billing || "",
+    selectedPlan: String(req.query.plan || ""),
+    selectedInterval: normalizeBillingInterval(req.query.interval),
     accountTab,
     vaultNotice: String(req.query.vault || ""),
     collaboratorNotice: String(req.query.collaborators || ""),
@@ -3316,10 +3499,13 @@ app.post("/account/split-sheets/:id/archive", requireWebAuth, async (req, res) =
       supportEmail
     });
   }
+  await launchStore.usageRows(req.webUser);
+  const previousStatus = doc.status;
   doc.status = "archived";
   doc.updatedAt = nowIso();
   doc.payload = doc.payload || {};
   doc.payload.archivedAt = doc.updatedAt;
+  doc.payload.archivedFromStatus = doc.payload.archivedFromStatus || previousStatus;
   await saveSubmissionRow(doc);
   return res.redirect("/account?tab=vault&vault=archived");
 });
@@ -3348,6 +3534,17 @@ app.post("/account/split-sheets/:id/delete", requireWebAuth, async (req, res) =>
     });
   }
   const songName = splitSheetSongName(doc);
+  if ((doc.payload?.contributors || []).some((contributor) => contributor.accountUserId)) {
+    return res.status(409).render("auth-message", {
+      title: "Shared split sheet saved",
+      message: "This signed split sheet is saved in contributor accounts and cannot be permanently deleted.",
+      details: "You can archive it to hide it from your vault while keeping the shared record available to the contributors.",
+      actionHref: "/account?tab=vault",
+      actionLabel: "Back to vault",
+      debugLink: null,
+      supportEmail
+    });
+  }
   const confirmation = String(req.body.confirmSongTitle || "").trim();
   if (confirmation !== songName) {
     return res.status(400).render("auth-message", {
@@ -3360,6 +3557,7 @@ app.post("/account/split-sheets/:id/delete", requireWebAuth, async (req, res) =>
       supportEmail
     });
   }
+  await launchStore.usageRows(req.webUser);
   await submissionStore.deleteSubmission(doc.id);
   return res.redirect("/account?tab=vault&vault=deleted");
 });
@@ -3385,15 +3583,25 @@ app.post("/account/collaborators/:id/keep-only", requireWebAuth, async (req, res
   }
   return res.redirect("/account?tab=collaborators&collaborators=kept");
 });
-app.get("/signup", publicPageLimiter, (req, res) => res.render("auth-signup", {
+app.get("/signup", publicPageLimiter, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  let invitedSigner = null;
+  const signingPath = /^\/split-sheet\/sign\/([^/?]+)\/([^/?]+)$/.exec(res.locals.signupNext);
+  if (signingPath) {
+    const doc = await loadSubmission(signingPath[1]);
+    invitedSigner = doc?.payload?.contributors?.find((c) => c.signerToken === signingPath[2] && !isPast(c.signerTokenExpiresAt));
+  }
+  return res.render("auth-signup", {
   error: null,
-  values: { displayName: "", email: "", marketingOptIn: false },
+  values: { displayName: invitedSigner?.legalName || "", email: invitedSigner?.email || "", marketingOptIn: false },
   allowPublicRegistration,
   baseUrl,
   oauthProviders: oauthUiProviders(),
   supportEmail
-}));
+  });
+});
 app.post("/signup", registerLimiter, async (req, res) => {
+  req.session.signupNext=res.locals.signupNext;
   if (!allowPublicRegistration && await authService.userCount() > 0) {
     return res.status(403).render("auth-signup", {
       error: "Public registration is disabled right now.",
@@ -3409,33 +3617,37 @@ app.post("/signup", registerLimiter, async (req, res) => {
     });
   }
   try {
+    const attribution = attributionForSignup(req, "email_web");
     const result = await authService.registerUser({
       email: req.body.email,
       password: req.body.password,
       displayName: req.body.displayName,
       ip: requestIp(req),
-      userAgent: req.headers["user-agent"]
+      userAgent: req.headers["user-agent"],
+      attribution
     });
     const verificationEmail = await sendVerificationEmail({
       user: result.user,
       token: result.verificationToken,
-      expiresAt: result.verificationExpiresAt
+      expiresAt: result.verificationExpiresAt,
+      next: res.locals.signupNext
     });
     await contactService.recordContact({
       email: result.user.email,
       displayName: result.user.displayName,
-      source: "account_signup_web",
+      source: contactSource("account_signup_web", attribution),
       marketingOptIn: isAffirmative(req.body.marketingOptIn),
       ip: requestIp(req),
       userAgent: req.headers["user-agent"] || ""
     });
+    await enrollSignupJourney(result.user, res.locals.signupNext);
     return res.render("auth-message", {
       title: "Account created",
       message: `We created your account for ${result.user.email}. Check your inbox for the verification link.`,
       details: verificationEmail.ok
         ? "Verification email sent."
         : `Verification email status: ${verificationEmail.reason || "not_sent"}.`,
-      actionHref: "/login",
+      actionHref: `/login?next=${encodeURIComponent(res.locals.signupNext)}`,
       actionLabel: "Sign in",
       debugLink: authDebugTokens ? verificationEmail.verifyUrl : null
     });
@@ -3570,11 +3782,12 @@ app.get("/verify-email", publicPageLimiter, async (req, res) => {
       });
     }
     const result = await authService.verifyEmailToken(token);
+    await emailJourneyService.activate(result.user.id);
     return res.render("auth-message", {
       title: "Email verified",
       message: `${result.user.email} is now verified.`,
-      details: "You can use this account in the plugin and future hosted account flows.",
-      actionHref: "/login",
+      details: "Sign in to continue where you left off.",
+      actionHref: `/login?next=${encodeURIComponent(res.locals.signupNext)}`,
       actionLabel: "Sign in",
       debugLink: null
     });
@@ -3789,7 +4002,8 @@ app.post("/split-sheet", splitSheetSubmitLimiter, requireWebAuth, async (req, re
       pdfUrl: pdfDownloadUrl(saved),
       status: saved.status,
       collectSignaturesByInvite: collectByInvite,
-      emailResult
+      emailResult,
+      clearDraftKey: `splitSheetDraft.v2.${req.webUser.id}.${payload.revisionOfId || 'new'}`
     });
   } catch (error) {
     if (error instanceof ApiAuthError) {
@@ -3808,6 +4022,7 @@ app.get("/split-sheet/sign/:id/:token", signerViewLimiter, async (req, res) => {
   if (!doc || doc.type !== "split-sheet") return res.status(404).send("Not found");
   const signer = (doc.payload?.contributors || []).find((c) => c.signerToken === req.params.token);
   if (!signer) return res.status(404).send("Invalid sign link");
+  if (requireSignerAccount(req, res, signer)) return;
 
   if (signer.signedAt) {
     return res.render("split-sign-success", {
@@ -3875,6 +4090,10 @@ function missingSignerProfileFields(contributor = {}, rightsScope = "composition
 }
 
 app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) => {
+  const invitation = await loadSubmission(req.params.id);
+  const invitedSigner = invitation?.payload?.contributors?.find((c) => c.signerToken === req.params.token);
+  if (!invitation || invitation.type !== "split-sheet" || !invitedSigner) return res.status(404).send("Invalid sign link");
+  if (requireSignerAccount(req, res, invitedSigner)) return;
   const typedSignatureName = String(req.body.typedSignatureName || "").trim();
   const signatureData = String(req.body.signatureData || "").trim();
   const agreementAccepted = ["yes", "true", "1", "on"].includes(String(req.body.agreeToSplits || "").trim().toLowerCase());
@@ -3905,6 +4124,7 @@ app.post("/split-sheet/sign/:id/:token", signerSubmitLimiter, async (req, res) =
     }
 
     currentSigner.typedSignatureName = typedSignatureName;
+    currentSigner.accountUserId = req.webUser.id;
     currentSigner.signatureData = signatureData;
     currentSigner.agreementAcceptedAt = nowIso();
     currentSigner.agreementVersion = "remote-split-v1";
@@ -4102,11 +4322,73 @@ app.get("/admin", adminLimiter, requireAdmin, async (req, res) => {
     usage: await usageSummaryForUser(user)
   })));
   const contacts = await contactService.listContacts();
+  const complimentaryGrants = await authService.listComplimentaryGrants();
+  const filters = {
+    q: compactText(req.query.q, 120).toLowerCase(),
+    plan: compactText(req.query.plan, 40),
+    status: compactText(req.query.status, 40),
+    source: compactText(req.query.source, 80).toLowerCase()
+  };
+  const sourceMap = new Map();
+  const providerMap = new Map();
+  users.forEach((user) => {
+    const effectivePlan = planForUser(user);
+    const paid = effectivePlan.key !== "free";
+    incrementGroup(sourceMap, userAcquisitionSource(user), {
+      paid,
+      free: !paid,
+      landingPath: user.attribution?.firstLandingPath
+    });
+    incrementGroup(providerMap, userSignupProvider(user), { paid, free: !paid });
+  });
+  const availableSources = groupRows(sourceMap).map((row) => row.key);
+  const filteredUsers = users.filter((user) => {
+    const effectivePlan = planForUser(user);
+    const source = userAcquisitionSource(user);
+    if (filters.plan && effectivePlan.key !== filters.plan) return false;
+    if (filters.status && user.status !== filters.status) return false;
+    if (filters.source && source !== filters.source) return false;
+    if (filters.q) {
+      const haystack = [
+        user.displayName,
+        user.email,
+        user.id,
+        source,
+        user.attribution?.firstCampaign,
+        user.attribution?.firstLandingPath,
+        user.attribution?.firstReferrer
+      ].join(" ").toLowerCase();
+      if (!haystack.includes(filters.q)) return false;
+    }
+    return true;
+  });
+  const splitSheetDocs = docs.filter((doc) => doc.type === "split-sheet");
+  const adminStats = {
+    totalUsers: users.length,
+    filteredUsers: filteredUsers.length,
+    activeUsers: users.filter((user) => user.status === "active").length,
+    paidUsers: users.filter((user) => planForUser(user).key !== "free").length,
+    freeUsers: users.filter((user) => planForUser(user).key === "free").length,
+    verifiedUsers: users.filter((user) => user.emailVerifiedAt).length,
+    marketingSubscribers: contacts.filter((contact) => contact.marketingStatus === "subscribed").length,
+    splitSheets: splitSheetDocs.length,
+    pendingSignatures: splitSheetDocs.filter((doc) => doc.status === "pending-signatures").length,
+    completedSplitSheets: splitSheetDocs.filter((doc) => doc.status === "completed").length,
+    emailFailures: splitSheetDocs.filter((doc) => doc.emailIssues && doc.emailIssues.length).length,
+    sourceBreakdown: groupRows(sourceMap),
+    providerBreakdown: groupRows(providerMap),
+    availableSources,
+    filters
+  };
   res.render("admin", {
     docs,
-    users,
+    users: filteredUsers,
+    allUsers: users,
     contacts,
+    complimentaryGrants,
+    adminStats,
     planOptions: Object.values(PLAN_DEFINITIONS),
+    planForUser,
     banner: req.query.banner || ""
   });
 });
@@ -4126,6 +4408,54 @@ app.get("/admin/contacts.csv", adminLimiter, requireAdmin, async (req, res) => {
   res.type("text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="splitsheetstudio-subscribers-${new Date().toISOString().slice(0, 10)}.csv"`);
   return res.send([headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n"));
+});
+
+app.get("/admin/email-journeys", adminLimiter, requireAdmin, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.render("email-journeys", { mode: emailJourneyMode, enabled: emailJourneysEnabled,
+    recipients: emailJourneyBetaRecipients, dayMinutes: emailJourneyDayMinutes,
+    states: await emailJourneyService.betaStatus(), notice: String(req.query.notice || "") });
+});
+app.get("/admin/email-journeys/preview/:journey/:step", adminLimiter, requireAdmin, (req, res) => {
+  if (!JOURNEYS.includes(req.params.journey) || !/^[0-5]$/.test(req.params.step)) return res.status(404).send("Preview not found");
+  const email = journeyEmail({ journey: req.params.journey, step: Number(req.params.step),
+    user: { email: emailJourneyBetaRecipients[0] || "preview@example.test", displayName: "Blak Marigold", planKey: ['creator', 'studio_pro'].includes(req.query.plan) ? req.query.plan : "free" },
+    contact: { unsubscribeToken: "beta-preview" }, activity: { createdCount: 0, pluginDownloaded: req.query.downloaded === '1' }, baseUrl,
+    invitation: require('./services/email-journey-content').betaInvitation(req.params.journey, Number(req.params.step), emailJourneyBetaRecipients[0] || "preview@example.test") });
+  res.setHeader("Cache-Control", "no-store");
+  res.send(email.html);
+});
+app.post("/admin/email-journeys/beta/:action", adminLimiter, requireAdmin, async (req, res) => {
+  if (emailJourneyMode !== "beta" || !emailJourneysEnabled) return res.status(403).send("Enabled beta environment required");
+  const journey = String(req.body.journey || "");
+  if (!JOURNEYS.includes(journey)) return res.status(400).send("Invalid journey");
+  try {
+    if (req.params.action === "start") await emailJourneyService.startBeta({ email: req.body.email, journey });
+    else if (req.params.action === "next") await emailJourneyService.advanceBeta(journey);
+    else if (req.params.action === "preview") {
+      const result = await emailJourneyService.sendBetaPreview({ email: req.body.email, journey, step: Number(req.body.step), planKey: req.body.plan || 'free', pluginDownloaded: req.body.downloaded === 'yes' });
+      return res.redirect(`/admin/email-journeys?notice=${encodeURIComponent(result.ok ? 'Preview email accepted by the email provider.' : 'Preview delivery failed; check beta email configuration.')}`);
+    }
+    else return res.status(404).send("Unknown beta action");
+    const result = await emailJourneyService.run(journey, { dryRun: false });
+    return res.redirect(`/admin/email-journeys?notice=${encodeURIComponent(`${result.sent} beta email(s) sent; ${result.needsReview} need review.`)}`);
+  } catch {
+    return res.status(400).send("Beta action could not be completed. Check the recipient allowlist and delivery status.");
+  }
+});
+
+app.post("/api/automations/onboarding/:journey/run", authenticatedApiLimiter, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  if (!onboardingAutomationToken) return apiError(res, 404, "Onboarding automation is not configured.");
+  if (!constantTimeEqual(bearerTokenFrom(req), onboardingAutomationToken)) return apiError(res, 401, "Onboarding automation token required.");
+  if (!JOURNEYS.includes(req.params.journey)) return apiError(res, 400, "Unknown onboarding journey.");
+  try {
+    const result = await emailJourneyService.run(req.params.journey, { dryRun: req.body.dryRun !== false, limit: req.body.limit });
+    return res.json({ ok: true, journey: req.params.journey, ...result });
+  } catch {
+    console.error("Onboarding automation run failed");
+    return apiError(res, 500, "Onboarding automation run failed.");
+  }
 });
 
 app.get("/api/admin/marketing-contacts", authenticatedApiLimiter, requireContactExportAuth, async (req, res) => {
@@ -4166,6 +4496,37 @@ app.post("/admin/users/:id/plan", adminLimiter, requireAdmin, async (req, res) =
     ? `/admin/users/${req.params.id}`
     : "/admin";
   res.redirect(`${returnPath}?banner=${encodeURIComponent(banner)}`);
+});
+
+app.post("/admin/complimentary-access", adminLimiter, requireAdmin, async (req, res) => {
+  try {
+    const planKey = normalizePlanKey(req.body.planKey || "studio_pro");
+    const plan = PLAN_DEFINITIONS[planKey] && planKey !== "free" ? PLAN_DEFINITIONS[planKey] : PLAN_DEFINITIONS.studio_pro;
+    const reason = ["plugin_review", "sponsorship", "partner", "manual"].includes(String(req.body.reason || ""))
+      ? String(req.body.reason)
+      : "sponsorship";
+    const result = await authService.grantComplimentaryAccess({
+      email: req.body.email,
+      planKey: plan.key,
+      reason,
+      note: req.body.note,
+      grantedBy: "admin"
+    });
+    const accountHint = result.user ? "Existing account updated now." : "Grant saved for when they sign up.";
+    return res.redirect(`/admin?banner=${encodeURIComponent(`${result.grant.email} granted complimentary ${plan.name}. ${accountHint}`)}`);
+  } catch (error) {
+    return res.redirect(`/admin?banner=${encodeURIComponent(error.message || "Could not grant complimentary access.")}`);
+  }
+});
+
+app.post("/admin/complimentary-access/revoke", adminLimiter, requireAdmin, async (req, res) => {
+  try {
+    const updated = await authService.revokeComplimentaryAccess({ email: req.body.email });
+    const target = updated?.email || String(req.body.email || "").trim().toLowerCase();
+    return res.redirect(`/admin?banner=${encodeURIComponent(`Complimentary access revoked for ${target}.`)}`);
+  } catch (error) {
+    return res.redirect(`/admin?banner=${encodeURIComponent(error.message || "Could not revoke complimentary access.")}`);
+  }
 });
 
 app.get("/admin/users/:id", adminLimiter, requireAdmin, async (req, res) => {

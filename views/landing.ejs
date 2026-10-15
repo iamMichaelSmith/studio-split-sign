@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -19,7 +19,7 @@
   <link rel="preload" as="image" href="/vst-contributors.png" fetchpriority="high">
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/premium.css">
-  <script type="application/ld+json">
+  <script nonce="<%= cspNonce %>" type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
@@ -31,6 +31,7 @@
     "brand": { "@type": "Brand", "name": "Blak Marigold Studio" }
   }
   </script>
+  <link rel="stylesheet" href="/plugin-skins.css">
 </head>
 <body class="premium-site">
   <div class="premium-shell">
@@ -93,18 +94,7 @@
         </div>
       </section>
 
-      <section class="premium-section skin-showcase" aria-labelledby="skin-showcase-title">
-        <div class="premium-container skin-showcase-heading">
-          <div><div class="section-kicker">A workspace that feels like yours</div><h2 id="skin-showcase-title">Change the mood.<br>Keep the workflow.</h2></div>
-          <p>Switch between premium visual skins without changing how the split sheet works. Your selection is remembered the next time the plugin opens.</p>
-        </div>
-        <div class="skin-stage" aria-label="Denim, Speakeasy, and Plush Split Sheet Studio skins">
-          <figure class="skin-card skin-card-denim"><div class="skin-card-screen"><img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio interface with Denim skin" loading="lazy"><span class="skin-texture"></span></div><figcaption><strong>Denim</strong><span>Studio utility</span></figcaption></figure>
-          <figure class="skin-card skin-card-speakeasy"><div class="skin-card-screen"><img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio interface with Speakeasy skin" loading="lazy"><span class="skin-texture"></span></div><figcaption><strong>Speakeasy</strong><span>After-hours luxury</span></figcaption></figure>
-          <figure class="skin-card skin-card-plush"><div class="skin-card-screen"><img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio interface with Plush skin" loading="lazy"><span class="skin-texture"></span></div><figcaption><strong>Plush</strong><span>Soft-room focus</span></figcaption></figure>
-        </div>
-        <p class="skin-showcase-note">Also includes Bronze, Paper Thin, and Soft.</p>
-      </section>
+      <%- include('partials/new-skins', { skinsSectionId: 'new-skins' }) %>
 
       <section id="product" class="premium-section premium-container statement-section">
         <div class="section-kicker">Built for the moment that matters</div>
@@ -132,7 +122,7 @@
 
       <section class="premium-section remote-section"><div class="premium-container remote-grid"><div class="remote-visual"><div class="city-node"><i></i><strong>Studio A</strong><small>Producer signed</small></div><div class="route-line"><span>Secure invite</span></div><div class="city-node"><i></i><strong>Studio B</strong><small>Artist signs remotely</small></div></div><div><div class="section-kicker">Made for remote collaboration</div><h2>Different studios. Different states. One final agreement.</h2><p>Send each contributor a secure review link. The split stays pending until everyone confirms, with reminder emails nudging pending collaborators a few times until they sign. After the final signature, the completed packet is automatically delivered to every selected recipient.</p></div></div></section>
 
-      <section class="premium-section premium-container launch-card"><div><div class="section-kicker">Launch pricing</div><h2>Put rights clarity in every session.</h2><p>Start free with 3 completed split sheets per month. Upgrade to Creator at $7/month or Studio at $19/month when sessions become regular. The Windows VST3 plugin and standalone app are included with both paid packages.</p></div><div class="launch-price"><span>Creator starts at</span><strong>$7/mo</strong><a class="premium-button premium-button-primary" href="/pricing"><%= stripeEnabled ? 'Choose a package' : 'View launch packages' %></a></div></section>
+      <section class="premium-section premium-container launch-card"><div><div class="section-kicker">Launch pricing</div><h2>Put rights clarity in every session.</h2><p>Start free with 3 split sheets sent per month. Upgrade to Creator at $7/month or Studio at $19/month when sessions become regular. The Windows VST3 plugin and standalone app are included with both paid packages.</p></div><div class="launch-price"><span>Creator starts at</span><strong>$7/mo</strong><a class="premium-button premium-button-primary" href="/pricing"><%= stripeEnabled ? 'Choose a package' : 'View launch packages' %></a></div></section>
 
       <section class="premium-section premium-container editorial-section"><div class="section-heading compact"><div><div class="section-kicker">The rights room</div><h2>Practical guidance for working creators.</h2></div><a class="text-link" href="<%= blogUrl %>">Read all articles →</a></div><div class="editorial-grid"><% latestPosts.forEach((post, index) => { %><article class="editorial-card <%= index === 0 ? 'editorial-featured' : '' %>"><div class="editorial-number">0<%= index + 1 %></div><div class="pill"><%= post.category %></div><h3><a href="/blog/<%= post.slug %>"><%= post.title %></a></h3><p><%= post.excerpt %></p><small><%= post.readingMinutes %> min read</small></article><% }) %></div></section>
 

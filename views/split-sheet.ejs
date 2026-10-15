@@ -5,7 +5,7 @@
     <div class="stat-label">How this works</div>
     <p class="small">You can collect signatures by invite link, so nobody has to finish everything on this device. The final PDF appears in your account vault after the required approvals are complete.</p>
   </div>
-  <a class="button-link button-link-secondary" href="/account#split-sheet-vault">View vault</a>
+  <a class="button-link button-link-secondary" href="/account?tab=vault">View vault</a>
 </div>
 
 <div class="step-tabs">
@@ -89,7 +89,7 @@
     </div>
     <div class="card">
       <h3>Email recipients for signed copy</h3>
-      <p class="small">Contributor emails are pre-selected. Add a manager, studio, label, or other recipient if they need the final copy.</p>
+      <p class="small">Every contributor receives the signed record. Add a manager, studio, label, or other recipient only if they are authorized to receive the full packet.</p>
       <div id="recipientChecklist" class="small"></div>
       <div class="row">
         <div><label>Additional recipient #1</label><input type="email" name="recipientEmails" placeholder="email@example.com"></div>
@@ -114,9 +114,10 @@
 </div>
 
 <p><a href="/account">Back to account</a></p></div>
-<script src="/vendor/signature_pad/signature_pad.umd.min.js"></script>
-<script>
-const DRAFT_KEY = 'splitSheetDraft.v1';
+<script nonce="<%= cspNonce %>" src="/vendor/signature_pad/signature_pad.umd.min.js"></script>
+<script nonce="<%= cspNonce %>">
+const DRAFT_KEY = 'splitSheetDraft.v2.' + <%- JSON.stringify(user.id).replace(/</g, '\\u003c') %> + '.' + <%- JSON.stringify(typeof revisionSource !== 'undefined' && revisionSource ? revisionSource.id : 'new').replace(/</g, '\\u003c') %>;
+let restoringDraft = true;
 const COLLABORATOR_FIELDS = ['legalName','role','address','phone','email','pro','ipi','publisherName','publisherIpi','typedSignatureName'];
 const INVITE_OPTIONAL_FIELDS = new Set(['legalName','role','address','phone','pro','ipi','publisherName','publisherIpi']);
 const pads = new Map();
@@ -125,34 +126,45 @@ const APPROVED_COLLABORATORS_ENABLED = <%= approvedCollaborators && approvedColl
 let approvedCollaborators = <%- JSON.stringify(approvedCollaborators && approvedCollaborators.profiles ? approvedCollaborators.profiles : []).replace(/</g, '\\u003c') %>;
 
 function saveDraft(){
-  const fields = Array.from(document.querySelectorAll('#splitForm input, #splitForm textarea, #splitForm select')).filter((el) => !el.dataset.draftIgnore);
-  const payload = fields.map((el) => ({
-    type: el.type,
-    value: el.type === 'checkbox' ? el.checked : el.value
-  }));
-  localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+  if(restoringDraft) return;
+  const read = (root, outsideCards = false) => Array.from(root.querySelectorAll('input, textarea, select'))
+    .filter(el => el.name && !el.dataset.draftIgnore && (!outsideCards || !el.closest('.contributor-card')))
+    .map(el => ({name:el.name, type:el.type, value:el.type === 'checkbox' ? el.checked : el.value}));
+  const payload = {version:2, fields:read(document.getElementById('splitForm'), true), contributors:Array.from(c.children).map(card=>read(card))};
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(payload)); } catch {
+    document.getElementById('submitHint').textContent = 'Browser storage is unavailable. Keep this page open until your split sheet is sent.';
+  }
 }
 
 function restoreDraft(){
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
-    if(!raw) return;
+    if(!raw) return false;
     const payload = JSON.parse(raw);
-    const fields = Array.from(document.querySelectorAll('#splitForm input, #splitForm textarea, #splitForm select')).filter((el) => !el.dataset.draftIgnore);
-    fields.forEach((el, idx) => {
-      const entry = payload[idx];
-      if(!entry) return;
-      if(entry.type === 'checkbox') {
-        el.checked = Boolean(entry.value);
-      } else {
-        el.value = entry.value || '';
+    if(payload.version !== 2 || !Array.isArray(payload.contributors)) return false;
+    const restore = (root, entries, outsideCards = false) => {
+      const fields = Array.from(root.querySelectorAll('input,textarea,select')).filter(el=>el.name && (!outsideCards || !el.closest('.contributor-card')));
+      const used = new Set();
+      for(const entry of entries || []) {
+        const el = fields.find(node=>node.name === entry.name && node.type === entry.type && !used.has(node));
+        if(!el) continue;
+        used.add(el);
+        if(el.type === 'checkbox') el.checked = Boolean(entry.value); else el.value = String(entry.value ?? '');
       }
-    });
+    };
+    restore(document.getElementById('splitForm'), payload.fields, true);
+    c.replaceChildren(); idx=0; pads.clear();
+    for(const entries of payload.contributors.slice(0,80)) {
+      add(Object.fromEntries(entries.filter(e=>e.type !== 'checkbox').map(e=>[e.name,e.value])));
+    }
+    if(!c.children.length) add();
+    return true;
   } catch {}
+  return false;
 }
 
 function clearDraft(){
-  localStorage.removeItem(DRAFT_KEY);
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
   location.reload();
 }
 
@@ -306,7 +318,7 @@ function wirePad(canvasId,inputId,clearId){
     if (input) input.value = '';
     return;
   }
-  const resize=()=>{const ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext('2d').scale(ratio,ratio);};
+  const resize=()=>{if(!canvas.offsetWidth) return; const saved=input.value; const ratio=Math.max(window.devicePixelRatio||1,1);canvas.width=canvas.offsetWidth*ratio;canvas.height=canvas.offsetHeight*ratio;canvas.getContext('2d').scale(ratio,ratio); if(saved && pads.get(inputId)) pads.get(inputId).fromDataURL(saved).catch(()=>{});};
   resize();window.addEventListener('resize',resize);
   const pad=new SignaturePad(canvas,{backgroundColor:'rgb(255,255,255)'});
   pads.set(inputId, pad);
@@ -328,7 +340,7 @@ function add(prefill){
   const i = idx;
   c.insertAdjacentHTML('beforeend',`<details class="card contributor-card" open>
   <summary>Contributor #${i+1}</summary>
-  <div class="collaborator-profile-row"><div><label>Saved collaborator</label><select class="collaborator-select" data-draft-ignore="true"><option value="">Select saved collaborator</option></select></div><p class="small">Profiles save automatically in this browser after you enter a legal name and email or phone.</p></div>
+  <div class="collaborator-profile-row"><div><label>Saved collaborator</label><select class="collaborator-select" data-draft-ignore="true"><option value="">Select saved collaborator</option></select></div><p class="small">Approved profiles become reusable after a collaborator signs.</p></div>
   <div class="row"><div><label>Legal name</label><input name="legalName" required></div><div><label>Role</label><input name="role" placeholder="artist / producer / writer" required></div></div>
   <div class="row"><div><label>Address</label><input name="address" required></div><div><label>Phone</label><input name="phone" required></div></div>
   <div class="row"><div><label>Email</label><input type="email" name="email" required></div><div><label>PRO</label><input name="pro" required></div></div>
@@ -347,6 +359,15 @@ function add(prefill){
   wirePad(`sig${i}`,`sigData${i}`,`clear${i}`);
 
   const card = c.lastElementChild;
+  const remove = document.createElement('button');
+  remove.type='button'; remove.className='secondary-button'; remove.textContent='Remove contributor';
+  remove.addEventListener('click',()=>{pads.delete(`sigData${i}`); card.remove(); updateTotals(); saveDraft();});
+  card.append(remove);
+  card.querySelectorAll('input,select').forEach((field,n)=>{
+    if(field.type === 'hidden') return;
+    if(!field.id) field.id=`contributor-${i}-${n}`;
+    const label=field.previousElementSibling; if(label?.tagName === 'LABEL') label.htmlFor=field.id;
+  });
   const typed=document.getElementById(`typed${i}`); const preview=document.getElementById(`typedPreview${i}`);
   const profileSelect = card.querySelector('.collaborator-select');
   profileSelect.addEventListener('change', () => applyCollaboratorProfile(card, profileSelect.value));
@@ -382,7 +403,6 @@ function setNamedValue(name, value){
 
 function applyServerPrefill(prefill){
   if(!prefill) return false;
-  localStorage.removeItem(DRAFT_KEY);
   ['songTitle','alternateTitle','date','sessionLocation','iswc','isrc','notes'].forEach((name) => {
     setNamedValue(name, prefill[name]);
   });
@@ -491,13 +511,10 @@ function updateTotals(){
 function renderRecipientChecklist(){
   const list = document.getElementById('recipientChecklist');
   if(!list) return;
-  const prev = new Map(Array.from(list.querySelectorAll('input[type="checkbox"][name="recipientEmails"]')).map(i => [i.value, i.checked]));
   const emails = getVals('email').filter(e => String(e||'').includes('@'));
-  if(!emails.length){ list.innerHTML = '<p>No valid contributor emails yet.</p>'; return; }
-  list.innerHTML = emails.map((e, i) => {
-    const isChecked = prev.has(e) ? prev.get(e) : true;
-    return `<label style="display:block;margin:4px 0;"><input type="checkbox" name="recipientEmails" value="${e}" ${isChecked ? 'checked' : ''}> Send copy to contributor #${i+1}: ${e}</label>`;
-  }).join('');
+  list.replaceChildren();
+  if(!emails.length){ list.textContent = 'No valid contributor emails yet.'; return; }
+  emails.forEach((email,i)=>{const row=document.createElement('p'); row.textContent=`Contributor #${i+1}: ${email}`; list.append(row);});
 }
 
 function renderReview(){
@@ -511,16 +528,19 @@ function renderReview(){
   const song = document.querySelector('[name="songTitle"]').value || '(missing song title)';
 
   const scopeLabel = currentRightsScope()==='master' ? 'Master recording ownership' : (currentRightsScope()==='composition-and-master' ? 'Songwriting/publishing and master ownership' : 'Songwriting and publishing');
-  let html = `<p><b>Song:</b> ${song}</p><p><b>Rights covered:</b> ${scopeLabel}</p><ul>`;
+  const review=document.getElementById('reviewSummary'); review.replaceChildren();
+  const songLine=document.createElement('p'); songLine.textContent=`Song: ${song}`;
+  const scopeLine=document.createElement('p'); scopeLine.textContent=`Rights covered: ${scopeLabel}`;
+  const list=document.createElement('ul'); review.append(songLine,scopeLine,list);
   for(let i=0;i<names.length;i++){
     const compositionText = includesComposition() ? `Writer ${writer[i]||0}% / Publisher ${publisher[i]||0}%` : '';
     const masterText = includesMaster() ? `${compositionText ? ' / ' : ''}Master ${master[i]||0}%` : '';
     const email = getVals('email')[i] || '';
     const signatureText = collectByInviteEnabled() ? 'Signature: secure link' : `Typed: ${typed[i]||'missing'} - Drawn: ${drawn[i]?'yes':'no'}`;
-    html += `<li><b>${names[i]||email||'(missing name)'}</b> (${roles[i]||'role pending'}) - ${compositionText}${masterText} - ${signatureText}</li>`;
+    const row=document.createElement('li');
+    row.textContent=`${names[i]||email||'(missing name)'} (${roles[i]||'role pending'}) - ${compositionText}${masterText} - ${signatureText}`;
+    list.append(row);
   }
-  html += `</ul>`;
-  document.getElementById('reviewSummary').innerHTML = html;
   renderRecipientChecklist();
 
   const w = Number(document.getElementById('writerTotal').textContent || 0);
@@ -529,7 +549,7 @@ function renderReview(){
   const collectByInvite = collectByInviteEnabled();
   const hasDrawn = drawn.every(Boolean) && drawn.length >= 2;
   const hasTyped = typed.every(v=>String(v||'').trim().length>1) && typed.length>=1;
-  const checkedRecipients = Array.from(document.querySelectorAll('input[name="recipientEmails"][type="checkbox"]:checked')).length;
+  const checkedRecipients = getVals('email').filter(email=>email.includes('@')).length;
   const allAgree = !!document.getElementById('allAgree') && document.getElementById('allAgree').checked;
   const signaturesReady = collectByInvite ? true : (hasDrawn && hasTyped);
   const compositionValid = !includesComposition() || ((Math.round(w*100)/100===100) && (Math.round(p*100)/100===100));
@@ -628,13 +648,17 @@ document.getElementById('splitForm').addEventListener('submit', (event) => {
     return;
   }
   saveCollaboratorsFromForm();
-  localStorage.removeItem(DRAFT_KEY);
+  saveDraft();
 });
 
-if(!applyServerPrefill(SERVER_PREFILL)){
-  add();
-  restoreDraft();
-}
+if(!restoreDraft() && !applyServerPrefill(SERVER_PREFILL)) add();
+document.querySelectorAll('#splitForm input,#splitForm select,#splitForm textarea').forEach((field,n)=>{
+  if(!field.id) field.id=`split-field-${n}`;
+  const label=field.previousElementSibling;
+  if(label?.tagName === 'LABEL') label.htmlFor=field.id;
+});
+restoringDraft=false;
+document.getElementById('splitForm').addEventListener('input',saveDraft);
 updateRightsFields();
 updateSignatureFields();
 updateTotals();

@@ -1,7 +1,7 @@
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
-const result = spawnSync(process.execPath, ['--test', path.join(__dirname, 'release-security.cjs')], {
+const result = spawnSync(process.execPath, ['--test', path.join(__dirname, 'release-security.cjs'), path.join(__dirname, 'email-journeys.cjs')], {
   env: { ...process.env, RELEASE_TEST_POSTGRES: '1' },
   stdio: 'inherit',
   windowsHide: true

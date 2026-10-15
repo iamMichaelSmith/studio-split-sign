@@ -61,7 +61,7 @@
         <p class="small">Requester-only link. It reloads this split as a new version, clears signatures, and requires every contributor to sign again.</p>
         <div class="copy-field">
           <input type="text" readonly value="<%= revisionUrl %>" id="revision-link">
-          <button type="button" onclick="copySignerLink('revision-link', this)">Copy revision link</button>
+          <button type="button" data-copy-link="revision-link">Copy revision link</button>
         </div>
       </div>
     <% } %>
@@ -93,7 +93,7 @@
           <% if (row.signerLink) { %>
             <div class="copy-field">
               <input type="text" readonly value="<%= row.signerLink %>" id="link-<%= row.index %>">
-              <button type="button" onclick="copySignerLink('link-<%= row.index %>', this)">Copy signer link</button>
+              <button type="button" data-copy-link="link-<%= row.index %>">Copy signer link</button>
             </div>
           <% } %>
           <% if (!row.signedAt) { %>
@@ -106,7 +106,10 @@
     <p><a href="/admin">Back to admin</a></p>
   </div>
 
-  <script>
+  <script nonce="<%= cspNonce %>">
+    document.querySelectorAll('[data-copy-link]').forEach(button => {
+      button.addEventListener('click', () => copySignerLink(button.dataset.copyLink, button));
+    });
     async function copySignerLink(id, btn) {
       const input = document.getElementById(id);
       if (!input) return;

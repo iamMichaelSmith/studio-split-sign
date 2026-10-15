@@ -9,7 +9,11 @@
 <body>
   <div class="wrap auth-wrap">
     <div class="auth-card card">
-      <h1>Create your account</h1>
+      <h1>Create your free account</h1>
+      <% if (signupNext.startsWith('/split-sheet/sign/')) { %>
+        <p>Create a free account using your invitation email, or sign in below. After verifying your email and signing in, you will return to your split sheet to add your details and sign.</p>
+        <p class="small">No payment required. Your signed split sheet will be saved in your vault and will update when everyone has signed.</p>
+      <% } %>
       <p class="small">Use one account across the hosted app and plugin. Verification and password recovery live here.</p>
       <div class="card">
         <p class="small">First-time setup:</p>
@@ -29,19 +33,20 @@
         <div class="oauth-stack">
           <% oauthProviders.forEach((provider) => { %>
             <% if (provider.enabled && allowPublicRegistration) { %>
-              <a class="oauth-button" href="/auth/<%= provider.key %>?next=/account">Continue with <%= provider.label %></a>
+              <a class="oauth-button" href="/auth/<%= provider.key %>?next=<%= encodeURIComponent(signupNext) %>">Continue with <%= provider.label %></a>
             <% } %>
           <% }) %>
         </div>
         <div class="auth-divider"><span>or create with email</span></div>
       <% } %>
       <form method="post" action="/signup">
-        <label>Display Name</label>
-        <input name="displayName" value="<%= values.displayName %>" required>
-        <label>Email</label>
-        <input type="email" name="email" value="<%= values.email %>" required>
-        <label>Password</label>
-        <input type="password" name="password" placeholder="At least 8 characters" required>
+        <input type="hidden" name="next" value="<%= signupNext %>">
+        <label for="displayName">Display Name</label>
+        <input id="displayName" autocomplete="name" name="displayName" value="<%= values.displayName %>" required>
+        <label for="email">Email</label>
+        <input id="email" autocomplete="email" type="email" name="email" value="<%= values.email %>" required>
+        <label for="password">Password</label>
+        <input id="password" autocomplete="new-password" type="password" name="password" minlength="8" placeholder="At least 8 characters" required>
         <label class="agreement-check marketing-opt-in">
           <input type="checkbox" name="marketingOptIn" value="yes" <%= values.marketingOptIn ? 'checked' : '' %>>
           <span>Send me educational music-rights articles and Split Sheet Studio product updates. Optional; unsubscribe anytime. See the <a href="/legal/privacy">Privacy Policy</a>.</span>
@@ -49,6 +54,7 @@
         <button type="submit" <%= allowPublicRegistration ? "" : "disabled" %>>Create account</button>
       </form>
       <p class="small auth-links">
+        <a href="/login?next=<%= encodeURIComponent(signupNext) %>">Already have an account? Sign in</a>
         <a href="/forgot-password">Forgot password</a>
         <a href="mailto:<%= supportEmail %>">Support</a>
         <a href="<%= baseUrl %>">Back to app</a>

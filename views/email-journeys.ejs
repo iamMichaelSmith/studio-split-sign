@@ -1,0 +1,24 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Email journey beta | Split Sheet Studio</title><link rel="stylesheet" href="/style.css"></head>
+<body><main class="wrap"><h1>Email journey beta</h1>
+<div class="card"><p><strong>Environment: <%= mode %></strong> · Delivery <%= enabled ? 'enabled' : 'disabled' %></p>
+<% if (mode === 'beta') { %><p>Beta delivery is restricted to <strong><%= recipients.join(', ') %></strong>. One campaign day takes <%= dayMinutes %> minute(s). Production accounts and paperwork are separate.</p><% } %>
+<% if (notice) { %><p class="banner"><%= notice %></p><% } %>
+<p>Schedule: welcome immediately, then days 2, 4, 7, 10, and 14. Preview the emails, send the next one when ready, or start a sequence and let n8n run it on the configured schedule. Starting again restarts only that beta sequence and opts the test mailbox back in.</p><p>Campaign edition 2: session first, stronger Windows VST3 discovery, real skin screenshots, and plan-aware calls to action.</p></div>
+<% ['direct','invited'].forEach(journey => { const state = states.find(row => row.journey === journey); %>
+<section class="card"><h2><%= journey === 'direct' ? 'Direct signup' : 'Invited contributor' %></h2>
+<p><%= state ? `${state.status} · ${state.next_step}/6 emails processed · next due ${state.next_due_at}` : 'No beta sequence started' %></p>
+<ol><% ['Your next session starts here','Keep the music moving','Your signed sheets have a home','Your studio has a new plugin','Same collaborators. Less typing.','Make it part of your next session'].forEach((label,step) => { %>
+<li><a href="/admin/email-journeys/preview/<%= journey %>/<%= step %>" target="_blank" rel="noopener"><%= label %></a></li><% }) %></ol>
+<% if (mode === 'beta' && enabled) { %>
+<form method="post" action="/admin/email-journeys/beta/start"><input type="hidden" name="journey" value="<%= journey %>"><label>Test mailbox<select name="email"><% recipients.forEach(email => { %><option><%= email %></option><% }) %></select></label><button type="submit"><%= state ? 'Restart beta sequence' : 'Start beta sequence' %></button></form>
+<% if (state) { %><form method="post" action="/admin/email-journeys/beta/next"><input type="hidden" name="journey" value="<%= journey %>"><button type="submit">Send next beta email now</button></form><% } %>
+<% } %></section><% }) %>
+<% if (mode === 'beta' && enabled) { %><section class="card"><h2>Send a single preview</h2><p>Test a specific email and plan without moving either sequence forward.</p>
+<form method="post" action="/admin/email-journeys/beta/preview"><label>Test mailbox<select name="email"><% recipients.forEach(email => { %><option><%= email %></option><% }) %></select></label>
+<label>Journey<select name="journey"><option value="direct">Direct signup</option><option value="invited">Invited contributor</option></select></label>
+<label>Email<select name="step"><% ['Welcome','First action','Vault','Windows VST3 and skins','Approved collaborators','Plan invitation'].forEach((label,step) => { %><option value="<%= step %>" <%= step === 3 ? 'selected' : '' %>><%= label %></option><% }) %></select></label>
+<label>Account plan<select name="plan"><option value="free">Free</option><option value="creator">Creator</option><option value="studio_pro">Studio</option></select></label>
+<label><input type="checkbox" name="downloaded" value="yes"> Already requested the Windows installer</label><button type="submit">Send preview email</button></form>
+<p><a href="/admin/email-journeys/preview/direct/3?plan=creator" target="_blank" rel="noopener">Preview the paid download email</a> · <a href="/admin/email-journeys/preview/direct/3?plan=creator&amp;downloaded=1" target="_blank" rel="noopener">Preview the skin selection email</a></p></section><% } %>
+<p><a href="/admin">Admin home</a></p></main></body></html>

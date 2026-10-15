@@ -1,4 +1,4 @@
-﻿const { spawn } = require('node:child_process');
+const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -161,8 +161,8 @@ async function main() {
     const securityTxt = await fetch(`http://127.0.0.1:${port}/.well-known/security.txt`);
     if (!securityTxt.ok || !(await securityTxt.text()).includes('Contact: mailto:Contact@blakmarigold.com')) throw new Error('security.txt failed');
 
-    const macDownload = await fetch(`http://127.0.0.1:${port}/downloads/plugin/mac/latest`);
-    if (macDownload.status !== 503) throw new Error('unreleased mac download should stay disabled');
+    const macDownload = await fetch(`http://127.0.0.1:${port}/downloads/plugin/mac/latest`, {redirect:'manual'});
+    if (macDownload.status !== 302 || !macDownload.headers.get('location').startsWith('/login')) throw new Error('plugin download must require sign-in');
 
     const blog = await fetch(`http://127.0.0.1:${port}/blog`);
     if (!blog.ok) throw new Error('blog index failed');
@@ -288,11 +288,22 @@ async function main() {
     if (meJson.user.planKey !== 'free') throw new Error('new users should start on free plan');
     if (meJson.usage.limit !== 3 || meJson.usage.used !== 0) throw new Error('free usage summary mismatch');
 
+    const blockedFreePlugin = await fetch(`http://127.0.0.1:${port}/api/split-sheets`, {
+      headers: { authorization: `Bearer ${auth.accessToken}` }
+    });
+    if (blockedFreePlugin.status !== 402) throw new Error('Free bearer access must not unlock the plugin');
+    const freeWebLogin = await fetch(`http://127.0.0.1:${port}/login`, {
+      method:'POST',redirect:'manual',headers:{'content-type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({email:accountEmail,password:accountPass})
+    });
+    if(freeWebLogin.status!==302) throw new Error('Free browser login failed');
+    const freeWebHeaders={cookie:freeWebLogin.headers.get('set-cookie').split(';')[0],origin:`http://127.0.0.1:${port}`};
+
     const validate = await fetch(`http://127.0.0.1:${port}/api/split-sheets/validate`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${auth.accessToken}`
+        ...freeWebHeaders
       },
       body: JSON.stringify({
         songTitle: 'Smoke Test Song',
@@ -311,7 +322,7 @@ async function main() {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${auth.accessToken}`
+        ...freeWebHeaders
       },
       body: JSON.stringify({
         songTitle: 'Master Rights Smoke Song',
@@ -330,7 +341,7 @@ async function main() {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${auth.accessToken}`
+        ...freeWebHeaders
       },
       body: JSON.stringify({
         songTitle: 'Email Only Invite Smoke Song',
@@ -348,7 +359,7 @@ async function main() {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${auth.accessToken}`
+        ...freeWebHeaders
       },
       body: JSON.stringify({
         songTitle: 'Draft Smoke Song',
@@ -363,14 +374,14 @@ async function main() {
     if (createdDraft.splitSheet?.status !== 'draft') throw new Error('draft status mismatch');
 
     const draftList = await fetch(`http://127.0.0.1:${port}/api/split-sheets`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` }
+      headers: { ...freeWebHeaders }
     });
     if (!draftList.ok) throw new Error('split list failed');
     const listed = await draftList.json();
     if (!Array.isArray(listed.splitSheets) || listed.splitSheets.length < 1) throw new Error('split list empty');
 
     const draftDetail = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${createdDraft.splitSheet.id}`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` }
+      headers: { ...freeWebHeaders }
     });
     if (!draftDetail.ok) throw new Error('draft detail failed');
 
@@ -378,7 +389,7 @@ async function main() {
       method: 'PUT',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${auth.accessToken}`
+        ...freeWebHeaders
       },
       body: JSON.stringify({
         songTitle: 'Smoke Test Song',
@@ -395,7 +406,7 @@ async function main() {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${auth.accessToken}`
+        ...freeWebHeaders
       },
       body: JSON.stringify({
         draftId: createdDraft.splitSheet.id,
@@ -416,7 +427,7 @@ async function main() {
     if (created.splitSheet.status !== 'pending-signatures') throw new Error('submitted split status mismatch');
 
     const status = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${created.splitSheet.id}/status`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` }
+      headers: { ...freeWebHeaders }
     });
     if (!status.ok) throw new Error('split status failed');
     const pendingStatus = await status.json();
@@ -424,7 +435,7 @@ async function main() {
     if (pendingStatus.splitSheet.signers?.length !== 2) throw new Error('signer delivery status missing');
 
     const signingDetailResponse = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${created.splitSheet.id}`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` }
+      headers: { ...freeWebHeaders }
     });
     if (!signingDetailResponse.ok) throw new Error('signing detail failed');
     const signingDetail = await signingDetailResponse.json();
@@ -432,6 +443,27 @@ async function main() {
     if (!signers.every((signer) => signer.signerToken && signer.signerTokenExpiresAt)) throw new Error('secure signer links missing');
 
     const signatureData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    async function contributorHeaders(email) {
+      const registration = await fetch(`http://127.0.0.1:${port}/api/auth/register`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, password: accountPass, displayName: 'Invited contributor' })
+      });
+      if (!registration.ok) throw new Error('contributor registration failed');
+      const result = await registration.json();
+      const verified = await fetch(`http://127.0.0.1:${port}/api/auth/verify-email`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: result.verificationToken })
+      });
+      if (!verified.ok) throw new Error('contributor verification failed');
+      const loggedIn = await fetch(`http://127.0.0.1:${port}/login`, {
+        method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ email, password: accountPass })
+      });
+      if (loggedIn.status !== 302) throw new Error('contributor login failed');
+      return { cookie: loggedIn.headers.get('set-cookie').split(';')[0], origin: `http://127.0.0.1:${port}` };
+    }
+    const signerHeaders = [];
+    for (const signer of signers) signerHeaders.push(await contributorHeaders(signer.email));
     const signerProfileBody = (signer, index, extra = {}) => new URLSearchParams({
       legalName: index === 0 ? 'Writer One' : 'Writer Two',
       role: index === 0 ? 'Writer' : 'Producer',
@@ -447,7 +479,7 @@ async function main() {
     });
     const rejectedSignature = await fetch(`http://127.0.0.1:${port}/split-sheet/sign/${created.splitSheet.id}/${signers[0].signerToken}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      headers: { 'content-type': 'application/x-www-form-urlencoded', ...signerHeaders[0] },
       body: signerProfileBody(signers[0], 0)
     });
     if (rejectedSignature.status !== 400) throw new Error('signature without explicit agreement should be rejected');
@@ -455,14 +487,14 @@ async function main() {
     for (const [index, signer] of signers.entries()) {
       const signed = await fetch(`http://127.0.0.1:${port}/split-sheet/sign/${created.splitSheet.id}/${signer.signerToken}`, {
         method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        headers: { 'content-type': 'application/x-www-form-urlencoded', ...signerHeaders[index] },
         body: signerProfileBody(signer, index, { agreeToSplits: 'yes' })
       });
       if (!signed.ok) throw new Error(`signer completion failed for ${signer.email}`);
     }
 
     const completedStatusResponse = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${created.splitSheet.id}/status`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` }
+      headers: { ...freeWebHeaders }
     });
     const completedStatus = await completedStatusResponse.json();
     if (completedStatus.splitSheet.status !== 'completed') throw new Error('split did not finalize after every signer agreed');
@@ -478,7 +510,7 @@ async function main() {
     if (!/inline/i.test(inlinePdf.headers.get('content-disposition') || '')) throw new Error('view final PDF should render inline');
 
     const completedDetailResponse = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${created.splitSheet.id}`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` }
+      headers: { ...freeWebHeaders }
     });
     if (!completedDetailResponse.ok) throw new Error('completed split detail failed');
     const completedDetail = await completedDetailResponse.json();
@@ -526,15 +558,15 @@ async function main() {
     const vaultHtml = await vaultPage.text();
     if (!vaultHtml.includes('Split Sheet Vault')) throw new Error('account vault title missing');
     if (!vaultHtml.includes('>View</a>') || !vaultHtml.includes('>Download</a>')) throw new Error('account vault should include view and download actions');
-    if (!vaultHtml.includes('>Archive</button>') || !vaultHtml.includes('Delete permanently')) {
-      throw new Error('account vault should include archive and confirmed delete actions');
+    if (!vaultHtml.includes('>Archive</button>') || !vaultHtml.includes('Shared signed record retained for contributors.')) {
+      throw new Error('account vault should allow archiving while retaining shared signed records');
     }
 
     const archiveDraft = await fetch(`http://127.0.0.1:${port}/api/split-sheets/drafts`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${auth.accessToken}`
+        ...freeWebHeaders
       },
       body: JSON.stringify({
         songTitle: 'Archive Smoke Song',
@@ -564,7 +596,7 @@ async function main() {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${auth.accessToken}`
+        ...freeWebHeaders
       },
       body: JSON.stringify({
         songTitle: 'Delete Smoke Song',
@@ -599,7 +631,7 @@ async function main() {
       throw new Error('confirmed delete should redirect with deleted notice');
     }
     const deletedDetail = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${deleteDraftJson.splitSheet.id}`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` }
+      headers: { ...freeWebHeaders }
     });
     if (deletedDetail.status !== 404) throw new Error('confirmed delete should remove split sheet');
 
@@ -685,7 +717,7 @@ async function main() {
     await revisionCreate.text();
 
     const listAfterRevision = await fetch(`http://127.0.0.1:${port}/api/split-sheets`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` }
+      headers: { ...freeWebHeaders }
     });
     if (!listAfterRevision.ok) throw new Error('split list after revision failed');
     const listedAfterRevision = await listAfterRevision.json();
@@ -697,7 +729,7 @@ async function main() {
     if (!revisionSummary) throw new Error('revision split sheet summary missing');
 
     const revisionDetailResponse = await fetch(`http://127.0.0.1:${port}/api/split-sheets/${revisionSummary.id}`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` }
+      headers: { ...freeWebHeaders }
     });
     if (!revisionDetailResponse.ok) throw new Error('revision split sheet detail missing');
     const revisionDetail = await revisionDetailResponse.json();
@@ -713,7 +745,7 @@ async function main() {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          authorization: `Bearer ${auth.accessToken}`
+          ...freeWebHeaders
         },
         body: JSON.stringify(validInvitePayload(title))
       });
@@ -721,7 +753,7 @@ async function main() {
     }
 
     const usageAfterThree = await fetch(`http://127.0.0.1:${port}/api/account/usage`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` }
+      headers: { ...freeWebHeaders }
     });
     if (!usageAfterThree.ok) throw new Error('usage endpoint failed');
     const usageAfterThreeJson = await usageAfterThree.json();
@@ -731,7 +763,7 @@ async function main() {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${auth.accessToken}`
+        ...freeWebHeaders
       },
       body: JSON.stringify(validInvitePayload('Free Limit Song 4'))
     });
@@ -788,9 +820,10 @@ async function main() {
     if (!approvedProfileDetailResponse.ok) throw new Error('approved collaborator detail failed');
     const approvedProfileDetail = await approvedProfileDetailResponse.json();
     const approvedSigner = approvedProfileDetail.splitSheet.payload.contributors[0];
+    const approvedSignerHeaders = await contributorHeaders(approvedSigner.email);
     const approvedSign = await fetch(`http://127.0.0.1:${port}/split-sheet/sign/${approvedProfileCreated.splitSheet.id}/${approvedSigner.signerToken}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      headers: { 'content-type': 'application/x-www-form-urlencoded', ...approvedSignerHeaders },
       body: signerProfileBody(approvedSigner, 0, {
         legalName: 'Approved Collaborator One',
         role: 'Writer',

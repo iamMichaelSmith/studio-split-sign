@@ -5,7 +5,7 @@
 #include <cstdlib>
 
 #ifndef SPLIT_SHEET_STUDIO_VERSION
-#define SPLIT_SHEET_STUDIO_VERSION "0.1.2"
+#define SPLIT_SHEET_STUDIO_VERSION "0.1.3"
 #endif
 
 namespace
@@ -28,10 +28,34 @@ namespace
     constexpr int screenshotReviewHeight = 980;
     constexpr const char* screenshotDirEnvVar = "SPLITSHEET_SCREENSHOT_DIR";
 
+    bool isArtworkTheme(SplitSheetTheme theme)
+    {
+        return theme >= SplitSheetTheme::midnight && theme <= SplitSheetTheme::walnut;
+    }
+
+    SplitSheetThemePalette artworkPalette(juce::uint32 background, juce::uint32 panel, juce::uint32 accent)
+    {
+        const juce::Colour base(background);
+        const juce::Colour surface(panel);
+        const juce::Colour highlight(accent);
+        return {
+            base, surface, surface, base, surface.brighter(0.08f), highlight.darker(0.38f),
+            highlight, juce::Colour(0xff59b98b), juce::Colour(0xffdfb968), juce::Colour(0xffe38085),
+            juce::Colour(0xff657b89), juce::Colour(0xfff4f7fb), juce::Colour(0xffc5d1df),
+            juce::Colour(0xffa7b5c7), juce::Colour(0xfff4f7fb), 0.90f
+        };
+    }
+
     SplitSheetThemePalette paletteForTheme(SplitSheetTheme theme)
     {
         switch (theme)
         {
+            case SplitSheetTheme::midnight: return artworkPalette(0xff0b121a, 0xff15212d, 0xff9ecbf2);
+            case SplitSheetTheme::neon: return artworkPalette(0xff10071c, 0xff20102f, 0xfff28cdd);
+            case SplitSheetTheme::electric: return artworkPalette(0xff041322, 0xff0a2436, 0xff62e3c0);
+            case SplitSheetTheme::blueprint: return artworkPalette(0xff06182c, 0xff102b43, 0xff88c9f0);
+            case SplitSheetTheme::royal: return artworkPalette(0xff09170f, 0xff14291e, 0xffdfbf72);
+            case SplitSheetTheme::walnut: return artworkPalette(0xff19130e, 0xff30241a, 0xffe3b57d);
             case SplitSheetTheme::paperThin:
                 return {
                     juce::Colour::fromRGB(30, 29, 27), juce::Colour::fromRGB(50, 48, 44),
@@ -109,6 +133,12 @@ namespace
         if (key == "soft") return SplitSheetTheme::soft;
         if (key == "speakeasy") return SplitSheetTheme::speakeasy;
         if (key == "plush") return SplitSheetTheme::plush;
+        if (key == "midnight") return SplitSheetTheme::midnight;
+        if (key == "neon") return SplitSheetTheme::neon;
+        if (key == "electric") return SplitSheetTheme::electric;
+        if (key == "blueprint") return SplitSheetTheme::blueprint;
+        if (key == "royal") return SplitSheetTheme::royal;
+        if (key == "walnut") return SplitSheetTheme::walnut;
         return SplitSheetTheme::bronze;
     }
 
@@ -121,6 +151,12 @@ namespace
             case SplitSheetTheme::soft: return "soft";
             case SplitSheetTheme::speakeasy: return "speakeasy";
             case SplitSheetTheme::plush: return "plush";
+            case SplitSheetTheme::midnight: return "midnight";
+            case SplitSheetTheme::neon: return "neon";
+            case SplitSheetTheme::electric: return "electric";
+            case SplitSheetTheme::blueprint: return "blueprint";
+            case SplitSheetTheme::royal: return "royal";
+            case SplitSheetTheme::walnut: return "walnut";
             case SplitSheetTheme::bronze:
             default: return "bronze";
         }
@@ -130,6 +166,18 @@ namespace
     {
         switch (theme)
         {
+            case SplitSheetTheme::midnight:
+                return juce::ImageCache::getFromMemory(BinaryData::midnight_png, BinaryData::midnight_pngSize);
+            case SplitSheetTheme::neon:
+                return juce::ImageCache::getFromMemory(BinaryData::neon_png, BinaryData::neon_pngSize);
+            case SplitSheetTheme::electric:
+                return juce::ImageCache::getFromMemory(BinaryData::electric_png, BinaryData::electric_pngSize);
+            case SplitSheetTheme::blueprint:
+                return juce::ImageCache::getFromMemory(BinaryData::blueprint_png, BinaryData::blueprint_pngSize);
+            case SplitSheetTheme::royal:
+                return juce::ImageCache::getFromMemory(BinaryData::royal_png, BinaryData::royal_pngSize);
+            case SplitSheetTheme::walnut:
+                return juce::ImageCache::getFromMemory(BinaryData::walnut_png, BinaryData::walnut_pngSize);
             case SplitSheetTheme::paperThin:
                 return juce::ImageCache::getFromMemory(BinaryData::paperthin_png, BinaryData::paperthin_pngSize);
             case SplitSheetTheme::denim:
@@ -717,6 +765,12 @@ SplitSheetStudioEditor::SplitSheetStudioEditor(SplitSheetStudioProcessor& value)
     themeSelector.addItem("Soft", static_cast<int>(SplitSheetTheme::soft));
     themeSelector.addItem("Speakeasy", static_cast<int>(SplitSheetTheme::speakeasy));
     themeSelector.addItem("Plush", static_cast<int>(SplitSheetTheme::plush));
+    themeSelector.addItem("Midnight", static_cast<int>(SplitSheetTheme::midnight));
+    themeSelector.addItem("Neon", static_cast<int>(SplitSheetTheme::neon));
+    themeSelector.addItem("Electric", static_cast<int>(SplitSheetTheme::electric));
+    themeSelector.addItem("Blueprint", static_cast<int>(SplitSheetTheme::blueprint));
+    themeSelector.addItem("Royal", static_cast<int>(SplitSheetTheme::royal));
+    themeSelector.addItem("Walnut", static_cast<int>(SplitSheetTheme::walnut));
     themeSelector.setSelectedId(static_cast<int>(currentTheme), juce::dontSendNotification);
     themeSelector.setTooltip("Choose your Split Sheet Studio skin");
     styleComboBox(themeSelector, "Choose skin", palette);
@@ -827,7 +881,7 @@ SplitSheetStudioEditor::~SplitSheetStudioEditor()
 
 void SplitSheetStudioEditor::applyTheme(SplitSheetTheme theme, bool persist)
 {
-    if (theme < SplitSheetTheme::bronze || theme > SplitSheetTheme::plush)
+    if (theme < SplitSheetTheme::bronze || theme > SplitSheetTheme::walnut)
         theme = SplitSheetTheme::bronze;
 
     currentTheme = theme;
@@ -942,7 +996,7 @@ void SplitSheetStudioEditor::paint(juce::Graphics& graphics)
             graphics.saveState();
             graphics.setOpacity(palette.textureOpacity);
             graphics.drawImageWithin(skinTexture, 10, 10, getWidth() - 20, getHeight() - 20,
-                                     juce::RectanglePlacement::fillDestination);
+                                     isArtworkTheme(currentTheme) ? juce::RectanglePlacement::stretchToFit : juce::RectanglePlacement::fillDestination);
             graphics.restoreState();
         }
 
@@ -1019,8 +1073,17 @@ void SplitSheetStudioEditor::paint(juce::Graphics& graphics)
         graphics.saveState();
         graphics.setOpacity(palette.textureOpacity * 0.72f);
         graphics.drawImageWithin(skinTexture, 10, 10, getWidth() - 20, getHeight() - 20,
-                                 juce::RectanglePlacement::fillDestination);
+                                 isArtworkTheme(currentTheme) ? juce::RectanglePlacement::stretchToFit : juce::RectanglePlacement::fillDestination);
         graphics.restoreState();
+    }
+
+    if (isArtworkTheme(currentTheme))
+    {
+        // Keep labels and controls readable over bright artwork at every editor size.
+        graphics.setColour(palette.card.withAlpha(0.92f));
+        graphics.fillRoundedRectangle(juce::Rectangle<float>(18.0f, 18.0f, static_cast<float>(getWidth() - 36), 182.0f), 12.0f);
+        graphics.fillRoundedRectangle(juce::Rectangle<float>(18.0f, static_cast<float>(getHeight() - 72),
+                                                             static_cast<float>(getWidth() - 36), 58.0f), 10.0f);
     }
 
     graphics.setColour(palette.secondaryText.withAlpha(0.42f));
@@ -1042,7 +1105,7 @@ void SplitSheetStudioEditor::paint(juce::Graphics& graphics)
     auto contentArea = getLocalBounds().reduced(24);
     contentArea.removeFromTop(168 + (settingsVisible ? 68 : 0));
     contentArea.removeFromBottom(58);
-    graphics.setColour(palette.section.withAlpha(0.91f));
+    graphics.setColour(palette.section.withAlpha(isArtworkTheme(currentTheme) ? 1.0f : 0.91f));
     graphics.fillRoundedRectangle(contentArea.toFloat(), 14.0f);
     graphics.setColour(palette.secondaryText.withAlpha(0.22f));
     graphics.drawRoundedRectangle(contentArea.toFloat(), 14.0f, 1.0f);
@@ -2034,6 +2097,30 @@ void SplitSheetStudioEditor::maybeGenerateBackendScreenshots()
         editor.switchStep(Step::review);
         editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile("plugin-review-send.png"),
                                           screenshotReviewWidth, screenshotReviewHeight);
+
+        // Render real skins for marketing without recoloring product screenshots.
+        editor.switchStep(Step::song);
+        for (const auto theme : { SplitSheetTheme::denim, SplitSheetTheme::speakeasy, SplitSheetTheme::plush })
+        {
+            editor.applyTheme(theme, false);
+            editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile("plugin-skin-" + keyForTheme(theme) + ".png"),
+                                              screenshotSongWidth, screenshotSongHeight);
+        }
+
+        for (const auto theme : { SplitSheetTheme::midnight, SplitSheetTheme::neon, SplitSheetTheme::electric,
+                                  SplitSheetTheme::blueprint, SplitSheetTheme::royal, SplitSheetTheme::walnut })
+        {
+            editor.applyTheme(theme, false);
+            const auto prefix = "plugin-skin-" + keyForTheme(theme);
+            editor.switchStep(Step::song);
+            editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile(prefix + ".png"), 1280, 900);
+            editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile(prefix + "-default.png"), defaultEditorWidth, defaultEditorHeight);
+            editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile(prefix + "-compact.png"), authedMinEditorWidth, authedMinEditorHeight);
+            editor.switchStep(Step::contributors);
+            editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile(prefix + "-contributors.png"), 1280, 1260);
+            editor.switchStep(Step::review);
+            editor.writeCurrentStepScreenshot(editor.backendScreenshotDir.getChildFile(prefix + "-review.png"), 1280, 980);
+        }
 
         juce::Timer::callAfterDelay(150, []
         {

@@ -25,6 +25,9 @@
         <div class="stat-label">Plan</div>
         <div class="stat-value"><%= usage.plan.name %></div>
         <p class="small"><%= usage.used %>/<%= usage.limit %> split sheets used in <%= usage.window.label %></p>
+        <% if (user.complimentaryActive) { %>
+          <p class="small">Complimentary: <%= user.complimentaryReason %><% if (user.complimentaryNote) { %> · <%= user.complimentaryNote %><% } %></p>
+        <% } %>
       </div>
       <div class="card">
         <div class="stat-label">Status</div>
@@ -48,6 +51,36 @@
         </select>
         <button type="submit">Update plan</button>
       </form>
+      <% if (user.complimentaryActive) { %>
+        <form method="post" action="/admin/complimentary-access/revoke" class="admin-plan-form" style="margin-top:12px;">
+          <input type="hidden" name="email" value="<%= user.email %>">
+          <button type="submit">Revoke complimentary access</button>
+        </form>
+      <% } %>
+    </div>
+
+    <div class="card">
+      <h2>Acquisition</h2>
+      <div class="grid">
+        <div>
+          <div class="stat-label">Signup method</div>
+          <p><b><%= user.attribution?.signupProvider || 'unknown' %></b></p>
+        </div>
+        <div>
+          <div class="stat-label">First source</div>
+          <p><b><%= user.attribution?.firstSource || 'unknown' %></b></p>
+          <p class="small">
+            <% if (user.attribution?.firstCampaign) { %>Campaign: <%= user.attribution.firstCampaign %><% } else { %>No campaign recorded<% } %>
+          </p>
+        </div>
+        <div>
+          <div class="stat-label">Last source</div>
+          <p><b><%= user.attribution?.lastSource || 'unknown' %></b></p>
+          <p class="small"><%= user.attribution?.lastCapturedAt || 'No timestamp recorded' %></p>
+        </div>
+      </div>
+      <p class="small">Landing: <%= user.attribution?.firstLandingPath || 'not recorded' %></p>
+      <p class="small">Referrer: <%= user.attribution?.firstReferrer || 'none recorded' %></p>
     </div>
 
     <div class="card">

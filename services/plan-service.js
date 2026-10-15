@@ -52,7 +52,12 @@ function normalizePlanKey(value) {
 }
 
 function planForUser(user = {}) {
-  return PLAN_DEFINITIONS[normalizePlanKey(user.planKey)] || PLAN_DEFINITIONS.free;
+  const billingPlan = PLAN_DEFINITIONS[normalizePlanKey(user.planKey)] || PLAN_DEFINITIONS.free;
+  const complimentaryPlan = user.complimentaryActive
+    ? PLAN_DEFINITIONS[normalizePlanKey(user.complimentaryPlanKey)]
+    : null;
+  if (!complimentaryPlan) return billingPlan;
+  return complimentaryPlan.monthlySheetLimit > billingPlan.monthlySheetLimit ? complimentaryPlan : billingPlan;
 }
 
 function currentUsageWindow(now = new Date()) {

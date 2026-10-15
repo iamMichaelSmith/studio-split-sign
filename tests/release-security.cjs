@@ -84,6 +84,7 @@ test(`isolated HTTP release security and remote signing (${process.env.RELEASE_T
   let browserCookie;
   let completed;
   let draftId;
+  const contributorCookies = [];
 
   await suite.test('signup requires email verification, including after restart', async () => {
     const registration = await register(ownerEmail);
@@ -100,6 +101,14 @@ test(`isolated HTTP release security and remote signing (${process.env.RELEASE_T
     await register('outsider@example.test');
     await verifyLatest();
     outsider = await login('outsider@example.test');
+    await json('/api/split-sheets', { token: owner.accessToken, status: 402 });
+    const adminLogin=await form('/admin/login',{username:'release-admin',password:'Release-test-admin-only-123'});
+    assert.equal(adminLogin.status,302);
+    const adminCookie=adminLogin.headers.get('set-cookie').split(';')[0];
+    for(const account of [owner,outsider]) {
+      const upgraded=await form(`/admin/users/${account.user.id}/plan`,{planKey:'creator'},adminCookie);
+      assert.equal(upgraded.status,302);
+    }
   });
 
   await suite.test('web login blocks foreign origins and external redirects; user cannot access admin', async () => {
@@ -151,22 +160,46 @@ test(`isolated HTTP release security and remote signing (${process.env.RELEASE_T
     const signRoute = (token) => `/split-sheet/sign/${detail.id}/${token}`;
     const invalid = await form(signRoute('invalid'), signerForm('Avery Stone', { agreeToSplits: 'yes' }));
     assert.equal(invalid.status, 404);
-    const missingAgreement = await form(signRoute(tokens[0]), signerForm('Avery Stone'));
+    const anonymous = await fetch(app.baseUrl + signRoute(tokens[0]), { redirect: 'manual' });
+    assert.equal(anonymous.status, 302);
+    assert.equal(anonymous.headers.get('location'), `/signup?next=${encodeURIComponent(signRoute(tokens[0]))}`);
+    const anonymousPost = await form(signRoute(tokens[0]), signerForm('Avery Stone', { agreeToSplits: 'yes' }));
+    assert.equal(anonymousPost.status, 302);
+    for (const [index, contributor] of detail.payload.contributors.entries()) {
+      const next = signRoute(tokens[index]);
+      const signup = await fetch(app.baseUrl + `/signup?next=${encodeURIComponent(next)}`);
+      const signupHtml = await signup.text();
+      assert.match(signupHtml, /Create your free account/);
+      assert.ok(signupHtml.includes(contributor.email));
+      const signupResult = await form('/signup', { email: contributor.email, password, displayName: contributor.legalName, next });
+      assert.equal(signupResult.status, 200);
+      const verificationToken = emailToken(mail.messages.at(-1), 'verify-email');
+      // Continue in a fresh browser session, as when the email opens another browser.
+      const verified = await fetch(app.baseUrl + `/verify-email?token=${verificationToken}&next=${encodeURIComponent(next)}`);
+      assert.ok((await verified.text()).includes(`/login?next=${encodeURIComponent(next)}`));
+      const signedIn = await form('/login', { email: contributor.email, password, next });
+      assert.equal(signedIn.headers.get('location'), next);
+      contributorCookies[index] = signedIn.headers.get('set-cookie').split(';')[0];
+      assert.equal((await login(contributor.email)).user.planKey, 'free');
+    }
+    const wrongAccount = await form(signRoute(tokens[0]), signerForm('Avery Stone', { agreeToSplits: 'yes' }), browserCookie);
+    assert.equal(wrongAccount.status, 403);
+    const missingAgreement = await form(signRoute(tokens[0]), signerForm('Avery Stone'), contributorCookies[0]);
     assert.equal(missingAgreement.status, 400);
-    const mailCount = mail.messages.length;
-    const first = await form(signRoute(tokens[0]), signerForm('Avery Stone', { agreeToSplits: 'yes' }));
+    const mailCount = mail.messages.filter(message => /Content-Type: application\/pdf/i.test(message.raw)).length;
+    const first = await form(signRoute(tokens[0]), signerForm('Avery Stone', { agreeToSplits: 'yes' }), contributorCookies[0]);
     assert.equal(first.status, 200);
     detail = (await json(route, { token: owner.accessToken })).splitSheet;
     assert.equal(detail.status, 'pending-signatures');
     assert.equal(detail.payload.contributors.filter((contributor) => contributor.signedAt).length, 1);
-    assert.equal(mail.messages.length, mailCount, 'No completion email before the last signer');
-    const last = await form(signRoute(tokens[1]), signerForm('Jordan Reed', { agreeToSplits: 'yes' }));
+    assert.equal(mail.messages.filter(message => /Content-Type: application\/pdf/i.test(message.raw)).length, mailCount, 'No completion email before the last signer');
+    const last = await form(signRoute(tokens[1]), signerForm('Jordan Reed', { agreeToSplits: 'yes' }), contributorCookies[1]);
     assert.equal(last.status, 200);
     completed = (await json(route, { token: owner.accessToken })).splitSheet;
     assert.equal(completed.status, 'completed');
     assert.ok(completed.payload.auditChecksum);
     assert.match(completed.pdfUrl, /\/split-sheet\/pdf\/[^?]+\?token=/);
-    const delivery = mail.messages.at(-1);
+    const delivery = mail.messages.filter(message => /Content-Type: application\/pdf/i.test(message.raw)).at(-1);
     assert.ok(delivery.recipients.includes('avery-contributor@example.test'));
     assert.ok(delivery.recipients.includes('jordan-contributor@example.test'));
     assert.match(delivery.raw, /Content-Type: application\/pdf/i);
@@ -176,10 +209,23 @@ test(`isolated HTTP release security and remote signing (${process.env.RELEASE_T
     const tokenPdf = await fetch(completed.pdfUrl, { redirect: 'manual' });
     assert.equal(tokenPdf.status, 200);
     assert.match(Buffer.from(await tokenPdf.arrayBuffer()).toString('utf8', 0, 5), /^%PDF/);
-    const finalMailCount = mail.messages.length;
-    const replay = await form(signRoute(tokens[1]), signerForm('Changed Name', { agreeToSplits: 'yes' }));
+    const finalMailCount = mail.messages.filter(message => /Content-Type: application\/pdf/i.test(message.raw)).length;
+    for (const cookie of [browserCookie, ...contributorCookies]) {
+      const vault = await fetch(app.baseUrl + '/account?tab=vault', { headers: { cookie } });
+      assert.equal(vault.status, 200);
+      const html = await vault.text();
+      assert.ok(html.includes('Midnight Signal'));
+      if (cookie !== browserCookie) assert.ok(!html.includes(`/account/split-sheets/${completed.id}/delete`));
+      const pdf = await fetch(`${app.baseUrl}/split-sheet/pdf/${completed.id}`, { headers: { cookie } });
+      assert.equal(pdf.status, 200);
+    }
+    for (const action of ['archive', 'delete']) {
+      const forbidden = await form(`/account/split-sheets/${completed.id}/${action}`, { confirmSongTitle: 'Midnight Signal' }, contributorCookies[0]);
+      assert.equal(forbidden.status, 403);
+    }
+    const replay = await form(signRoute(tokens[1]), signerForm('Changed Name', { agreeToSplits: 'yes' }), contributorCookies[1]);
     assert.equal(replay.status, 200);
-    assert.equal(mail.messages.length, finalMailCount);
+    assert.equal(mail.messages.filter(message => /Content-Type: application\/pdf/i.test(message.raw)).length, finalMailCount);
     const after = (await json(route, { token: owner.accessToken })).splitSheet;
     assert.deepEqual(after.payload, completed.payload);
   });
@@ -219,11 +265,11 @@ test(`isolated HTTP release security and remote signing (${process.env.RELEASE_T
     const route = `/api/split-sheets/${created.splitSheet.id}`;
     const detail = (await json(route, { token: owner.accessToken })).splitSheet;
     const tokens = detail.payload.contributors.map((contributor) => contributor.signerToken);
-    const beforeSigningMailCount = mail.messages.length;
+    const beforeSigningMailCount = mail.messages.filter(message => /Content-Type: application\/pdf/i.test(message.raw)).length;
     const signRoute = (token) => `/split-sheet/sign/${detail.id}/${token}`;
     const [first, second] = await Promise.all([
-      form(signRoute(tokens[0]), signerForm('Avery Stone', { agreeToSplits: 'yes' })),
-      form(signRoute(tokens[1]), signerForm('Jordan Reed', { agreeToSplits: 'yes' }))
+      form(signRoute(tokens[0]), signerForm('Avery Stone', { agreeToSplits: 'yes' }), contributorCookies[0]),
+      form(signRoute(tokens[1]), signerForm('Jordan Reed', { agreeToSplits: 'yes' }), contributorCookies[1])
     ]);
     assert.equal(first.status, 200);
     assert.equal(second.status, 200);
@@ -231,7 +277,27 @@ test(`isolated HTTP release security and remote signing (${process.env.RELEASE_T
     assert.equal(after.status, 'completed');
     assert.equal(after.payload.contributors.filter((contributor) => contributor.signedAt).length, 2);
     assert.ok(after.payload.auditTrail.filter((event) => event.type === 'split-sheet-finalized').length <= 1);
-    assert.equal(mail.messages.length, beforeSigningMailCount + 1);
+    assert.equal(mail.messages.filter(message => /Content-Type: application\/pdf/i.test(message.raw)).length, beforeSigningMailCount + 1);
+  });
+
+  await suite.test('shared sheets preserve free allowance and remain available when creator archives', async () => {
+    for (const cookie of contributorCookies) {
+      const usage = await fetch(app.baseUrl + '/api/account/usage', { headers: { cookie, origin: app.baseUrl } });
+      assert.equal(usage.status, 200);
+      assert.equal((await usage.json()).usage.used, 0);
+    }
+    const deleted = await form(`/account/split-sheets/${completed.id}/delete`, { confirmSongTitle: 'Midnight Signal' }, browserCookie);
+    assert.equal(deleted.status, 409);
+    const archived = await form(`/account/split-sheets/${completed.id}/archive`, {}, browserCookie);
+    assert.equal(archived.status, 302);
+    const ownerVault = await fetch(app.baseUrl + '/account?tab=vault', { headers: { cookie: browserCookie } });
+    assert.ok(!(await ownerVault.text()).includes(`ID ${completed.id}`));
+    for (const cookie of contributorCookies) {
+      const vault = await fetch(app.baseUrl + '/account?tab=vault', { headers: { cookie } });
+      assert.ok((await vault.text()).includes(`ID ${completed.id}`));
+      const pdf = await fetch(`${app.baseUrl}/split-sheet/pdf/${completed.id}`, { headers: { cookie } });
+      assert.equal(pdf.status, 200);
+    }
   });
 
   await suite.test('password reset revokes browser, access and refresh sessions', async () => {

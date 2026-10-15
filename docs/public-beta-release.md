@@ -2,8 +2,8 @@
 
 ## Current beta
 - Product: Split Sheet Studio
-- Plugin version: `0.1.2`
-- Installer: `vst/dist/SplitSheetStudio-Setup-0.1.2.exe`
+- Plugin version: `0.1.3`
+- Installer: `vst/dist/SplitSheetStudio-Setup-0.1.3.exe`
 - Public download: `https://app.splitsheetstudio.com/downloads/plugin/latest`
 - Hosted app: `https://app.splitsheetstudio.com`
 - Marketing page: `https://splitsheetstudio.com/beta`
@@ -52,7 +52,7 @@ The beta can be promoted when:
 - both final emails arrive
 - admin resend final packet works
 - revision link creates a new signable version
-- plugin update check reports `0.1.2` as current/latest
+- plugin update check reports `0.1.3` as current/latest
 
 ## Before paid launch
 - Buy and configure Windows code-signing certificate.

@@ -4,9 +4,11 @@ This walkthrough demonstrates the full 2-signer split-sheet flow in production s
 
 - Artist #1 creates the split
 - Both signers receive email invite links
+- Each signer creates a free account or signs in with their invited email; email verification and sign-in return them to the invitation
 - Signer #1 signs and sees pending status
 - Signer #2 signs and sees completion status
 - Final packet is generated and emailed to recipients
+- The signed sheet is linked to each signer's account and appears in their vault, alongside the creator's record; receiving and signing do not use the recipient's creation quota
 
 ## Why this exists (problem -> solution)
 
@@ -59,6 +61,7 @@ What happens:
 
 What happens:
 - Signer sees song + role + split percentages.
+- Before viewing or submitting paperwork, the signer must sign in with a verified account matching the invitation email. Signup prefills the invited email and starts on Free without payment.
 - Reviews the complete contributor split.
 - Explicitly confirms agreement, signs via touch/mouse canvas, and submits.
 - Secure links expire after the configured TTL and can be renewed by resend.
@@ -95,6 +98,7 @@ What happens:
 - Completion email is sent to selected recipients.
 - Split summary table is embedded in signer invite and completion email content.
 - Delivery status and the final audit timeline remain attached to the split record.
+- Contributors can view and download their shared records, while only the creator can manage the request. Shared signed records cannot be permanently deleted; archiving the creator's entry keeps it available in contributors' vaults.
 
 ---
 

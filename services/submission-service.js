@@ -106,6 +106,14 @@ function createSqliteAdapter(db) {
       OR (owner_user_id IS NULL AND lower(owner_email) = lower(@ownerEmail))
     ORDER BY updated_at DESC, created_at DESC
   `);
+  const listByAccountStmt = db.prepare(`
+    SELECT * FROM submissions
+    WHERE owner_user_id = @ownerUserId
+      OR (owner_user_id IS NULL AND lower(owner_email) = lower(@ownerEmail))
+      OR EXISTS (SELECT 1 FROM json_each(payload_json, '$.contributors')
+        WHERE json_extract(value, '$.accountUserId') = @participantUserId)
+    ORDER BY updated_at DESC, created_at DESC
+  `);
   const listAllByTypeStmt = db.prepare(`
     SELECT * FROM submissions
     WHERE type = ?
@@ -149,8 +157,10 @@ function createSqliteAdapter(db) {
     async deleteSubmission(id) {
       return deleteByIdStmt.run(id).changes > 0;
     },
-    async listSubmissions({ ownerUserId = null, ownerEmail = null, type = null } = {}) {
-      const rows = ownerUserId || ownerEmail
+    async listSubmissions({ ownerUserId = null, ownerEmail = null, participantUserId = null, type = null } = {}) {
+      const rows = participantUserId
+        ? listByAccountStmt.all({ ownerUserId: ownerUserId || "", ownerEmail: ownerEmail || "", participantUserId })
+        : ownerUserId || ownerEmail
         ? listByOwnerStmt.all({ ownerUserId: ownerUserId || "", ownerEmail: ownerEmail || "" })
         : (type ? listAllByTypeStmt.all(type) : listAllStmt.all());
       const submissions = rows.map(rowToSubmission);
@@ -267,10 +277,19 @@ function createPostgresAdapter(pool) {
       const result = await pool.query(`DELETE FROM submissions WHERE id = $1`, [id]);
       return result.rowCount > 0;
     },
-    async listSubmissions({ ownerUserId = null, ownerEmail = null, type = null } = {}) {
+    async listSubmissions({ ownerUserId = null, ownerEmail = null, participantUserId = null, type = null } = {}) {
       await ready;
       let result;
-      if (ownerUserId || ownerEmail) {
+      if (participantUserId) {
+        result = await pool.query(`
+          SELECT * FROM submissions
+          WHERE owner_user_id = $1
+             OR (owner_user_id IS NULL AND lower(owner_email) = lower($2))
+             OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(payload_json::jsonb->'contributors', '[]'::jsonb)) AS contributor
+               WHERE contributor->>'accountUserId' = $3)
+          ORDER BY updated_at DESC, created_at DESC
+        `, [ownerUserId || "", ownerEmail || "", participantUserId]);
+      } else if (ownerUserId || ownerEmail) {
         result = await pool.query(`
           SELECT * FROM submissions
           WHERE owner_user_id = $1

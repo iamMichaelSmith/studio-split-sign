@@ -1,6 +1,6 @@
 ﻿cmake_minimum_required(VERSION 3.22)
 
-project(SplitSheetStudioVST VERSION 0.1.2)
+project(SplitSheetStudioVST VERSION 0.1.3)
 
 include(FetchContent)
 
@@ -21,6 +21,12 @@ juce_add_binary_data(SplitSheetAssets
     assets/soft.png
     assets/speakeasy.png
     assets/plush.png
+    assets/midnight.png
+    assets/neon.png
+    assets/electric.png
+    assets/blueprint.png
+    assets/royal.png
+    assets/walnut.png
 )
 
 set(SPLIT_SHEET_PLUGIN_FORMATS VST3 Standalone)
@@ -51,6 +57,14 @@ juce_add_plugin(SplitSheetStudio
   AU_SANDBOX_SAFE TRUE
   HARDENED_RUNTIME_ENABLED TRUE
 )
+
+juce_add_gui_app(SplitSheetScreenshotRenderer PRODUCT_NAME "Split Sheet Screenshot Renderer")
+target_sources(SplitSheetScreenshotRenderer PRIVATE tools/ScreenshotRenderer.cpp)
+target_link_libraries(SplitSheetScreenshotRenderer PRIVATE SplitSheetStudio)
+target_include_directories(SplitSheetScreenshotRenderer PRIVATE "${juce_SOURCE_DIR}/modules")
+target_compile_features(SplitSheetScreenshotRenderer PRIVATE cxx_std_17)
+target_compile_definitions(SplitSheetScreenshotRenderer PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 JUCE_STANDALONE_APPLICATION=1)
+set_target_properties(SplitSheetScreenshotRenderer PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 target_sources(SplitSheetStudio
   PRIVATE

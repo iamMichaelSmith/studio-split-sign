@@ -9,7 +9,7 @@
 <body>
   <div class="wrap">
     <h1>Admin Dashboard</h1>
-    <p class="small">Manage users, plan tiers, usage, signature status, and submitted split sheets.</p>
+    <p class="small">Manage users, plan tiers, usage, acquisition source, signature status, and submitted split sheets.</p>
 
     <% if (banner) { %>
       <div class="banner"><%= banner %></div>
@@ -18,24 +18,179 @@
     <div class="grid">
       <div class="card">
         <div class="stat-label">Users</div>
-        <div class="stat-value"><%= users.length %></div>
+        <div class="stat-value"><%= adminStats.totalUsers %></div>
+        <p class="small"><%= adminStats.activeUsers %> active · <%= adminStats.verifiedUsers %> verified</p>
+      </div>
+      <div class="card">
+        <div class="stat-label">Paid users</div>
+        <div class="stat-value"><%= adminStats.paidUsers %></div>
+        <p class="small"><%= adminStats.freeUsers %> free accounts</p>
+      </div>
+      <div class="card">
+        <div class="stat-label">Subscribers</div>
+        <div class="stat-value"><%= adminStats.marketingSubscribers %></div>
+        <p class="small">Consented contacts for n8n journeys</p>
       </div>
       <div class="card">
         <div class="stat-label">Split sheets</div>
-        <div class="stat-value"><%= docs.filter((doc) => doc.type === 'split-sheet').length %></div>
-      </div>
-      <div class="card">
-        <div class="stat-label">Pending signatures</div>
-        <div class="stat-value"><%= docs.filter((doc) => doc.type === 'split-sheet' && doc.status === 'pending-signatures').length %></div>
-      </div>
-      <div class="card">
-        <div class="stat-label">Completed</div>
-        <div class="stat-value"><%= docs.filter((doc) => doc.type === 'split-sheet' && doc.status === 'completed').length %></div>
+        <div class="stat-value"><%= adminStats.splitSheets %></div>
+        <p class="small"><%= adminStats.completedSplitSheets %> complete · <%= adminStats.pendingSignatures %> pending</p>
       </div>
       <div class="card">
         <div class="stat-label">Email failures</div>
-        <div class="stat-value"><%= docs.filter((doc) => doc.type === 'split-sheet' && doc.emailIssues && doc.emailIssues.length).length %></div>
+        <div class="stat-value"><%= adminStats.emailFailures %></div>
+        <p class="small">Proposal, invite, or final packet issues</p>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="timeline-top">
+        <div>
+          <h2>Acquisition Sources</h2>
+          <p class="small">First-touch source is captured from UTM links, ad click IDs, and external referrers such as Facebook, Reddit, Google, Instagram, TikTok, YouTube, and direct traffic.</p>
+        </div>
+      </div>
+      <% if (!adminStats.sourceBreakdown.length) { %>
+        <p class="small">No user acquisition data yet.</p>
+      <% } else { %>
+        <% adminStats.sourceBreakdown.forEach((row) => { %>
+          <div class="timeline-item">
+            <div class="timeline-top">
+              <div>
+                <b><%= row.key %></b>
+                <div class="small"><%= row.count %> signup<%= row.count === 1 ? '' : 's' %> · <%= row.paid %> paid · <%= row.free %> free</div>
+                <% if (row.topLandingPath) { %><div class="small">Top landing: <%= row.topLandingPath %></div><% } %>
+              </div>
+              <a href="/admin?source=<%= encodeURIComponent(row.key) %>">Filter users</a>
+            </div>
+          </div>
+        <% }) %>
+      <% } %>
+      <% if (adminStats.providerBreakdown.length) { %>
+        <div class="timeline-top" style="margin-top:16px;">
+          <div>
+            <h3>Signup Method</h3>
+            <p class="small">
+              <% adminStats.providerBreakdown.forEach((row, index) => { %>
+                <%= index ? ' · ' : '' %><%= row.key %>: <%= row.count %>
+              <% }) %>
+            </p>
+          </div>
+        </div>
+      <% } %>
+    </div>
+
+    <div class="card">
+      <div class="timeline-top">
+        <div>
+          <h2>Users and Plans</h2>
+          <p class="small">Showing <%= adminStats.filteredUsers %> of <%= adminStats.totalUsers %> users.</p>
+        </div>
+      </div>
+      <form method="get" action="/admin" class="admin-plan-form" style="margin-bottom:16px;">
+        <input type="search" name="q" placeholder="Search name, email, source, campaign" value="<%= adminStats.filters.q %>" aria-label="Search users">
+        <select name="plan" aria-label="Filter by plan">
+          <option value="">All plans</option>
+          <% planOptions.forEach((plan) => { %>
+            <option value="<%= plan.key %>" <%= adminStats.filters.plan === plan.key ? 'selected' : '' %>><%= plan.name %></option>
+          <% }) %>
+        </select>
+        <select name="status" aria-label="Filter by status">
+          <option value="">All statuses</option>
+          <option value="active" <%= adminStats.filters.status === 'active' ? 'selected' : '' %>>Active</option>
+          <option value="disabled" <%= adminStats.filters.status === 'disabled' ? 'selected' : '' %>>Disabled</option>
+        </select>
+        <select name="source" aria-label="Filter by acquisition source">
+          <option value="">All sources</option>
+          <% adminStats.availableSources.forEach((source) => { %>
+            <option value="<%= source %>" <%= adminStats.filters.source === source ? 'selected' : '' %>><%= source %></option>
+          <% }) %>
+        </select>
+        <button type="submit">Filter</button>
+        <a href="/admin">Clear</a>
+      </form>
+      <% if (!users.length) { %>
+        <p>No users match the current filters.</p>
+      <% } %>
+      <% users.forEach((user) => { %>
+        <% const effectivePlan = planForUser(user); %>
+        <div class="timeline-item">
+          <div class="timeline-top">
+            <div>
+              <b><%= user.displayName %></b>
+              <div class="small"><%= user.email %> · <%= user.status %> · verified: <%= user.emailVerifiedAt ? 'yes' : 'no' %></div>
+              <div class="small"><%= user.usage.used %>/<%= user.usage.limit %> split sheets used in <%= user.usage.window.label %> · plan: <%= effectivePlan.name %></div>
+              <div class="small">
+                Source: <%= user.attribution?.firstSource || 'unknown' %>
+                <% if (user.attribution?.firstCampaign) { %> · campaign: <%= user.attribution.firstCampaign %><% } %>
+                <% if (user.attribution?.signupProvider) { %> · signup: <%= user.attribution.signupProvider %><% } %>
+              </div>
+              <% if (user.attribution?.firstLandingPath) { %>
+                <div class="small">Landing: <%= user.attribution.firstLandingPath %><% if (user.attribution?.firstReferrer) { %> · referrer: <%= user.attribution.firstReferrer %><% } %></div>
+              <% } %>
+              <% if (user.complimentaryActive) { %>
+                <div class="small">Complimentary access: <%= (planOptions.find((plan) => plan.key === user.complimentaryPlanKey) || {}).name || user.complimentaryPlanKey %> · <%= user.complimentaryReason %></div>
+              <% } %>
+              <div class="inline-actions"><a href="/admin/users/<%= user.id %>">Open user detail</a></div>
+            </div>
+            <form method="post" action="/admin/users/<%= user.id %>/plan" class="admin-plan-form">
+              <select name="planKey" aria-label="Plan for <%= user.email %>">
+                <% planOptions.forEach((plan) => { %>
+                  <option value="<%= plan.key %>" <%= user.planKey === plan.key ? 'selected' : '' %>><%= plan.name %> · <%= plan.monthlySheetLimit %>/mo</option>
+                <% }) %>
+              </select>
+              <button type="submit">Update plan</button>
+            </form>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+
+    <div class="card">
+      <h2>Complimentary Access</h2>
+      <p class="small">Grant full paid access for plugin reviewers, sponsored artists, partners, or manual comps. If the email already has an account, it updates immediately. If not, the grant is saved and applies when they sign up.</p>
+      <form method="post" action="/admin/complimentary-access" class="admin-plan-form">
+        <input type="email" name="email" placeholder="reviewer@example.com" aria-label="Email to grant complimentary access" required>
+        <select name="planKey" aria-label="Complimentary plan">
+          <% planOptions.filter((plan) => plan.key !== 'free').forEach((plan) => { %>
+            <option value="<%= plan.key %>" <%= plan.key === 'studio_pro' ? 'selected' : '' %>><%= plan.name %> · <%= plan.monthlySheetLimit %>/mo</option>
+          <% }) %>
+        </select>
+        <select name="reason" aria-label="Reason">
+          <option value="plugin_review">Plugin review</option>
+          <option value="sponsorship">Sponsorship</option>
+          <option value="partner">Partner</option>
+          <option value="manual">Manual comp</option>
+        </select>
+        <input type="text" name="note" placeholder="Optional note" aria-label="Optional note">
+        <button type="submit">Grant free full access</button>
+      </form>
+      <% if (!complimentaryGrants.length) { %>
+        <p class="small">No complimentary access grants yet.</p>
+      <% } %>
+      <% complimentaryGrants.forEach((grant) => { %>
+        <div class="timeline-item">
+          <div class="timeline-top">
+            <div>
+              <b><%= grant.email %></b>
+              <div class="small">
+                <%= (planOptions.find((plan) => plan.key === grant.plan_key) || {}).name || grant.plan_key %>
+                · <%= grant.reason %>
+                · <%= grant.status %>
+                · granted <%= grant.granted_at %>
+                <% if (grant.user_id) { %> · account: yes<% } else { %> · account: pending signup<% } %>
+              </div>
+              <% if (grant.note) { %><div class="small"><%= grant.note %></div><% } %>
+            </div>
+            <% if (grant.status === 'active') { %>
+              <form method="post" action="/admin/complimentary-access/revoke">
+                <input type="hidden" name="email" value="<%= grant.email %>">
+                <button type="submit">Revoke</button>
+              </form>
+            <% } %>
+          </div>
+        </div>
+      <% }) %>
     </div>
 
     <div class="card">
@@ -65,33 +220,6 @@
             <% if (doc.status === 'completed') { %>
               <form method="post" action="/admin/split/<%= doc.id %>/resend-final"><button type="submit">Resend final packet</button></form>
             <% } %>
-          </div>
-        </div>
-      <% }) %>
-    </div>
-
-    <div class="card">
-      <h2>Users and Plans</h2>
-      <% if (!users.length) { %>
-        <p>No users yet.</p>
-      <% } %>
-      <% users.forEach((user) => { %>
-        <div class="timeline-item">
-          <div class="timeline-top">
-            <div>
-              <b><%= user.displayName %></b>
-              <div class="small"><%= user.email %> · <%= user.status %> · verified: <%= user.emailVerifiedAt ? 'yes' : 'no' %></div>
-              <div class="small"><%= user.usage.used %>/<%= user.usage.limit %> split sheets used in <%= user.usage.window.label %></div>
-              <div class="inline-actions"><a href="/admin/users/<%= user.id %>">Open user detail</a></div>
-            </div>
-            <form method="post" action="/admin/users/<%= user.id %>/plan" class="admin-plan-form">
-              <select name="planKey" aria-label="Plan for <%= user.email %>">
-                <% planOptions.forEach((plan) => { %>
-                  <option value="<%= plan.key %>" <%= user.planKey === plan.key ? 'selected' : '' %>><%= plan.name %> · <%= plan.monthlySheetLimit %>/mo</option>
-                <% }) %>
-              </select>
-              <button type="submit">Update plan</button>
-            </form>
           </div>
         </div>
       <% }) %>

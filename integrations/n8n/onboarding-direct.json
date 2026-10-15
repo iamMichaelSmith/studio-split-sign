@@ -1,0 +1,106 @@
+{
+  "name": "Split Sheet Studio — Direct signup onboarding",
+  "active": false,
+  "nodes": [
+    {
+      "id": "0cec2fe2-d13b-44a1-b148-623c9c42f41c",
+      "name": "Every 15 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2253adff-b4be-401f-a294-b9edc6799f40",
+      "name": "Run due journey emails",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://app.splitsheetstudio.com/api/automations/onboarding/direct/run",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"dryRun\":true,\"limit\":25}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "41136c2b-1544-4cec-b99c-00fd03981287",
+      "name": "Check delivery results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nif (result.needsReview > 0) throw new Error('Onboarding delivery needs review in the app database; do not automatically resend uncertain deliveries.');\nif (!result.dryRun && result.enabled === false) throw new Error('Email journeys are disabled in the app.');\nreturn $input.all();"
+      }
+    },
+    {
+      "id": "cfb5fc06-c435-47bf-bd6d-7ee12d607486",
+      "name": "Setup and journey",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50,
+        -360
+      ],
+      "parameters": {
+        "width": 760,
+        "height": 300,
+        "content": "## Direct signup journey\n\nWelcome → first action → vault → plugin skins → approved collaborators → next session.\nPlanned days: 0, 2, 4, 7, 10, 14. The app checks current account activity, plan and consent before delivery.\n\n1. Deploy the app changes. Set ONBOARDING_AUTOMATION_TOKEN and EMAIL_JOURNEYS_ENABLED.\n2. In the HTTP node, select Header Auth: Authorization = Bearer <the same token>.\n3. Execute with dryRun=true; this never sends email.\n4. Change dryRun to false, test with your own opted-in account, and publish.\n\nThe app sends through its existing SES/SMTP service. This workflow receives counts only. See docs/email-automation.md for recovery and suppression behavior."
+      }
+    }
+  ],
+  "connections": {
+    "Every 15 minutes": {
+      "main": [
+        [
+          {
+            "node": "Run due journey emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run due journey emails": {
+      "main": [
+        [
+          {
+            "node": "Check delivery results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Chicago",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  }
+}

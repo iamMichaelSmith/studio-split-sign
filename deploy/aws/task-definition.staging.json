@@ -1,18 +1,9 @@
 {
-  "family": "splitsheetstudio-staging",
-  "networkMode": "awsvpc",
-  "requiresCompatibilities": [
-    "FARGATE"
-  ],
-  "cpu": "512",
-  "memory": "1024",
-  "executionRoleArn": "arn:aws:iam::309014076408:role/ecsTaskExecutionRole",
-  "taskRoleArn": "arn:aws:iam::309014076408:role/splitsheetstudioTaskRole",
   "containerDefinitions": [
     {
       "name": "splitsheetstudio-staging",
-      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20260823-beta-admin-tools-v1",
-      "essential": true,
+      "image": "309014076408.dkr.ecr.us-east-1.amazonaws.com/splitsheetstudio-staging:20261014-windows-013",
+      "cpu": 0,
       "portMappings": [
         {
           "containerPort": 5050,
@@ -20,136 +11,191 @@
           "protocol": "tcp"
         }
       ],
+      "essential": true,
       "environment": [
         {
-          "name": "NODE_ENV",
-          "value": "production"
-        },
-        {
-          "name": "HOST",
-          "value": "0.0.0.0"
-        },
-        {
-          "name": "PORT",
-          "value": "5050"
-        },
-        {
-          "name": "PUBLIC_BASE_URL",
-          "value": "https://app.splitsheetstudio.com"
-        },
-        {
-          "name": "DB_PROVIDER",
-          "value": "postgres"
-        },
-        {
-          "name": "PGSSLMODE",
-          "value": "require"
-        },
-        {
-          "name": "PG_SSL_REJECT_UNAUTHORIZED",
-          "value": "false"
-        },
-        {
-          "name": "PDF_STORAGE",
-          "value": "s3"
-        },
-        {
-          "name": "S3_BUCKET",
-          "value": "splitsheetstudio-staging-pdfs-309014076408-us-east-1"
+          "name": "SIGNER_REMINDER_AFTER_HOURS",
+          "value": "24"
         },
         {
           "name": "S3_REGION",
           "value": "us-east-1"
         },
         {
-          "name": "S3_PREFIX",
-          "value": "final-pdfs"
-        },
-        {
-          "name": "SESSION_STORE",
-          "value": "redis"
-        },
-        {
-          "name": "REDIS_PREFIX",
-          "value": "splitsheet:sess:"
-        },
-        {
-          "name": "COOKIE_SECURE",
-          "value": "true"
-        },
-        {
           "name": "TRUST_PROXY",
           "value": "true"
         },
         {
-          "name": "ALLOW_PUBLIC_REGISTRATION",
+          "name": "STRIPE_STUDIO_PRO_PRICE_ID",
+          "value": "price_1UF2hPISjA58kSWklxV3Tgrr"
+        },
+        {
+          "name": "PGSSLMODE",
+          "value": "verify-full"
+        },
+        {
+          "name": "STRIPE_CREATOR_PRICE_ID",
+          "value": "price_1UF2f6ISjA58kSWkuJmWx9da"
+        },
+        {
+          "name": "HOST",
+          "value": "0.0.0.0"
+        },
+        {
+          "name": "REQUIRE_EMAIL_VERIFICATION",
           "value": "true"
         },
         {
-          "name": "SES_REGION",
-          "value": "us-east-1"
-        },
-        {
-          "name": "FROM_EMAIL",
-          "value": "no-reply@splitsheetstudio.com"
-        },
-        {
-          "name": "REPLY_TO_EMAIL",
-          "value": "blakmarigold@gmail.com"
-        },
-        {
-          "name": "NOTIFY_EMAIL",
-          "value": "blakmarigold@gmail.com"
-        },
-        {
-          "name": "STRIPE_PLUGIN_PRICE_USD_CENTS",
-          "value": "1000"
-        },
-        {
-          "name": "PLUGIN_VERSION_LABEL",
-          "value": "0.1.1"
-        },
-        {
-          "name": "PLUGIN_LATEST_VERSION_LABEL",
-          "value": "0.1.1"
-        },
-        {
-          "name": "PLUGIN_MINIMUM_SUPPORTED_VERSION",
-          "value": ""
-        },
-        {
           "name": "PLUGIN_RELEASE_NOTES_URL",
-          "value": "https://splitsheetstudio.com/pricing"
-        },
-        {
-          "name": "PLUGIN_DOWNLOAD_URL",
-          "value": ""
-        },
-        {
-          "name": "PLUGIN_DOWNLOAD_BUCKET",
-          "value": "splitsheetstudio-staging-pdfs-309014076408-us-east-1"
-        },
-        {
-          "name": "PLUGIN_DOWNLOAD_KEY",
-          "value": "downloads/SplitSheetStudio-Setup-0.1.1.exe"
-        },
-        {
-          "name": "SIGNER_LINK_TTL_HOURS",
-          "value": "168"
+          "value": "https://splitsheetstudio.com/plugin#new-skins"
         },
         {
           "name": "AUTO_SIGNER_REMINDERS",
           "value": "true"
         },
         {
-          "name": "SIGNER_REMINDER_AFTER_HOURS",
-          "value": "24"
+          "name": "DB_PROVIDER",
+          "value": "postgres"
+        },
+        {
+          "name": "ALLOW_PUBLIC_REGISTRATION",
+          "value": "true"
+        },
+        {
+          "name": "S3_PREFIX",
+          "value": "final-pdfs"
+        },
+        {
+          "name": "PDF_STORAGE",
+          "value": "s3"
+        },
+        {
+          "name": "COOKIE_SECURE",
+          "value": "true"
+        },
+        {
+          "name": "SUPPORT_EMAIL",
+          "value": "Contact@blakmarigold.com"
+        },
+        {
+          "name": "PUBLIC_BASE_URL",
+          "value": "https://app.splitsheetstudio.com"
+        },
+        {
+          "name": "REDIS_PREFIX",
+          "value": "splitsheet:sess:"
+        },
+        {
+          "name": "PLUGIN_DOWNLOAD_URL",
+          "value": ""
+        },
+        {
+          "name": "AUTH_DEBUG_TOKENS",
+          "value": "false"
+        },
+        {
+          "name": "PLUGIN_DOWNLOAD_BUCKET",
+          "value": "splitsheetstudio-staging-pdfs-309014076408-us-east-1"
+        },
+        {
+          "name": "S3_BUCKET",
+          "value": "splitsheetstudio-staging-pdfs-309014076408-us-east-1"
+        },
+        {
+          "name": "REPLY_TO_EMAIL",
+          "value": "blakmarigold@gmail.com"
+        },
+        {
+          "name": "CSRF_PROTECTION_ENABLED",
+          "value": "true"
         },
         {
           "name": "SIGNER_REMINDER_INTERVAL_MINUTES",
           "value": "60"
+        },
+        {
+          "name": "PORT",
+          "value": "5050"
+        },
+        {
+          "name": "STRIPE_STUDIO_ANNUAL_PRICE_ID",
+          "value": "price_1UF2iuISjA58kSWkyP1fxZe1"
+        },
+        {
+          "name": "PLUGIN_LATEST_VERSION_LABEL",
+          "value": "0.1.3"
+        },
+        {
+          "name": "FROM_EMAIL",
+          "value": "no-reply@splitsheetstudio.com"
+        },
+        {
+          "name": "PLUGIN_MINIMUM_SUPPORTED_VERSION",
+          "value": ""
+        },
+        {
+          "name": "PLUGIN_DOWNLOAD_KEY",
+          "value": "downloads/SplitSheetStudio-Setup-0.1.3.exe"
+        },
+        {
+          "name": "SIGNER_LINK_TTL_HOURS",
+          "value": "168"
+        },
+        {
+          "name": "SESSION_STORE",
+          "value": "redis"
+        },
+        {
+          "name": "PG_SSL_REJECT_UNAUTHORIZED",
+          "value": "true"
+        },
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "STRIPE_CREATOR_ANNUAL_PRICE_ID",
+          "value": "price_1UF2fZISjA58kSWkO8xExDHG"
+        },
+        {
+          "name": "SES_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "PLUGIN_VERSION_LABEL",
+          "value": "0.1.3"
+        },
+        {
+          "name": "PG_SSL_CA_PATH",
+          "value": "/opt/aws-rds/global-bundle.pem"
+        },
+        {
+          "name": "NOTIFY_EMAIL",
+          "value": "blakmarigold@gmail.com"
+        },
+        {
+          "name": "EMAIL_JOURNEYS_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "EMAIL_JOURNEYS_MODE",
+          "value": "production"
+        },
+        {
+          "name": "APP_RELEASE_ID",
+          "value": "20261014-onboarding-production"
+        },
+        {
+          "name": "EMAIL_JOURNEY_POSTAL_ADDRESS",
+          "value": "14205 N Mopac Expressway, STE 570, Austin, TX 78728"
+        },
+        {
+          "name": "EMAIL_JOURNEY_DAY_MINUTES",
+          "value": "1440"
         }
       ],
+      "mountPoints": [],
+      "volumesFrom": [],
       "secrets": [
         {
           "name": "DATABASE_URL",
@@ -158,6 +204,10 @@
         {
           "name": "SESSION_SECRET",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/session-secret-dPPQoI"
+        },
+        {
+          "name": "PDF_LINK_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/pdf-link-secret-C8KKis"
         },
         {
           "name": "REDIS_URL",
@@ -186,6 +236,30 @@
         {
           "name": "OWNER_DISPLAY_NAME",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/owner-display-name-6DMF5m"
+        },
+        {
+          "name": "CONTACT_EXPORT_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/contact-export-token-l2Smbo"
+        },
+        {
+          "name": "GOOGLE_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/google-client-id-33Aog0"
+        },
+        {
+          "name": "GOOGLE_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/google-client-secret-p4XhsA"
+        },
+        {
+          "name": "STRIPE_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/stripe-secret-key-KiqOvO"
+        },
+        {
+          "name": "STRIPE_WEBHOOK_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/stripe-webhook-secret-Amw5aW"
+        },
+        {
+          "name": "ONBOARDING_AUTOMATION_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:309014076408:secret:splitsheetstudio/staging/onboarding-automation-token-eDJuFU"
         }
       ],
       "logConfiguration": {
@@ -205,7 +279,19 @@
         "timeout": 10,
         "retries": 3,
         "startPeriod": 20
-      }
+      },
+      "systemControls": []
     }
-  ]
+  ],
+  "family": "splitsheetstudio-staging",
+  "taskRoleArn": "arn:aws:iam::309014076408:role/splitsheetstudioTaskRole",
+  "executionRoleArn": "arn:aws:iam::309014076408:role/ecsTaskExecutionRole",
+  "networkMode": "awsvpc",
+  "volumes": [],
+  "placementConstraints": [],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024"
 }

@@ -41,8 +41,77 @@ function verifyPassword(password, storedHash) {
   return crypto.timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
 }
 
+const attributionColumnNames = [
+  "signup_provider",
+  "first_source",
+  "first_medium",
+  "first_campaign",
+  "first_content",
+  "first_term",
+  "first_landing_path",
+  "first_referrer",
+  "first_captured_at",
+  "last_source",
+  "last_medium",
+  "last_campaign",
+  "last_content",
+  "last_term",
+  "last_landing_path",
+  "last_referrer",
+  "last_captured_at"
+];
+
+function cleanText(value, maxLength = 240) {
+  const normalized = String(value || "").trim();
+  return normalized ? normalized.slice(0, maxLength) : null;
+}
+
+function normalizeAttribution(attribution = {}) {
+  return {
+    signupProvider: cleanText(attribution.signupProvider, 40),
+    firstSource: cleanText(attribution.firstSource, 80),
+    firstMedium: cleanText(attribution.firstMedium, 80),
+    firstCampaign: cleanText(attribution.firstCampaign, 140),
+    firstContent: cleanText(attribution.firstContent, 140),
+    firstTerm: cleanText(attribution.firstTerm, 140),
+    firstLandingPath: cleanText(attribution.firstLandingPath, 240),
+    firstReferrer: cleanText(attribution.firstReferrer, 240),
+    firstCapturedAt: cleanText(attribution.firstCapturedAt, 40),
+    lastSource: cleanText(attribution.lastSource, 80),
+    lastMedium: cleanText(attribution.lastMedium, 80),
+    lastCampaign: cleanText(attribution.lastCampaign, 140),
+    lastContent: cleanText(attribution.lastContent, 140),
+    lastTerm: cleanText(attribution.lastTerm, 140),
+    lastLandingPath: cleanText(attribution.lastLandingPath, 240),
+    lastReferrer: cleanText(attribution.lastReferrer, 240),
+    lastCapturedAt: cleanText(attribution.lastCapturedAt, 40)
+  };
+}
+
 function mapUser(row) {
   if (!row) return null;
+  const complimentaryPlanKey = row.complimentary_plan_key || null;
+  const complimentaryExpiresAt = row.complimentary_expires_at || null;
+  const complimentaryActive = Boolean(complimentaryPlanKey && (!complimentaryExpiresAt || Date.parse(complimentaryExpiresAt) > Date.now()));
+  const attribution = {
+    signupProvider: row.signup_provider || "",
+    firstSource: row.first_source || "",
+    firstMedium: row.first_medium || "",
+    firstCampaign: row.first_campaign || "",
+    firstContent: row.first_content || "",
+    firstTerm: row.first_term || "",
+    firstLandingPath: row.first_landing_path || "",
+    firstReferrer: row.first_referrer || "",
+    firstCapturedAt: row.first_captured_at || "",
+    lastSource: row.last_source || "",
+    lastMedium: row.last_medium || "",
+    lastCampaign: row.last_campaign || "",
+    lastContent: row.last_content || "",
+    lastTerm: row.last_term || "",
+    lastLandingPath: row.last_landing_path || "",
+    lastReferrer: row.last_referrer || "",
+    lastCapturedAt: row.last_captured_at || ""
+  };
   return {
     id: row.id,
     email: row.email,
@@ -50,13 +119,64 @@ function mapUser(row) {
     status: row.status,
     planKey: row.plan_key || "free",
     planUpdatedAt: row.plan_updated_at || null,
+    complimentaryPlanKey,
+    complimentaryReason: row.complimentary_reason || "",
+    complimentaryNote: row.complimentary_note || "",
+    complimentaryGrantedAt: row.complimentary_granted_at || null,
+    complimentaryGrantedBy: row.complimentary_granted_by || "",
+    complimentaryExpiresAt,
+    complimentaryActive,
     stripeCustomerId: row.stripe_customer_id || null,
     stripeSubscriptionId: row.stripe_subscription_id || null,
     emailVerifiedAt: row.email_verified_at || null,
     passwordChangedAt: row.password_changed_at || null,
+    attribution,
+    signupProvider: attribution.signupProvider,
+    firstSource: attribution.firstSource,
+    lastSource: attribution.lastSource,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+function sessionUserFromRow(row) {
+  return mapUser({
+    id: row.user_id,
+    email: row.email,
+    display_name: row.display_name,
+    status: row.status,
+    plan_key: row.plan_key,
+    plan_updated_at: row.plan_updated_at,
+    complimentary_plan_key: row.complimentary_plan_key,
+    complimentary_reason: row.complimentary_reason,
+    complimentary_note: row.complimentary_note,
+    complimentary_granted_at: row.complimentary_granted_at,
+    complimentary_granted_by: row.complimentary_granted_by,
+    complimentary_expires_at: row.complimentary_expires_at,
+    stripe_customer_id: row.stripe_customer_id,
+    stripe_subscription_id: row.stripe_subscription_id,
+    email_verified_at: row.email_verified_at,
+    password_changed_at: row.password_changed_at,
+    signup_provider: row.signup_provider,
+    first_source: row.first_source,
+    first_medium: row.first_medium,
+    first_campaign: row.first_campaign,
+    first_content: row.first_content,
+    first_term: row.first_term,
+    first_landing_path: row.first_landing_path,
+    first_referrer: row.first_referrer,
+    first_captured_at: row.first_captured_at,
+    last_source: row.last_source,
+    last_medium: row.last_medium,
+    last_campaign: row.last_campaign,
+    last_content: row.last_content,
+    last_term: row.last_term,
+    last_landing_path: row.last_landing_path,
+    last_referrer: row.last_referrer,
+    last_captured_at: row.last_captured_at,
+    created_at: row.user_created_at,
+    updated_at: row.user_updated_at
+  });
 }
 
 function createSqliteAdapter(db) {
@@ -132,6 +252,45 @@ function createSqliteAdapter(db) {
   if (!userColumns.has("stripe_subscription_id")) {
     db.exec(`ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT`);
   }
+  if (!userColumns.has("complimentary_plan_key")) {
+    db.exec(`ALTER TABLE users ADD COLUMN complimentary_plan_key TEXT`);
+  }
+  if (!userColumns.has("complimentary_reason")) {
+    db.exec(`ALTER TABLE users ADD COLUMN complimentary_reason TEXT`);
+  }
+  if (!userColumns.has("complimentary_note")) {
+    db.exec(`ALTER TABLE users ADD COLUMN complimentary_note TEXT`);
+  }
+  if (!userColumns.has("complimentary_granted_at")) {
+    db.exec(`ALTER TABLE users ADD COLUMN complimentary_granted_at TEXT`);
+  }
+  if (!userColumns.has("complimentary_granted_by")) {
+    db.exec(`ALTER TABLE users ADD COLUMN complimentary_granted_by TEXT`);
+  }
+  if (!userColumns.has("complimentary_expires_at")) {
+    db.exec(`ALTER TABLE users ADD COLUMN complimentary_expires_at TEXT`);
+  }
+  attributionColumnNames.forEach((columnName) => {
+    if (!userColumns.has(columnName)) {
+      db.exec(`ALTER TABLE users ADD COLUMN ${columnName} TEXT`);
+    }
+  });
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_users_first_source ON users(first_source)`);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS complimentary_access_grants (
+      email TEXT PRIMARY KEY,
+      plan_key TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      note TEXT,
+      granted_at TEXT NOT NULL,
+      granted_by TEXT,
+      expires_at TEXT,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_complimentary_access_status ON complimentary_access_grants(status, expires_at);
+  `);
 
   db.exec(`
     UPDATE users
@@ -143,11 +302,23 @@ function createSqliteAdapter(db) {
   const insertUserStmt = db.prepare(`
     INSERT INTO users (
       id, email, password_hash, display_name, status, plan_key, plan_updated_at,
-      email_verified_at, created_at, updated_at
+      email_verified_at,
+      complimentary_plan_key, complimentary_reason, complimentary_note, complimentary_granted_at,
+      complimentary_granted_by, complimentary_expires_at,
+      signup_provider,
+      first_source, first_medium, first_campaign, first_content, first_term, first_landing_path, first_referrer, first_captured_at,
+      last_source, last_medium, last_campaign, last_content, last_term, last_landing_path, last_referrer, last_captured_at,
+      created_at, updated_at
     )
     VALUES (
       @id, @email, @passwordHash, @displayName, 'active', @planKey, @planUpdatedAt,
-      @emailVerifiedAt, @createdAt, @updatedAt
+      @emailVerifiedAt,
+      @complimentaryPlanKey, @complimentaryReason, @complimentaryNote, @complimentaryGrantedAt,
+      @complimentaryGrantedBy, @complimentaryExpiresAt,
+      @signupProvider,
+      @firstSource, @firstMedium, @firstCampaign, @firstContent, @firstTerm, @firstLandingPath, @firstReferrer, @firstCapturedAt,
+      @lastSource, @lastMedium, @lastCampaign, @lastContent, @lastTerm, @lastLandingPath, @lastReferrer, @lastCapturedAt,
+      @createdAt, @updatedAt
     )
   `);
   const userByEmailStmt = db.prepare(`SELECT * FROM users WHERE email = ?`);
@@ -169,6 +340,62 @@ function createSqliteAdapter(db) {
         stripe_subscription_id = @stripeSubscriptionId,
         updated_at = @updatedAt
     WHERE id = @id
+  `);
+  const applyComplimentaryGrantStmt = db.prepare(`
+    UPDATE users
+    SET complimentary_plan_key = @planKey,
+        complimentary_reason = @reason,
+        complimentary_note = @note,
+        complimentary_granted_at = @grantedAt,
+        complimentary_granted_by = @grantedBy,
+        complimentary_expires_at = @expiresAt,
+        updated_at = @updatedAt
+    WHERE email = @email
+  `);
+  const clearComplimentaryGrantStmt = db.prepare(`
+    UPDATE users
+    SET complimentary_plan_key = NULL,
+        complimentary_reason = NULL,
+        complimentary_note = NULL,
+        complimentary_granted_at = NULL,
+        complimentary_granted_by = NULL,
+        complimentary_expires_at = NULL,
+        updated_at = @updatedAt
+    WHERE email = @email
+  `);
+  const upsertComplimentaryGrantStmt = db.prepare(`
+    INSERT INTO complimentary_access_grants (
+      email, plan_key, reason, note, granted_at, granted_by, expires_at, status
+    )
+    VALUES (
+      @email, @planKey, @reason, @note, @grantedAt, @grantedBy, @expiresAt, 'active'
+    )
+    ON CONFLICT(email) DO UPDATE SET
+      plan_key = excluded.plan_key,
+      reason = excluded.reason,
+      note = excluded.note,
+      granted_at = excluded.granted_at,
+      granted_by = excluded.granted_by,
+      expires_at = excluded.expires_at,
+      status = 'active'
+  `);
+  const revokeComplimentaryGrantStmt = db.prepare(`
+    UPDATE complimentary_access_grants
+    SET status = 'revoked'
+    WHERE email = ?
+  `);
+  const complimentaryGrantByEmailStmt = db.prepare(`
+    SELECT *
+    FROM complimentary_access_grants
+    WHERE email = ?
+      AND status = 'active'
+      AND (expires_at IS NULL OR expires_at > ?)
+  `);
+  const listComplimentaryGrantsStmt = db.prepare(`
+    SELECT g.*, u.id AS user_id, u.display_name
+    FROM complimentary_access_grants g
+    LEFT JOIN users u ON u.email = g.email
+    ORDER BY g.granted_at DESC
   `);
   const updateUserPasswordStmt = db.prepare(`
     UPDATE users
@@ -196,13 +423,13 @@ function createSqliteAdapter(db) {
     )
   `);
   const sessionByAccessHashStmt = db.prepare(`
-    SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+    SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.complimentary_plan_key, u.complimentary_reason, u.complimentary_note, u.complimentary_granted_at, u.complimentary_granted_by, u.complimentary_expires_at, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
     FROM auth_sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.access_token_hash = ?
   `);
   const sessionByRefreshHashStmt = db.prepare(`
-    SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+    SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.complimentary_plan_key, u.complimentary_reason, u.complimentary_note, u.complimentary_granted_at, u.complimentary_granted_by, u.complimentary_expires_at, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
     FROM auth_sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.refresh_token_hash = ?
@@ -228,7 +455,7 @@ function createSqliteAdapter(db) {
     VALUES (@id, @userId, @tokenHash, @expiresAt, @createdAt)
   `);
   const verificationByTokenHashStmt = db.prepare(`
-    SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+    SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.complimentary_plan_key, u.complimentary_reason, u.complimentary_note, u.complimentary_granted_at, u.complimentary_granted_by, u.complimentary_expires_at, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
     FROM email_verification_tokens t
     JOIN users u ON u.id = t.user_id
     WHERE t.token_hash = ?
@@ -242,7 +469,7 @@ function createSqliteAdapter(db) {
     VALUES (@id, @userId, @tokenHash, @expiresAt, @createdAt)
   `);
   const passwordResetByTokenHashStmt = db.prepare(`
-    SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+    SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.complimentary_plan_key, u.complimentary_reason, u.complimentary_note, u.complimentary_granted_at, u.complimentary_granted_by, u.complimentary_expires_at, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
     FROM password_reset_tokens t
     JOIN users u ON u.id = t.user_id
     WHERE t.token_hash = ?
@@ -290,6 +517,25 @@ function createSqliteAdapter(db) {
         updatedAt
       });
       return userByIdStmt.get(id) || null;
+    },
+    async grantComplimentaryAccess(row) {
+      upsertComplimentaryGrantStmt.run(row);
+      applyComplimentaryGrantStmt.run({ ...row, updatedAt: row.grantedAt });
+      return {
+        grant: complimentaryGrantByEmailStmt.get(row.email, nowIso()) || null,
+        user: userByEmailStmt.get(row.email) || null
+      };
+    },
+    async revokeComplimentaryAccess({ email, updatedAt }) {
+      revokeComplimentaryGrantStmt.run(email);
+      clearComplimentaryGrantStmt.run({ email, updatedAt });
+      return userByEmailStmt.get(email) || null;
+    },
+    async complimentaryGrantByEmail(email) {
+      return complimentaryGrantByEmailStmt.get(email, nowIso()) || null;
+    },
+    async listComplimentaryGrants() {
+      return listComplimentaryGrantsStmt.all();
     },
     async updateUserPassword({ id, passwordHash, updatedAt }) {
       updateUserPasswordStmt.run({ id, passwordHash, updatedAt });
@@ -363,6 +609,40 @@ function createPostgresAdapter(pool) {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_updated_at TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS complimentary_plan_key TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS complimentary_reason TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS complimentary_note TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS complimentary_granted_at TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS complimentary_granted_by TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS complimentary_expires_at TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_provider TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS first_source TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS first_medium TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS first_campaign TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS first_content TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS first_term TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS first_landing_path TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS first_referrer TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS first_captured_at TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_source TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_medium TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_campaign TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_content TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_term TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_landing_path TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_referrer TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_captured_at TEXT;
+
+      CREATE TABLE IF NOT EXISTS complimentary_access_grants (
+        email TEXT PRIMARY KEY,
+        plan_key TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        note TEXT,
+        granted_at TEXT NOT NULL,
+        granted_by TEXT,
+        expires_at TEXT,
+        status TEXT NOT NULL DEFAULT 'active'
+      );
 
       CREATE TABLE IF NOT EXISTS auth_sessions (
         id TEXT PRIMARY KEY,
@@ -395,12 +675,14 @@ function createPostgresAdapter(pool) {
       );
 
       CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+      CREATE INDEX IF NOT EXISTS idx_users_first_source ON users(first_source);
       CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id);
       CREATE INDEX IF NOT EXISTS idx_auth_sessions_refresh_expires ON auth_sessions(refresh_token_expires_at);
       CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user_id ON email_verification_tokens(user_id);
       CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_expires ON email_verification_tokens(expires_at);
       CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
       CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires ON password_reset_tokens(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_complimentary_access_status ON complimentary_access_grants(status, expires_at);
 
       UPDATE users
       SET plan_key = COALESCE(plan_key, 'free'),
@@ -445,13 +727,30 @@ function createPostgresAdapter(pool) {
       const result = await pool.query(`
         INSERT INTO users (
           id, email, password_hash, display_name, status, plan_key, plan_updated_at,
-          email_verified_at, created_at, updated_at
+          email_verified_at,
+          complimentary_plan_key, complimentary_reason, complimentary_note, complimentary_granted_at,
+          complimentary_granted_by, complimentary_expires_at,
+          signup_provider,
+          first_source, first_medium, first_campaign, first_content, first_term, first_landing_path, first_referrer, first_captured_at,
+          last_source, last_medium, last_campaign, last_content, last_term, last_landing_path, last_referrer, last_captured_at,
+          created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9)
+        VALUES (
+          $1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, $11, $12, $13,
+          $14, $15, $16, $17, $18, $19, $20, $21, $22,
+          $23, $24, $25, $26, $27, $28, $29, $30,
+          $31, $32
+        )
         RETURNING *
       `, [
         row.id, row.email, row.passwordHash, row.displayName, row.planKey, row.planUpdatedAt,
-        row.emailVerifiedAt, row.createdAt, row.updatedAt
+        row.emailVerifiedAt,
+        row.complimentaryPlanKey, row.complimentaryReason, row.complimentaryNote, row.complimentaryGrantedAt,
+        row.complimentaryGrantedBy, row.complimentaryExpiresAt,
+        row.signupProvider,
+        row.firstSource, row.firstMedium, row.firstCampaign, row.firstContent, row.firstTerm, row.firstLandingPath, row.firstReferrer, row.firstCapturedAt,
+        row.lastSource, row.lastMedium, row.lastCampaign, row.lastContent, row.lastTerm, row.lastLandingPath, row.lastReferrer, row.lastCapturedAt,
+        row.createdAt, row.updatedAt
       ]);
       return result.rows[0] || null;
     },
@@ -480,6 +779,81 @@ function createPostgresAdapter(pool) {
         RETURNING *
       `, [planKey, planUpdatedAt, stripeCustomerId, stripeSubscriptionId, updatedAt, id]);
       return result.rows[0] || null;
+    },
+    async grantComplimentaryAccess(row) {
+      await ready;
+      await pool.query(`
+        INSERT INTO complimentary_access_grants (
+          email, plan_key, reason, note, granted_at, granted_by, expires_at, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+        ON CONFLICT(email) DO UPDATE SET
+          plan_key = excluded.plan_key,
+          reason = excluded.reason,
+          note = excluded.note,
+          granted_at = excluded.granted_at,
+          granted_by = excluded.granted_by,
+          expires_at = excluded.expires_at,
+          status = 'active'
+      `, [row.email, row.planKey, row.reason, row.note, row.grantedAt, row.grantedBy, row.expiresAt]);
+      await pool.query(`
+        UPDATE users
+        SET complimentary_plan_key = $1,
+            complimentary_reason = $2,
+            complimentary_note = $3,
+            complimentary_granted_at = $4,
+            complimentary_granted_by = $5,
+            complimentary_expires_at = $6,
+            updated_at = $7
+        WHERE email = $8
+      `, [row.planKey, row.reason, row.note, row.grantedAt, row.grantedBy, row.expiresAt, row.grantedAt, row.email]);
+      const grant = await pool.query(`
+        SELECT *
+        FROM complimentary_access_grants
+        WHERE email = $1
+          AND status = 'active'
+          AND (expires_at IS NULL OR expires_at > $2)
+      `, [row.email, nowIso()]);
+      const user = await pool.query(`SELECT * FROM users WHERE email = $1`, [row.email]);
+      return { grant: grant.rows[0] || null, user: user.rows[0] || null };
+    },
+    async revokeComplimentaryAccess({ email, updatedAt }) {
+      await ready;
+      await pool.query(`UPDATE complimentary_access_grants SET status = 'revoked' WHERE email = $1`, [email]);
+      const result = await pool.query(`
+        UPDATE users
+        SET complimentary_plan_key = NULL,
+            complimentary_reason = NULL,
+            complimentary_note = NULL,
+            complimentary_granted_at = NULL,
+            complimentary_granted_by = NULL,
+            complimentary_expires_at = NULL,
+            updated_at = $1
+        WHERE email = $2
+        RETURNING *
+      `, [updatedAt, email]);
+      return result.rows[0] || null;
+    },
+    async complimentaryGrantByEmail(email) {
+      await ready;
+      const result = await pool.query(`
+        SELECT *
+        FROM complimentary_access_grants
+        WHERE email = $1
+          AND status = 'active'
+          AND (expires_at IS NULL OR expires_at > $2)
+      `, [email, nowIso()]);
+      return result.rows[0] || null;
+    },
+    async listComplimentaryGrants() {
+      await ready;
+      const result = await pool.query(`
+        SELECT g.*, u.id AS user_id, u.display_name
+        FROM complimentary_access_grants g
+        LEFT JOIN users u ON u.email = g.email
+        ORDER BY g.granted_at DESC
+      `);
+      return result.rows;
     },
     async updateUserPassword({ id, passwordHash, updatedAt }) {
       await ready;
@@ -522,7 +896,7 @@ function createPostgresAdapter(pool) {
     async sessionByAccessHash(hash) {
       await ready;
       const result = await pool.query(`
-        SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+        SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.complimentary_plan_key, u.complimentary_reason, u.complimentary_note, u.complimentary_granted_at, u.complimentary_granted_by, u.complimentary_expires_at, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
         FROM auth_sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.access_token_hash = $1
@@ -532,7 +906,7 @@ function createPostgresAdapter(pool) {
     async sessionByRefreshHash(hash) {
       await ready;
       const result = await pool.query(`
-        SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+        SELECT s.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.complimentary_plan_key, u.complimentary_reason, u.complimentary_note, u.complimentary_granted_at, u.complimentary_granted_by, u.complimentary_expires_at, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
         FROM auth_sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.refresh_token_hash = $1
@@ -577,7 +951,7 @@ function createPostgresAdapter(pool) {
     async verificationByTokenHash(hash) {
       await ready;
       const result = await pool.query(`
-        SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+        SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.complimentary_plan_key, u.complimentary_reason, u.complimentary_note, u.complimentary_granted_at, u.complimentary_granted_by, u.complimentary_expires_at, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
         FROM email_verification_tokens t
         JOIN users u ON u.id = t.user_id
         WHERE t.token_hash = $1
@@ -603,7 +977,7 @@ function createPostgresAdapter(pool) {
     async passwordResetByTokenHash(hash) {
       await ready;
       const result = await pool.query(`
-        SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
+        SELECT t.*, u.email, u.display_name, u.status, u.plan_key, u.plan_updated_at, u.stripe_customer_id, u.stripe_subscription_id, u.complimentary_plan_key, u.complimentary_reason, u.complimentary_note, u.complimentary_granted_at, u.complimentary_granted_by, u.complimentary_expires_at, u.email_verified_at, u.created_at AS user_created_at, u.updated_at AS user_updated_at
         FROM password_reset_tokens t
         JOIN users u ON u.id = t.user_id
         WHERE t.token_hash = $1
@@ -643,10 +1017,11 @@ function createAuthService({
     await adapter.cleanupExpiredTokens();
   }
 
-  async function createUserInternal({ email, password, displayName, emailVerifiedAt = null, planKey = "free" }) {
+  async function createUserInternal({ email, password, displayName, emailVerifiedAt = null, planKey = "free", attribution = {} }) {
     const normalizedEmail = normalizeEmail(email);
     const normalizedDisplayName = String(displayName || "").trim();
     const normalizedPassword = String(password || "");
+    const normalizedAttribution = normalizeAttribution(attribution);
 
     if (!normalizedEmail || !normalizedEmail.includes("@")) {
       throw new ApiAuthError("A valid email is required.", 400);
@@ -662,6 +1037,7 @@ function createAuthService({
     }
 
     const timestamp = nowIso();
+    const grant = await adapter.complimentaryGrantByEmail(normalizedEmail);
     const row = {
       id: nanoid(16),
       email: normalizedEmail,
@@ -670,6 +1046,13 @@ function createAuthService({
       planKey,
       planUpdatedAt: timestamp,
       emailVerifiedAt,
+      complimentaryPlanKey: grant?.plan_key || null,
+      complimentaryReason: grant?.reason || "",
+      complimentaryNote: grant?.note || "",
+      complimentaryGrantedAt: grant?.granted_at || null,
+      complimentaryGrantedBy: grant?.granted_by || "",
+      complimentaryExpiresAt: grant?.expires_at || null,
+      ...normalizedAttribution,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -677,7 +1060,7 @@ function createAuthService({
     return mapUser(inserted);
   }
 
-  async function findOrCreateProviderUser({ email, displayName, emailVerifiedAt = nowIso() }) {
+  async function findOrCreateProviderUser({ email, displayName, emailVerifiedAt = nowIso(), signupProvider = "oauth", attribution = {} }) {
     await bootstrapReady;
     const normalizedEmail = normalizeEmail(email);
     const normalizedDisplayName = String(displayName || "").trim() || normalizedEmail.split("@")[0] || "Split Sheet Studio User";
@@ -706,7 +1089,11 @@ function createAuthService({
       password: randomToken(32),
       displayName: normalizedDisplayName,
       emailVerifiedAt,
-      planKey: "free"
+      planKey: "free",
+      attribution: {
+        ...attribution,
+        signupProvider: attribution.signupProvider || signupProvider
+      }
     });
   }
 
@@ -783,9 +1170,18 @@ function createAuthService({
     await createUserInternal({ email, password, displayName, emailVerifiedAt: nowIso(), planKey });
   })();
 
-  async function registerUser({ email, password, displayName, ip, userAgent }) {
+  async function registerUser({ email, password, displayName, ip, userAgent, attribution = {} }) {
     await bootstrapReady;
-    const user = await createUserInternal({ email, password, displayName, emailVerifiedAt: null });
+    const user = await createUserInternal({
+      email,
+      password,
+      displayName,
+      emailVerifiedAt: null,
+      attribution: {
+        ...attribution,
+        signupProvider: attribution.signupProvider || "email"
+      }
+    });
     const verification = await createVerificationTokenForUser(user.id);
     return {
       user,
@@ -831,8 +1227,8 @@ function createAuthService({
       await bootstrapReady;
       return mapUser(await adapter.userByEmail(normalizeEmail(email)));
     },
-    async findOrCreateProviderUser({ email, displayName, emailVerifiedAt }) {
-      return findOrCreateProviderUser({ email, displayName, emailVerifiedAt });
+    async findOrCreateProviderUser({ email, displayName, emailVerifiedAt, signupProvider, attribution }) {
+      return findOrCreateProviderUser({ email, displayName, emailVerifiedAt, signupProvider, attribution });
     },
     async listUsers() {
       await bootstrapReady;
@@ -860,6 +1256,42 @@ function createAuthService({
         stripeSubscriptionId,
         updatedAt: timestamp
       }));
+    },
+    async grantComplimentaryAccess({ email, planKey, reason = "sponsor", note = "", grantedBy = "admin", expiresAt = null }) {
+      await bootstrapReady;
+      const normalizedEmail = normalizeEmail(email);
+      if (!normalizedEmail || !normalizedEmail.includes("@")) {
+        throw new ApiAuthError("A valid email is required.", 400);
+      }
+      const timestamp = nowIso();
+      const result = await adapter.grantComplimentaryAccess({
+        email: normalizedEmail,
+        planKey,
+        reason: String(reason || "sponsor").trim() || "sponsor",
+        note: String(note || "").trim(),
+        grantedAt: timestamp,
+        grantedBy: String(grantedBy || "admin").trim() || "admin",
+        expiresAt: expiresAt || null
+      });
+      return {
+        grant: result.grant,
+        user: mapUser(result.user)
+      };
+    },
+    async revokeComplimentaryAccess({ email }) {
+      await bootstrapReady;
+      const normalizedEmail = normalizeEmail(email);
+      if (!normalizedEmail || !normalizedEmail.includes("@")) {
+        throw new ApiAuthError("A valid email is required.", 400);
+      }
+      return mapUser(await adapter.revokeComplimentaryAccess({
+        email: normalizedEmail,
+        updatedAt: nowIso()
+      }));
+    },
+    async listComplimentaryGrants() {
+      await bootstrapReady;
+      return adapter.listComplimentaryGrants();
     },
     registerUser,
     async createSession({ email, password, ip, userAgent }) {
@@ -992,19 +1424,7 @@ function createAuthService({
       return {
         id: row.id,
         userId: row.user_id,
-        user: {
-          id: row.user_id,
-          email: row.email,
-          displayName: row.display_name,
-          status: row.status,
-          planKey: row.plan_key || "free",
-          planUpdatedAt: row.plan_updated_at || null,
-          stripeCustomerId: row.stripe_customer_id || null,
-          stripeSubscriptionId: row.stripe_subscription_id || null,
-          emailVerifiedAt: row.email_verified_at || null,
-          createdAt: row.user_created_at,
-          updatedAt: row.user_updated_at
-        }
+        user: sessionUserFromRow(row)
       };
     },
     async refreshSession({ refreshToken, ip, userAgent }) {
@@ -1046,19 +1466,7 @@ function createAuthService({
       });
 
       return {
-        user: {
-          id: row.user_id,
-        email: row.email,
-        displayName: row.display_name,
-        status: row.status,
-        planKey: row.plan_key || "free",
-        planUpdatedAt: row.plan_updated_at || null,
-        stripeCustomerId: row.stripe_customer_id || null,
-        stripeSubscriptionId: row.stripe_subscription_id || null,
-        emailVerifiedAt: row.email_verified_at || null,
-        createdAt: row.user_created_at,
-        updatedAt: row.user_updated_at
-        },
+        user: sessionUserFromRow(row),
         tokenType: "Bearer",
         accessToken: nextAccessToken,
         refreshToken: nextRefreshToken,

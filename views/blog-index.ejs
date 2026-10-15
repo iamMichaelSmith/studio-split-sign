@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,7 +7,7 @@
   <link rel="canonical" href="https://splitsheetstudio.com/blog"><meta name="theme-color" content="#171311">
   <meta property="og:type" content="website"><meta property="og:title" content="Split Sheet Studio Blog | Music Rights and Split Sheets"><meta property="og:description" content="Guides for artists, producers, songwriters, studios, and sync licensing teams documenting music ownership clearly."><meta property="og:url" content="https://splitsheetstudio.com/blog"><meta property="og:image" content="<%= socialImageUrl %>">
   <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Split Sheet Studio Blog"><meta name="twitter:description" content="Music rights, split sheets, publishing, metadata, studio paperwork, and sync licensing readiness."><meta name="twitter:image" content="<%= socialImageUrl %>">
-  <script type="application/ld+json"><%- JSON.stringify({ "@context": "https://schema.org", "@type": "Blog", "name": "Split Sheet Studio Blog", "url": "https://splitsheetstudio.com/blog", "description": "Practical guidance on music split sheets, publishing administration, producer workflow, master ownership, and sync licensing readiness.", "publisher": { "@type": "Organization", "name": "Split Sheet Studio", "url": "https://splitsheetstudio.com" }, "blogPost": posts.map((post) => ({ "@type": "BlogPosting", "headline": post.title, "url": `https://splitsheetstudio.com/blog/${post.slug}`, "datePublished": post.publishedAt, "description": post.metaDescription })) }).replace(/</g, "\\u003c") %></script>
+  <script nonce="<%= cspNonce %>" type="application/ld+json"><%- JSON.stringify({ "@context": "https://schema.org", "@type": "Blog", "name": "Split Sheet Studio Blog", "url": "https://splitsheetstudio.com/blog", "description": "Practical guidance on music split sheets, publishing administration, producer workflow, master ownership, and sync licensing readiness.", "publisher": { "@type": "Organization", "name": "Split Sheet Studio", "url": "https://splitsheetstudio.com" }, "blogPost": posts.map((post) => ({ "@type": "BlogPosting", "headline": post.title, "url": `https://splitsheetstudio.com/blog/${post.slug}`, "datePublished": post.publishedAt, "description": post.metaDescription })) }).replace(/</g, "\\u003c") %></script>
   <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/premium.css">
 </head>
 <body class="premium-site"><div class="premium-shell">

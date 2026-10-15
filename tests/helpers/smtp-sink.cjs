@@ -62,7 +62,7 @@ async function startSmtpSink() {
 
 function emailToken(message, route) {
   const decoded = message.raw.replace(/=\r\n/g, '').replace(/=([\dA-F]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-  const match = decoded.match(new RegExp(`${route}\\?token=([^"\\s<>]+)`));
+  const match = decoded.match(new RegExp(`${route}\\?token=([^"&\\s<>]+)`));
   if (!match) throw new Error(`Expected ${route} token in locally captured email`);
   return decodeURIComponent(match[1]);
 }

@@ -1,1 +1,65 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Admin Login</title><link rel="stylesheet" href="/style.css"></head><body><div class="wrap"><h1>Admin Login</h1><% if (error) { %><div class="card"><%= error %></div><% } %><form method="post" class="card"><label>Username</label><input name="username" required><label>Password</label><input type="password" name="password" required><button>Login</button></form></div></body></html>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Admin Login</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <h1>Admin Login</h1>
+    <% if (error) { %><div class="card"><%= error %></div><% } %>
+    <form method="post" class="card" autocomplete="off">
+      <label for="admin-username">Username</label>
+      <input
+        id="admin-username"
+        name="username"
+        autocomplete="off"
+        autocapitalize="none"
+        spellcheck="false"
+        required
+      >
+      <label for="admin-password">Password</label>
+      <input
+        id="admin-password"
+        type="password"
+        name="password"
+        value=""
+        autocomplete="new-password"
+        autocapitalize="none"
+        spellcheck="false"
+        data-clear-on-load="true"
+        readonly
+        required
+      >
+      <button>Login</button>
+    </form>
+  </div>
+  <script nonce="<%= cspNonce %>">
+    (() => {
+      const field = document.querySelector('[data-clear-on-load="true"]');
+      if (!field) return;
+      let userEdited = false;
+      const clear = () => {
+        if (!userEdited) field.value = "";
+      };
+      const allowEntry = () => {
+        field.removeAttribute("readonly");
+      };
+      field.addEventListener("keydown", () => {
+        userEdited = true;
+      }, { once: true });
+      field.addEventListener("input", () => {
+        userEdited = true;
+      }, { once: true });
+      field.addEventListener("focus", allowEntry);
+      field.addEventListener("pointerdown", allowEntry);
+      window.addEventListener("pageshow", clear);
+      document.addEventListener("DOMContentLoaded", clear);
+      setTimeout(clear, 50);
+      setTimeout(clear, 300);
+      setTimeout(clear, 900);
+    })();
+  </script>
+</body>
+</html>

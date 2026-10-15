@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Account | Split Sheet Studio</title>
   <link rel="stylesheet" href="/style.css">
+  <script nonce="<%= cspNonce %>" src="/site-controls.js" defer></script>
+  <link rel="stylesheet" href="/plugin-skins.css">
 </head>
 <body>
   <div class="wrap account-wrap">
@@ -52,6 +54,9 @@
         <div class="stat-label">Current plan</div>
         <div class="stat-value"><%= usage.plan.name %></div>
         <p class="small"><%= usage.plan.description %></p>
+        <% if (user.complimentaryActive) { %>
+          <p class="small"><b>Complimentary access</b> is active on this account.</p>
+        <% } %>
         <% if (billingEnabled && user.stripeCustomerId) { %>
           <form method="post" action="/account/billing/portal"><button class="secondary-button" type="submit">Manage billing</button></form>
         <% } else { %>
@@ -79,7 +84,7 @@
         <div>
           <div class="stat-label">Your records</div>
           <h2>Your Split Sheet Vault</h2>
-          <p class="small">View, download, and keep track of the split sheets you have created.</p>
+          <p class="small">View, download, and keep track of the split sheets you have created or signed. Invited sheets are saved here at no charge.</p>
         </div>
         <% if (usage.canCreate) { %><a class="button-link button-link-secondary" href="<%= splitSheetUrl %>">New split sheet</a><% } %>
       </div>
@@ -102,14 +107,16 @@
             <div>
               <div class="stat-label">Song name</div>
               <b><%= songName %></b>
-              <div class="small"><%= doc.status %> · <%= doc.createdAt %> · ID <%= doc.id %></div>
+              <div class="small"><%= doc.status === 'archived' ? (doc.payload.archivedFromStatus || doc.status) : doc.status %> · <%= doc.createdAt %> · ID <%= doc.id %></div>
             </div>
             <div class="vault-actions">
               <a href="<%= pdfViewPath(doc) %>" target="_blank" rel="noopener">View</a>
               <a href="<%= pdfDownloadPath(doc) %>">Download</a>
-              <form method="post" action="/account/split-sheets/<%= doc.id %>/archive" class="vault-inline-form" onsubmit="return confirm('Archive this split sheet? It will be hidden from your main vault.');">
+              <% if (canManageSplitSheet(doc)) { %>
+              <form method="post" action="/account/split-sheets/<%= doc.id %>/archive" class="vault-inline-form" data-confirm="Archive this split sheet? It will be hidden from your main vault. Your monthly usage is unchanged.">
                 <button type="submit">Archive</button>
               </form>
+              <% if (!(doc.payload?.contributors || []).some((contributor) => contributor.accountUserId)) { %>
               <details class="vault-delete-panel">
                 <summary>Delete</summary>
                 <form method="post" action="/account/split-sheets/<%= doc.id %>/delete">
@@ -118,6 +125,10 @@
                   <button type="submit">Delete permanently</button>
                 </form>
               </details>
+              <% } else { %>
+                <span class="small">Shared signed record retained for contributors.</span>
+              <% } %>
+              <% } %>
             </div>
           </div>
         </div>
@@ -163,10 +174,10 @@
               <div class="small">Approved: <%= profile.approvedAt %><% if (profile.sourceSubmissionId) { %> · Source ID <%= profile.sourceSubmissionId %><% } %></div>
             </div>
             <div class="vault-actions">
-              <form method="post" action="/account/collaborators/<%= profile.id %>/delete" class="vault-inline-form" onsubmit="return confirm('Delete this approved collaborator profile?');">
+              <form method="post" action="/account/collaborators/<%= profile.id %>/delete" class="vault-inline-form" data-confirm="Delete this approved collaborator profile?">
                 <button type="submit">Delete</button>
               </form>
-              <form method="post" action="/account/collaborators/<%= profile.id %>/keep-only" class="vault-inline-form" onsubmit="return confirm('Keep only this collaborator and delete the other approved profiles?');">
+              <form method="post" action="/account/collaborators/<%= profile.id %>/keep-only" class="vault-inline-form" data-confirm="Keep only this collaborator and delete the other approved profiles?">
                 <button class="secondary-button" type="submit">Keep only</button>
               </form>
             </div>
@@ -244,6 +255,8 @@
             <% } else { %>
               <p class="small">Your plan includes the Windows VST3 plugin and standalone Windows app during launch.</p>
             <% } %>
+            <p class="small">Signed up with Google? <a href="/forgot-password">Set an app password by email</a> to sign in to the Windows beta. This does not change your Google password.</p>
+            <p class="small">Windows beta: the current installer is not yet code-signed. Windows or your antivirus may display a warning. Do not disable your security protection; use the web app if installation is blocked.</p>
           </div>
           <figure class="vst-plugin-preview">
             <img src="/vst-contributors.png" width="1600" height="1214" alt="Split Sheet Studio VST3 plugin showing contributors, songwriter splits, producer shares, and session ownership fields inside a DAW workflow">
@@ -251,6 +264,7 @@
           </figure>
         </div>
 
+        <%- include('partials/new-skins', { skinsSectionId: 'plugin-skins' }) %>
         <div class="vst-benefit-grid" aria-label="Split Sheet Studio VST benefits">
           <article>
             <div class="stat-label">For studios</div>
@@ -286,6 +300,7 @@
           <div class="stat-label">Plan options</div>
           <h2>Upgrade when your session volume grows</h2>
           <p class="small">Use these plans when you need more monthly split sheets or the studio toolkit in your workflow.</p>
+          <p class="small">One credit is used when you first send a split sheet, including pending signatures. Limits reset each calendar month in UTC. Archiving or deleting a sheet does not restore a credit.</p>
         </div>
       </div>
       <div class="grid">
@@ -293,6 +308,7 @@
           <div class="stat-card">
             <div class="stat-label"><%= plan.discountLabel || plan.priceLabel %></div>
             <h3><%= plan.name %></h3>
+            <% if (selectedPlan === plan.key) { %><p class="plan-badge">Your selection: <%= selectedInterval === 'year' ? 'annual' : 'monthly' %>. Confirm below to continue to secure checkout.</p><% } %>
             <% if (plan.compareAtPriceLabel) { %>
               <p class="deal-price"><s><%= plan.compareAtPriceLabel %></s> <strong><%= plan.priceLabel %></strong></p>
             <% } else { %>

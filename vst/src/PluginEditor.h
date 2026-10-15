@@ -12,7 +12,13 @@ enum class SplitSheetTheme
     denim,
     soft,
     speakeasy,
-    plush
+    plush,
+    midnight,
+    neon,
+    electric,
+    blueprint,
+    royal,
+    walnut
 };
 
 struct SplitSheetThemePalette

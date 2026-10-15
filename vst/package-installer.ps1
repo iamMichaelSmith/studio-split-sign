@@ -2,7 +2,7 @@
   [string]$BuildDir = ".\build",
   [string]$Configuration = "Release",
   [string]$OutputDir = ".\dist",
-  [string]$Version = "0.1.2",
+  [string]$Version = "0.1.3",
   [string]$CertificateThumbprint = $env:SPLITSHEET_SIGNING_CERT_THUMBPRINT,
   [string]$PfxPath = $env:SPLITSHEET_SIGNING_PFX_PATH,
   [string]$PfxPassword = $env:SPLITSHEET_SIGNING_PFX_PASSWORD,
@@ -117,6 +117,16 @@ if (-not (Test-Path (Join-Path $standaloneSource "Split Sheet Studio.exe"))) {
 }
 if (-not (Test-Path $vst3Source)) {
   throw "VST3 build artifact missing at $vst3Source"
+}
+
+foreach ($binary in @(
+  (Join-Path $standaloneSource "Split Sheet Studio.exe"),
+  (Join-Path $vst3Source "Contents\x86_64-win\Split Sheet Studio.vst3")
+)) {
+  $embeddedVersion = (Get-Item -LiteralPath $binary).VersionInfo.ProductVersion
+  if ($embeddedVersion -notlike "$Version*") {
+    throw "Binary version $embeddedVersion does not match installer version $Version. Regenerate JUCE Windows resources and rebuild before packaging: $binary"
+  }
 }
 
 New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
