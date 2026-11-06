@@ -550,7 +550,9 @@ body.premium-site {
 @media (max-width: 680px) {
   .premium-container { width: min(100% - 28px, 1180px); }
   .site-nav { min-height: 70px; }
-  .site-brand small, .nav-login { display: none; }
+  .site-brand > span:last-child { display: none; }
+  .nav-actions { gap: 10px; }
+  .nav-login { font-size: 12px; white-space: nowrap; }
   .premium-button-nav { min-height: 36px; padding-inline: 12px; font-size: 11px; }
   .premium-hero { padding-block: 62px 74px; gap: 50px; }
   .hero-copy h1, .store-hero h1, .journal-hero h1 { font-size: 48px; }
